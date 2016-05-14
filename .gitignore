@@ -1,0 +1,14 @@
+/RubberPlant.Tests/bin/Debug
+/RubberPlant.Tests/obj/Debug
+/bin/Debug
+/obj/Debug
+
+/RubberPlant.Tests/bin/Release
+/RubberPlant.Tests/obj/Release
+/bin/Release
+/obj/Release
+
+/packages
+
+*.suo
+RubberPlant.*.user
