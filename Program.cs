@@ -28,8 +28,6 @@ namespace RubberPlant
                 options.OutputDir = Path.GetDirectoryName(options.FileName);
             }
 
-
-
             List<LSystem> systems;
             using (FileStream fs = new FileStream(options.FileName, FileMode.Open))
             {
@@ -42,10 +40,10 @@ namespace RubberPlant
             {
                 var t = new Turtle
                 {
-                    Renderer = new SVGRenderer()
+                    Renderer = new SVGRenderer(),
+                    Angle = system.Angle,
+                    StepLength = options.Length
                 };
-                t.Angle = system.Angle;
-                t.StepLength = options.Length;
                 t.Render(options.OutputDir, system.Name, system.Replace(options.Replacement));
             }
         }

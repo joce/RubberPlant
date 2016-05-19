@@ -73,8 +73,6 @@ WS : [ \r\n\t]+ -> skip ;
 ///////////////////////////////////////////////////////////////////////////////
 mode RULE_MODE ;
 
-EQUALS_AXIOM_RULE : '=' ;
-
 RULE_ID_RULE_MODE : RULE_ID ;
 
 TURTLE_CMD : CUT_OFF_BRANCH
@@ -95,6 +93,7 @@ TURTLE_CMD : CUT_OFF_BRANCH
            | TURN_LEFT
            | TURN_RIGHT ;
 
+STOCHASTIC_SEP : ',' -> popMode ;
 SEMI_COLON_END_RULE : ';' -> popMode;
 
 // Comment

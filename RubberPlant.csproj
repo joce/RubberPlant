@@ -61,6 +61,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="LSystem\IDAtom.cs" />
+    <Compile Include="LSystem\IRandom.cs" />
+    <Compile Include="LSystem\Random.cs" />
     <Compile Include="LSystem\TurtleAtom.cs" />
     <Compile Include="Options.cs" />
     <Compile Include="Parser\Error\ConsoleErrorOutput.cs" />

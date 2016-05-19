@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace RubberPlant
 {
@@ -8,13 +9,28 @@ namespace RubberPlant
         public List<Atom> Axiom { get; set; }
         public double Angle { get; set; }
         public Dictionary<IDAtom, List<Atom>> Rules { get; set; }
+        public Dictionary<IDAtom, List<Tuple<float, List<Atom>>>> StochasticRules { get; set; }
         public Dictionary<IDAtom, TurtleCommand> Vocabulary { get; set; }
+
+        public IRandom Random
+        {
+            get { return m_random ?? (m_random = new Random()); }
+            set { m_random = value;}
+        }
+
+        private IRandom m_random;
 
         public LSystem()
         {
             Axiom = new List<Atom>();
             Rules = new Dictionary<IDAtom, List<Atom>>();
+            StochasticRules = new Dictionary<IDAtom, List<Tuple<float, List<Atom>>>>();
             Vocabulary = new Dictionary<IDAtom, TurtleCommand>();
+        }
+
+        public bool HasRule(IDAtom atom)
+        {
+            return Rules.ContainsKey(atom) || StochasticRules.ContainsKey(atom);
         }
 
         public List<TurtleCommand> Replace(int iterations)
@@ -34,9 +50,14 @@ namespace RubberPlant
                     {
                         var idAtom = (IDAtom)atom;
                         List<Atom> rule;
+                        List<Tuple<float, List<Atom>>> stochasticRule;
                         if (Rules.TryGetValue(idAtom, out rule))
                         {
                             destination.AddRange(rule);
+                        }
+                        else if (StochasticRules.TryGetValue(idAtom, out stochasticRule))
+                        {
+                            destination.AddRange(GetRandomRule(stochasticRule));
                         }
                         else
                         {
@@ -75,6 +96,21 @@ namespace RubberPlant
                 }
             }
             return res;
+        }
+
+        private List<Atom> GetRandomRule(List<Tuple<float, List<Atom>>> stochasticRule)
+        {
+            float rnd = (float)Random.NextDouble();
+            foreach (var subrule in stochasticRule)
+            {
+                if (rnd <= subrule.Item1)
+                {
+                    return subrule.Item2;
+                }
+                rnd -= subrule.Item1;
+            }
+            // TODO create our own exception? Maybe...
+            throw new Exception("Impossible state reached.");
         }
     }
 }

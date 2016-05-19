@@ -63,6 +63,7 @@
   </Choose>
   <ItemGroup>
     <Compile Include="LSystemTests.cs" />
+    <Compile Include="MoqExtensions.cs" />
     <Compile Include="ParserTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TestParserErrorListener.cs" />
@@ -81,11 +82,17 @@
     <EmbeddedResource Include="ErrorTestFiles\DuplicateActionInMultipleBlocks.ls" />
     <EmbeddedResource Include="ErrorTestFiles\RuleWithoutAction.ls" />
     <EmbeddedResource Include="ErrorTestFiles\LexerError.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\StochasticZeroWeight.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\StochasticNegativeWeight.ls" />
     <None Include="packages.config" />
     <EmbeddedResource Include="ValidTestFiles\SimpleTest.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleDefinitions.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleRuleBlocks.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleVocabularyBlocks.ls" />
+    <EmbeddedResource Include="ValidTestFiles\StochasticRule.ls" />
+    <EmbeddedResource Include="ValidTestFiles\CurlyBracesRule.ls" />
+    <EmbeddedResource Include="WarningTestFiles\StochasticRuleLessThanOne.ls" />
+    <EmbeddedResource Include="WarningTestFiles\StochasticRuleMoreThanOne.ls" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\RubberPlant.csproj">

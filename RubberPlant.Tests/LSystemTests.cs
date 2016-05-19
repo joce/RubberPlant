@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using Moq;
 using NUnit.Framework;
 
 namespace RubberPlant.Tests
@@ -164,6 +166,42 @@ namespace RubberPlant.Tests
                 TurtleCommand.Nop, TurtleCommand.Draw, TurtleCommand.Draw, TurtleCommand.Move, TurtleCommand.Draw,            // ABFfF
                 TurtleCommand.TurnLeft,                                           // +
                 TurtleCommand.Draw, TurtleCommand.TurnRight, TurtleCommand.Move, TurtleCommand.Move, TurtleCommand.Draw, TurtleCommand.TurnRight, TurtleCommand.Move, // F-ffF-f
+            };
+            Assert.AreEqual(expected, result);
+        }
+
+        [Test]
+        public void LSystemDoesProperReplacementWithStochasticRule()
+        {
+            Mock<IRandom> random = new Mock<IRandom>();
+            random.Setup(r => r.NextDouble()).ReturnsInOrder(0.7, 0.2);
+            LSystem lsys = new LSystem
+            {
+                Axiom = new List<Atom> { 'F' },
+                Random = random.Object,
+                StochasticRules =
+                {
+                    ['F'] = new List<Tuple<float, List<Atom>>>
+                    {
+                        new Tuple<float, List<Atom>>(0.3f, new List<Atom> {'F', '+', 'F'}),
+                        new Tuple<float, List<Atom>>(0.7f, new List<Atom> {'-', 'F', '-'})
+                    }
+                },
+                Vocabulary =
+                {
+                    ['F'] = TurtleCommand.Draw,
+                },
+            };
+
+            List<TurtleCommand> result = lsys.Replace(2);
+
+            // Given the "Random" setup, we'll get the 2nd option the 1st time and the 1st option the 2nd time
+            // - F + F -
+            var expected = new List<TurtleCommand>
+            {
+                TurtleCommand.TurnRight, TurtleCommand.Draw,
+                TurtleCommand.TurnLeft,
+                TurtleCommand.Draw, TurtleCommand.TurnRight,
             };
             Assert.AreEqual(expected, result);
         }
