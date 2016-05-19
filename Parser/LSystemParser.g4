@@ -1,29 +1,29 @@
 parser grammar LSystemParser;
 
 options {
-  tokenVocab = LSystemLexer;
+    tokenVocab = LSystemLexer;
 }
 
 lSystemDefinitions : lSystem+ EOF ;
 
-lSystem : LSYSTEM ID_NAME_LSYSTEM OPEN_BRACE_LSYSTEM statement* '}' ;
+lSystem : LSYSTEM ID_NAME '{' statement* '}' ;
 
 statement : angle_stmt
           | vocabulary_stmt
           | rules_stmt ;
 
-angle_stmt : ANGLE EQUALS NUMBER SEMI_COLON ;
+angle_stmt : ANGLE '=' NUMBER SEMI_COLON ;
 
-vocabulary_stmt : VOCABULARY OPEN_BRACE action_stmt* '}' ;
+vocabulary_stmt : VOCABULARY '{' action_stmt* '}' ;
 
 // TODO allow multiple rules on single line, e.g. "A, B, C, D : draw;" or "f, h, y, z : move;"
 action_stmt : RULE_ID ':' ACTION SEMI_COLON ;
 
-rules_stmt : RULES OPEN_BRACE (stochastic_rule_stmt | rule_stmt | axiom_stmt)* '}' ;
+rules_stmt : RULES '{' (stochastic_rule_stmt | rule_stmt | axiom_stmt)* '}' ;
 
 axiom_stmt : AXIOM '->' prod_rule SEMI_COLON_END_RULE ;
 
-stochastic_rule_stmt : RULE_ID OPEN_BRACE stochastic_subrule_stmt+ CLOSE_BRACE;
+stochastic_rule_stmt : RULE_ID '{' stochastic_subrule_stmt+ '}';
 
 stochastic_subrule_stmt : NUMBER '->' prod_rule SEMI_COLON_END_RULE ;
 

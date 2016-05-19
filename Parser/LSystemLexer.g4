@@ -1,16 +1,16 @@
-// Grammar heavily inspired from Jonathan Feinberg's work on javalin.
+// Grammar heavily inspired from Jonathan Feinberg's work on javalin (https://github.com/jdf/javalin)
 
 lexer grammar LSystemLexer;
 
 // Root
-LSYSTEM : 'lsystem' -> pushMode(LSYSTEM_ID_MODE) ;
+LSYSTEM : 'lsystem' ;
 
 // Keywords
 ANGLE : 'angle' ;
 AXIOM : 'axiom' ;
 // IGNOTE : 'ignore' ; // for later
 RULES : 'rules' ;
-// VAR : 'var' ;               // for later
+// LET : 'let' ;               // for later
 VOCABULARY : 'vocabulary' ;
 
 ACTION : MOVE
@@ -33,7 +33,8 @@ NUMBER : '-'? INT '.' INT EXP? // 1.35, 1.35E-9, 0.3, -4.5
 // Rule name (single char)
 RULE_ID : [A-Za-z] ;
 
-fragment ID_NAME : ID_LETTER (ID_LETTER | DIGIT)* ;
+ID_NAME : ID_LETTER (ID_LETTER | DIGIT)* ;
+
 fragment ID_LETTER : [A-Za-z_] ;
 fragment DIGIT : [0-9] ;
 fragment INT : '0' | DIGIT DIGIT* ; // no leading zeros
@@ -102,19 +103,6 @@ COMMENT_RULE : COMMENT -> skip ;
 
 // Whitespace
 WS_RULE : WS -> skip ;
-
-///////////////////////////////////////////////////////////////////////////////
-mode LSYSTEM_ID_MODE ;
-
-ID_NAME_LSYSTEM : ID_NAME ;
-OPEN_BRACE_LSYSTEM : '{' -> popMode ;
-
-// Comment
-LINE_COMMENT_LSYSTEM : LINE_COMMENT -> skip ;
-COMMENT_LSYSTEM : COMMENT -> skip ;
-
-// Whitespace
-WS_LSYSTEM : WS -> skip ;
 
 // Later
 

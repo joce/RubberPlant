@@ -30,7 +30,7 @@ namespace RubberPlant
 
         public override double VisitLSystem(LSystemParser.LSystemContext ctx)
         {
-            m_currentLSystem = new LSystem {Name = ctx.ID_NAME_LSYSTEM().GetText()};
+            m_currentLSystem = new LSystem {Name = ctx.ID_NAME().GetText()};
             m_usedRules = new HashSet<IDAtom>();
             m_hasAngle = false;
             m_hasAxiom = false;
