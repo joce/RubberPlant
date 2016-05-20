@@ -71,7 +71,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="ErrorTestFiles\UnnamedLSystem.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\MissingAngle.ls" />
+    <EmbeddedResource Include="WarningTestFiles\MissingAngle.ls" />
     <EmbeddedResource Include="ErrorTestFiles\MissingAxiom.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateRule.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAxiom.ls" />
@@ -80,7 +80,7 @@
     <EmbeddedResource Include="ErrorTestFiles\AxiomDefinedOutsideRules.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAction.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLine.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\RuleWithoutAction.ls" />
+    <EmbeddedResource Include="WarningTestFiles\RuleWithoutAction.ls" />
     <EmbeddedResource Include="ErrorTestFiles\LexerError.ls" />
     <EmbeddedResource Include="ErrorTestFiles\StochasticZeroWeight.ls" />
     <EmbeddedResource Include="ErrorTestFiles\StochasticNegativeWeight.ls" />

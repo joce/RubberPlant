@@ -84,7 +84,7 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemWithMissingAngleLoadsWithWarningAndDefaultsTo90Degres()
         {
-            var resourceName = "RubberPlant.Tests.ErrorTestFiles.MissingAngle.ls";
+            var resourceName = "RubberPlant.Tests.WarningTestFiles.MissingAngle.ls";
             var errorListner = new TestParserErrorListener();
 
             IList<LSystem> systems = LoadFromResource(resourceName, errorListner);
@@ -119,7 +119,7 @@ namespace RubberPlant.Tests
         [Ignore("Warning: Defaults to NOP")]
         public void RuleWithoutDefinedActionGeneratesWarning()
         {
-            var resourceName = "RubberPlant.Tests.ErrorTestFiles.RulesWithoutAction.ls";
+            var resourceName = "RubberPlant.Tests.WarningTestFiles.RulesWithoutAction.ls";
             var errorListner = new TestParserErrorListener();
 
             IList<LSystem> systems = LoadFromResource(resourceName, errorListner);
