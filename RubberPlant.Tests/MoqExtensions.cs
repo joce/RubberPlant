@@ -1,14 +1,24 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections;
 using Moq.Language.Flow;
 
 namespace RubberPlant.Tests
 {
-    // Taken from http://haacked.com/archive/2009/09/29/moq-sequences.aspx/
     public static class MoqExtensions
     {
-        public static void ReturnsInOrder<T, TResult>(this ISetup<T, TResult> setup, params TResult[] results) where T : class
+        // Taken from http://haacked.com/archive/2010/11/24/moq-sequences-revisited.aspx/
+        public static void ReturnsInOrder<T, TResult>(this ISetup<T, TResult> setup, params object[] results) where T : class
         {
-            setup.Returns(new Queue<TResult>(results).Dequeue);
+            var queue = new Queue(results);
+            setup.Returns(() =>
+            {
+                var result = queue.Dequeue();
+                if (result is Exception)
+                {
+                    throw result as Exception;
+                }
+                return (TResult)result;
+            });
         }
     }
 }
