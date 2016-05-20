@@ -79,11 +79,13 @@
     <EmbeddedResource Include="ErrorTestFiles\DuplicateRuleInMultipleBlocks.ls" />
     <EmbeddedResource Include="ErrorTestFiles\AxiomDefinedOutsideRules.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAction.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateActionInMultipleBlocks.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLine.ls" />
     <EmbeddedResource Include="ErrorTestFiles\RuleWithoutAction.ls" />
     <EmbeddedResource Include="ErrorTestFiles\LexerError.ls" />
     <EmbeddedResource Include="ErrorTestFiles\StochasticZeroWeight.ls" />
     <EmbeddedResource Include="ErrorTestFiles\StochasticNegativeWeight.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateActionInMultipleBlocks.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLineAndOther.ls" />
     <None Include="packages.config" />
     <EmbeddedResource Include="ValidTestFiles\SimpleTest.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleDefinitions.ls" />
@@ -93,6 +95,7 @@
     <EmbeddedResource Include="ValidTestFiles\CurlyBracesRule.ls" />
     <EmbeddedResource Include="WarningTestFiles\StochasticRuleLessThanOne.ls" />
     <EmbeddedResource Include="WarningTestFiles\StochasticRuleMoreThanOne.ls" />
+    <EmbeddedResource Include="ValidTestFiles\MultiActionOneLine.ls" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\RubberPlant.csproj">

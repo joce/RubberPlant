@@ -35,7 +35,6 @@ namespace RubberPlant
                 systems = LSystemParser.ParseStream(fs, errorListener);
             }
 
-
             foreach (var system in systems)
             {
                 var t = new Turtle

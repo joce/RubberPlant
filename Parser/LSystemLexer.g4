@@ -8,7 +8,7 @@ LSYSTEM : 'lsystem' ;
 // Keywords
 ANGLE : 'angle' ;
 AXIOM : 'axiom' ;
-// IGNOTE : 'ignore' ; // for later
+// IGNORE : 'ignore' ; // for later
 RULES : 'rules' ;
 // LET : 'let' ;               // for later
 VOCABULARY : 'vocabulary' ;
@@ -23,15 +23,16 @@ ACTION_DEFINER : ':' ;
 OPEN_BRACE : '{' ;
 CLOSE_BRACE : '}' ;
 EQUALS : '=' ;
+SEPARATOR : ',' ;
 
 SEMI_COLON : ';' ;
+
+// Rule name (single char)
+RULE_ID : [A-Za-z] ;
 
 NUMBER : '-'? INT '.' INT EXP? // 1.35, 1.35E-9, 0.3, -4.5
        | '-'? INT EXP // 1e10 -3e4
        | '-'? INT ; // -3, 45
-
-// Rule name (single char)
-RULE_ID : [A-Za-z] ;
 
 ID_NAME : ID_LETTER (ID_LETTER | DIGIT)* ;
 

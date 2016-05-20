@@ -171,15 +171,38 @@ namespace RubberPlant
 
         public override double VisitAction_stmt(LSystemParser.Action_stmtContext ctx)
         {
-            var rule = new IDAtom(ctx.RULE_ID().GetText()[0]);
+            var rules = ctx.RULE_ID().Select(r => r.GetText()[0]).ToArray();
 
-            if (m_currentLSystem.Vocabulary.ContainsKey(rule))
+            HashSet<char> extraDefined = new HashSet<char>();
+
+            foreach (var extra in rules.GroupBy(c => c, (c, g) => new {cnt = g.Count(), val = c}).Where(v => v.cnt > 1).Select(v => v.val))
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has action defined for rule {1} more than once.", m_currentLSystem.Name, rule.RuleName));
+                extraDefined.Add(extra);
+            }
+
+            rules = rules.Distinct().ToArray();
+
+            foreach (var rule in rules)
+            {
+                if (m_currentLSystem.Vocabulary.ContainsKey(rule))
+                {
+                    extraDefined.Add(rule);
+                }
+            }
+
+            if (extraDefined.Any())
+            {
+                foreach (var rule in extraDefined)
+                {
+                    m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has action defined for rule {1} more than once.", m_currentLSystem.Name, rule));
+                }
                 return 0;
             }
 
-            m_currentLSystem.Vocabulary[rule] = ctx.ACTION().GetText().ToCommand();
+            foreach (var rule in rules)
+            {
+                m_currentLSystem.Vocabulary[rule] = ctx.ACTION().GetText().ToCommand();
+            }
 
             return VisitChildren(ctx);
         }

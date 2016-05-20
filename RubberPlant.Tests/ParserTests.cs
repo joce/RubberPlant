@@ -33,6 +33,24 @@ namespace RubberPlant.Tests
             Assert.AreEqual(0, errorListner.SyntaxErrorCount);
         }
 
+        [TestCase("MultipleVocabularyBlocks.ls", 3)]
+        [TestCase("MultiActionOneLine.ls", 4)]
+        public void ActionsCanBeDefinedInMultipleWays(string testName, int vocabularyCount)
+        {
+            var resourceName = "RubberPlant.Tests.ValidTestFiles." + testName;
+            var errorListner = new TestParserErrorListener();
+
+            IList<LSystem> systems = LoadFromResource(resourceName, errorListner);
+            Assert.AreEqual(1, systems.Count);
+
+            Assert.AreEqual(vocabularyCount, systems[0].Vocabulary.Count);
+
+            Assert.AreEqual(0, errorListner.VisitInfoCount);
+            Assert.AreEqual(0, errorListner.VisitWarningCount);
+            Assert.AreEqual(0, errorListner.VisitErrorCount);
+            Assert.AreEqual(0, errorListner.SyntaxErrorCount);
+        }
+
         // Syntax errors
         [TestCase("UnnamedLSystem.ls", 0, 1)]
         [TestCase("AxiomDefinedOutsideRules.ls", 0, 1)]
@@ -40,6 +58,8 @@ namespace RubberPlant.Tests
         // Sementic errors
         [TestCase("DuplicateAction.ls", 1, 0)]
         [TestCase("DuplicateActionInMultipleBlocks.ls", 1, 0)]
+        [TestCase("DuplicateActionOnSingleLine.ls", 1, 0)]
+        [TestCase("DuplicateActionOnSingleLineAndOther.ls", 1, 0)]
         [TestCase("DuplicateAngle.ls", 1, 0)]
         [TestCase("DuplicateAxiom.ls", 1, 0)]
         [TestCase("DuplicateRule.ls", 1, 0)]
@@ -87,23 +107,6 @@ namespace RubberPlant.Tests
             Assert.AreEqual(1, systems.Count);
 
             Assert.AreEqual(3, systems[0].Rules.Count);
-
-            Assert.AreEqual(0, errorListner.VisitInfoCount);
-            Assert.AreEqual(0, errorListner.VisitWarningCount);
-            Assert.AreEqual(0, errorListner.VisitErrorCount);
-            Assert.AreEqual(0, errorListner.SyntaxErrorCount);
-        }
-
-        [Test]
-        public void ActionsDefinedInMultipleBlocksAreOK()
-        {
-            var resourceName = "RubberPlant.Tests.ValidTestFiles.MultipleVocabularyBlocks.ls";
-            var errorListner = new TestParserErrorListener();
-
-            IList<LSystem> systems = LoadFromResource(resourceName, errorListner);
-            Assert.AreEqual(1, systems.Count);
-
-            Assert.AreEqual(3, systems[0].Vocabulary.Count);
 
             Assert.AreEqual(0, errorListner.VisitInfoCount);
             Assert.AreEqual(0, errorListner.VisitWarningCount);

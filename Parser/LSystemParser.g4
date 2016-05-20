@@ -1,3 +1,5 @@
+// Parser heavily inspired from Jonathan Feinberg's work on javalin (https://github.com/jdf/javalin)
+
 parser grammar LSystemParser;
 
 options {
@@ -17,7 +19,7 @@ angle_stmt : ANGLE '=' NUMBER SEMI_COLON ;
 vocabulary_stmt : VOCABULARY '{' action_stmt* '}' ;
 
 // TODO allow multiple rules on single line, e.g. "A, B, C, D : draw;" or "f, h, y, z : move;"
-action_stmt : RULE_ID ':' ACTION SEMI_COLON ;
+action_stmt : RULE_ID (SEPARATOR RULE_ID)* ':' ACTION SEMI_COLON ;
 
 rules_stmt : RULES '{' (stochastic_rule_stmt | rule_stmt | axiom_stmt)* '}' ;
 
