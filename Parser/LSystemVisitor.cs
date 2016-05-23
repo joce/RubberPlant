@@ -116,18 +116,14 @@ namespace RubberPlant
                 return 0;
             }
 
+            // Check if the weights add up to 1.0 precisely. If not, no sweat. We will normalize.
             float totalWeight = m_currentStochasticRule.Select(r => r.Item1).Sum();
             // ReSharper disable once CompareOfFloatsByEqualityOperator
             if (totalWeight != 1.0f)
             {
                 m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, idAtom.RuleName));
 
-                var normalizedStochasticRule = new List<Tuple<float, List<Atom>>>();
-                foreach (var subrule in m_currentStochasticRule)
-                {
-                    normalizedStochasticRule.Add(new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)); ;
-                }
-                m_currentStochasticRule = normalizedStochasticRule;
+                m_currentStochasticRule = m_currentStochasticRule.Select(subrule => new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)).ToList();
             }
 
             m_currentLSystem.StochasticRules[idAtom] = m_currentStochasticRule;
@@ -138,6 +134,8 @@ namespace RubberPlant
         public override double VisitStochastic_subrule_stmt(LSystemParser.Stochastic_subrule_stmtContext ctx)
         {
             float weight = float.Parse(ctx.NUMBER().GetText());
+
+            // Weight of a stochastic rule can't be 0 or negative. That would make no sense.
             if (weight <= 0)
             {
                 m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} stochastic rule {1} has negative or zero value ({2}). This makes no sense.", m_currentLSystem.Name, m_currentlRuleName, weight));
@@ -175,6 +173,7 @@ namespace RubberPlant
 
             HashSet<char> extraDefined = new HashSet<char>();
 
+            // Check for duplicates in the current list.
             foreach (var extra in rules.GroupBy(c => c, (c, g) => new {cnt = g.Count(), val = c}).Where(v => v.cnt > 1).Select(v => v.val))
             {
                 extraDefined.Add(extra);
@@ -184,6 +183,7 @@ namespace RubberPlant
 
             foreach (var rule in rules)
             {
+                // Check for duplicates elsewhere in the vocabulary.
                 if (m_currentLSystem.Vocabulary.ContainsKey(rule))
                 {
                     extraDefined.Add(rule);
@@ -212,18 +212,22 @@ namespace RubberPlant
             // TODO Need to check for "orphan" rules and warn about them (warning, set to NOP).
 
             // TODO Need to check for "semi- orphan" rules (rules used only within themselves) and warn about them (info, strip rules).
+
+            // No axiom is bad.
             if (!m_hasAxiom)
             {
                 m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has no defined axiom and therefore can't be loaded.", m_currentLSystem.Name));
                 return false;
             }
 
+            // No angle... we can kinda deal with that.
             if (!m_hasAngle)
             {
                 m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} has no defined angle. Defaulting to 90 degrees.", m_currentLSystem.Name));
                 m_currentLSystem.Angle = 90;
             }
 
+            // Rules without actions defined in the vocabulary will be set to NOP.
             var rulesWithoutActions = m_usedRules.Except(m_currentLSystem.Vocabulary.Keys).ToArray();
             if (rulesWithoutActions.Length > 0)
             {
