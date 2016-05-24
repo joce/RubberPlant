@@ -1,16 +1,5 @@
-/code/RubberPlant/bin/Debug
-/code/RubberPlant/obj/Debug
-/code/RubberPlant.App/bin/Debug
-/code/RubberPlant.App/obj/Debug
-/code/RubberPlant.Tests/bin/Debug
-/code/RubberPlant.Tests/obj/Debug
-
-/code/RubberPlant/bin/Release
-/code/RubberPlant/obj/Release
-/code/RubberPlant.App/bin/Release
-/code/RubberPlant.App/obj/Release
-/code/RubberPlant.Tests/bin/Release
-/code/RubberPlant.Tests/obj/Release
+/bin
+/obj
 
 /code/packages
 
