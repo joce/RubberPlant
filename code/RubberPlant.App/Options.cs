@@ -1,6 +1,6 @@
 ﻿using CommandLine;
 
-namespace RubberPlant
+namespace RubberPlant.App
 {
     class Options
     {

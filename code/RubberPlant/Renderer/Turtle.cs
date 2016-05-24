@@ -5,7 +5,7 @@ using System.Numerics;
 
 namespace RubberPlant
 {
-    class Turtle
+    public class Turtle
     {
         public IRenderer Renderer { get; set; }
 

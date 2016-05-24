@@ -7,13 +7,13 @@ using System.Text;
 
 namespace RubberPlant
 {
-    enum SVGRenderTechnique
+    public enum SVGRenderTechnique
     {
         Lines,
         Path
     }
 
-    class SVGRenderer : IRenderer
+    public class SVGRenderer : IRenderer
     {
         public SVGRenderTechnique Technique { get; set; }
 

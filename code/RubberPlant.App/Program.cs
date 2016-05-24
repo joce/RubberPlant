@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using CommandLine;
 
-namespace RubberPlant
+namespace RubberPlant.App
 {
     class Program
     {
