@@ -92,7 +92,6 @@
     <Compile Include="Renderer\Turtle.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="App.config" />
     <Antlr4 Include="Parser\LSystemLexer.g4">
       <Generator>MSBuild:Compile</Generator>
       <CustomToolNamespace>RubberPlant</CustomToolNamespace>
