@@ -1,5 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\packages\Antlr4.4.5-alpha003\build\Antlr4.props" Condition="Exists('..\packages\Antlr4.4.5-alpha003\build\Antlr4.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -17,6 +18,8 @@
     <IsCodedUITest>False</IsCodedUITest>
     <TestProjectType>UnitTest</TestProjectType>
     <TargetFrameworkProfile />
+    <NuGetPackageImportStamp>
+    </NuGetPackageImportStamp>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -42,8 +45,8 @@
       <HintPath>..\packages\Antlr4.Runtime.4.5-alpha003\lib\net45\Antlr4.Runtime.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="Moq, Version=4.2.1510.2205, Culture=neutral, PublicKeyToken=69f491c39445e920, processorArchitecture=MSIL">
-      <HintPath>..\packages\Moq.4.2.1510.2205\lib\net40\Moq.dll</HintPath>
+    <Reference Include="Moq, Version=4.5.9.0, Culture=neutral, PublicKeyToken=69f491c39445e920, processorArchitecture=MSIL">
+      <HintPath>..\packages\Moq.4.5.9-alpha\lib\net45\Moq.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="nunit.framework, Version=3.2.1.0, Culture=neutral, PublicKeyToken=2638cd05610744eb, processorArchitecture=MSIL">
@@ -70,38 +73,40 @@
     <Compile Include="TurtleTests.cs" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="ErrorTestFiles\UnnamedLSystem.ls" />
-    <EmbeddedResource Include="WarningTestFiles\MissingAngle.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\MissingAxiom.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateRule.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateAxiom.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateAngle.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateRuleInMultipleBlocks.ls" />
     <EmbeddedResource Include="ErrorTestFiles\AxiomDefinedOutsideRules.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAction.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLine.ls" />
-    <EmbeddedResource Include="WarningTestFiles\RuleWithoutAction.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\LexerError.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\StochasticZeroWeight.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\StochasticNegativeWeight.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateActionInMultipleBlocks.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLine.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLineAndOther.ls" />
-    <None Include="packages.config" />
-    <EmbeddedResource Include="ValidTestFiles\SimpleTest.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateAngle.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateAxiom.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateRule.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\DuplicateRuleInMultipleBlocks.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\LexerError.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\MissingAxiom.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\StochasticNegativeWeight.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\StochasticZeroWeight.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\UnnamedLSystem.ls" />
+    <EmbeddedResource Include="ValidTestFiles\CurlyBracesRule.ls" />
+    <EmbeddedResource Include="ValidTestFiles\MultiActionOneLine.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleDefinitions.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleRuleBlocks.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleVocabularyBlocks.ls" />
+    <EmbeddedResource Include="ValidTestFiles\SimpleTest.ls" />
     <EmbeddedResource Include="ValidTestFiles\StochasticRule.ls" />
-    <EmbeddedResource Include="ValidTestFiles\CurlyBracesRule.ls" />
+    <EmbeddedResource Include="WarningTestFiles\MissingAngle.ls" />
+    <EmbeddedResource Include="WarningTestFiles\RuleWithoutAction.ls" />
     <EmbeddedResource Include="WarningTestFiles\StochasticRuleLessThanOne.ls" />
     <EmbeddedResource Include="WarningTestFiles\StochasticRuleMoreThanOne.ls" />
-    <EmbeddedResource Include="ValidTestFiles\MultiActionOneLine.ls" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\RubberPlant.csproj">
+    <ProjectReference Include="..\RubberPlant\RubberPlant.csproj">
       <Project>{8adb7f89-25da-4ad4-b3e0-7f3bad001ba6}</Project>
       <Name>RubberPlant</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Choose>
     <When Condition="'$(VisualStudioVersion)' == '10.0' And '$(IsCodedUITest)' == 'True'">
@@ -127,7 +132,15 @@
     <PostBuildEvent>
     </PostBuildEvent>
   </PropertyGroup>
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\Antlr4.4.5-alpha003\build\Antlr4.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Antlr4.4.5-alpha003\build\Antlr4.props'))" />
+    <Error Condition="!Exists('..\packages\Antlr4.4.5-alpha003\build\Antlr4.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Antlr4.4.5-alpha003\build\Antlr4.targets'))" />
+  </Target>
+  <Import Project="..\packages\Antlr4.4.5-alpha003\build\Antlr4.targets" Condition="Exists('..\packages\Antlr4.4.5-alpha003\build\Antlr4.targets')" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">
   </Target>
