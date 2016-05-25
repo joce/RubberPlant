@@ -40,52 +40,58 @@ namespace RubberPlant
 
         public void EndRender()
         {
-            // TODO Handle empty list of lines
-            var allPoints = m_linesList.Select(t=>t.Item1).Concat(m_linesList.Select(t=>t.Item2)).ToArray();
-            var maxX = allPoints.Max(v => v.X);
-            var minX = allPoints.Min(v => v.X);
-            var maxY = allPoints.Max(v => v.Y);
-            var minY = allPoints.Min(v => v.Y);
-
-            float adjX = 0;
-            float adjY = 0;
-
-            if (minX < 0)
-            {
-                adjX = -minX;
-            }
-
-            if (minY < 0)
-            {
-                adjY = -minY;
-            }
-
-            adjX += m_strokeWidth;
-            adjY += m_strokeWidth;
-
-            maxX += (adjX + m_strokeWidth);
-            maxY += (adjY + m_strokeWidth);
-
-            maxX = (float)Math.Ceiling(maxX);
-            maxY = (float) Math.Ceiling(maxY);
-
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>");
-            sb.AppendLine("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"");
-            sb.AppendLine("    \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">");
-            sb.AppendFormat("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{0}\" height=\"{1}\">\n", maxX, maxY);
-            sb.AppendFormat("  <desc>{0} LSystem</desc>\n", m_lsysName);
-            sb.AppendFormat("  <g stroke=\"black\" fill=\"none\" stroke-width=\"{0}\">\n", m_strokeWidth);
-            if (Technique == SVGRenderTechnique.Lines)
+
+            if (!m_linesList.Any())
             {
-                RenderLines(sb, adjX, adjY);
+                OutputHeader(sb, 400, 400);
+                sb.AppendFormat("    <text x=\"25\" y=\"25\">Huh ho... Empty LSystem!!</text>\n");
+                OutputFooter(sb);
             }
             else
             {
-                RenderPath(sb, adjX, adjY);
+                var allPoints = m_linesList.Select(t => t.Item1).Concat(m_linesList.Select(t => t.Item2)).ToArray();
+
+                var maxX = allPoints.Max(v => v.X);
+                var minX = allPoints.Min(v => v.X);
+                var maxY = allPoints.Max(v => v.Y);
+                var minY = allPoints.Min(v => v.Y);
+
+                float adjX = 0;
+                float adjY = 0;
+
+                if (minX < 0)
+                {
+                    adjX = -minX;
+                }
+
+                if (minY < 0)
+                {
+                    adjY = -minY;
+                }
+
+                adjX += m_strokeWidth;
+                adjY += m_strokeWidth;
+
+                maxX += (adjX + m_strokeWidth);
+                maxY += (adjY + m_strokeWidth);
+
+                maxX = (float)Math.Ceiling(maxX);
+                maxY = (float)Math.Ceiling(maxY);
+
+                OutputHeader(sb, maxX, maxY);
+                sb.AppendFormat("  <g stroke=\"black\" fill=\"none\" stroke-width=\"{0}\">\n", m_strokeWidth);
+                if (Technique == SVGRenderTechnique.Lines)
+                {
+                    RenderLines(sb, adjX, adjY);
+                }
+                else
+                {
+                    RenderPath(sb, adjX, adjY);
+                }
+                sb.AppendLine("  </g>");
+                OutputFooter(sb);
             }
-            sb.AppendLine("  </g>");
-            sb.AppendLine("</svg>");
 
             using (var fs = new StreamWriter(Path.Combine(m_outputDir, m_lsysName+".svg")))
             {
@@ -121,6 +127,20 @@ namespace RubberPlant
                 previous = p2;
             }
             sb.AppendLine("\" />");
+        }
+
+        private void OutputHeader(StringBuilder sb, float maxX, float maxY)
+        {
+            sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>");
+            sb.AppendLine("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"");
+            sb.AppendLine("    \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">");
+            sb.AppendFormat("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{0}\" height=\"{1}\">\n", maxX, maxY);
+            sb.AppendFormat("  <desc>{0} LSystem</desc>\n", m_lsysName);
+        }
+
+        private void OutputFooter(StringBuilder sb)
+        {
+            sb.AppendLine("</svg>");
         }
     }
 }
