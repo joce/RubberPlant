@@ -112,6 +112,7 @@ namespace RubberPlant
         private void RenderPath(StringBuilder sb, float adjX, float adjY)
         {
             Vector3 previous = new Vector3(float.MinValue, float.MinValue, 0);
+            Vector3 firstOfPath = new Vector3(float.MaxValue, float.MaxValue, 0);
             sb.Append("    <path d=\"");
             foreach (var line in m_linesList)
             {
@@ -124,9 +125,19 @@ namespace RubberPlant
                 }
                 else
                 {
+                    if (previous == firstOfPath)
+                    {
+                        sb.Append("Z ");
+                    }
+                    firstOfPath = p1;
                     sb.AppendFormat("M {0} {1} L {2} {3} ", p1.X + adjX, p1.Y + adjY, p2.X + adjX, p2.Y + adjY);
                 }
                 previous = p2;
+            }
+
+            if (previous == firstOfPath)
+            {
+                sb.Append("Z ");
             }
             sb.AppendLine("\" />");
         }
