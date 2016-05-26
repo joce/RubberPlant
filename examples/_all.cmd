@@ -4,6 +4,7 @@
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l5 -r6 hilbert.ls
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l5 -r2 islandsAndLakes.ls
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l5 -r3 kochIsland.ls
+..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l2 -r5 kochSnowflake.ls
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l6 -r4 kochTri.ls
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l15 -r5 penrose.ls
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l2 -r5 plant_a.ls
