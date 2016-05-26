@@ -45,7 +45,6 @@ namespace RubberPlant
             if (!m_linesList.Any())
             {
                 OutputHeader(sb, 400, 400);
-                sb.AppendFormat("    <rect width=\"100%\" height=\"100%\" style=\"fill: white\"/>\n");
                 sb.AppendFormat("    <text x=\"25\" y=\"25\" fill=\"black\">Huh ho... Empty LSystem!!</text>\n");
                 OutputFooter(sb);
             }
@@ -81,7 +80,6 @@ namespace RubberPlant
                 maxY = (float)Math.Ceiling(maxY);
 
                 OutputHeader(sb, maxX, maxY);
-                sb.AppendFormat("  <rect width=\"100%\" height=\"100%\" style=\"fill: white\"/>\n");
                 sb.AppendFormat("  <g stroke=\"black\" fill=\"none\" stroke-width=\"{0}\">\n", m_strokeWidth);
                 if (Technique == SVGRenderTechnique.Lines)
                 {
@@ -149,6 +147,7 @@ namespace RubberPlant
             sb.AppendLine("    \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">");
             sb.AppendFormat("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{0}\" height=\"{1}\">\n", maxX, maxY);
             sb.AppendFormat("  <desc>{0} LSystem</desc>\n", m_lsysName);
+            sb.AppendFormat("  <rect width=\"100%\" height=\"100%\" style=\"fill: white\"/>\n");
         }
 
         private void OutputFooter(StringBuilder sb)
