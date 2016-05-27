@@ -31,8 +31,4 @@ stochastic_subrule_stmt : NUMBER '->' prod_rule SEMI_COLON_END_RULE ;
 
 rule_stmt : RULE_ID '->' prod_rule SEMI_COLON_END_RULE ;
 
-prod_rule : rule_atom* ;
-
-rule_atom : RULE_ID_RULE_MODE
-          | TURTLE_CMD ;
-
+prod_rule : RULE_ID_RULE_MODE* ;

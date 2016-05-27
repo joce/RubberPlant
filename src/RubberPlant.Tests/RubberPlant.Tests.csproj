@@ -94,12 +94,14 @@
     <EmbeddedResource Include="ErrorTestFiles\StochasticZeroWeight.ls" />
     <EmbeddedResource Include="ErrorTestFiles\UnnamedLSystem.ls" />
     <EmbeddedResource Include="ValidTestFiles\CurlyBracesRule.ls" />
+    <EmbeddedResource Include="ValidTestFiles\EmptyBodyRule.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultiActionOneLine.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleDefinitions.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleRuleBlocks.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleVocabularyBlocks.ls" />
     <EmbeddedResource Include="ValidTestFiles\SimpleTest.ls" />
     <EmbeddedResource Include="ValidTestFiles\StochasticRule.ls" />
+    <EmbeddedResource Include="ValidTestFiles\TurtleCommandsAsRuleName.ls" />
     <EmbeddedResource Include="WarningTestFiles\MissingAngle.ls" />
     <EmbeddedResource Include="WarningTestFiles\RuleWithoutAction.ls" />
     <EmbeddedResource Include="WarningTestFiles\StochasticRuleLessThanOne.ls" />

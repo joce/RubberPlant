@@ -28,7 +28,8 @@ SEPARATOR : ',' ;
 SEMI_COLON : ';' ;
 
 // Rule name (single char)
-RULE_ID : [A-Za-z] ;
+RULE_ID : [A-Za-z]
+        | TURTLE_CMD;
 
 NUMBER : '-'? INT '.' INT EXP? // 1.35, 1.35E-9, 0.3, -4.5
        | '-'? INT EXP // 1e10 -3e4
@@ -60,6 +61,25 @@ fragment TURN_AROUND : '|' ;
 fragment TURN_LEFT : '+' ;
 fragment TURN_RIGHT : '-' ;
 
+fragment TURTLE_CMD : CUT_OFF_BRANCH
+                    | DECR_DIAMETER
+                    | END_BRANCH
+                    | END_POLY
+                    | INCR_COLOR_IDX
+                    | PITCH_UP
+                    | PITCH_DOWN
+                    | PREDEFINED_SURF
+                    | ROLL_LEFT
+                    | ROLL_RIGHT
+                    | RECORD_VERTEX
+                    | ROTATE_TO_VERTICAL
+                    | START_BRANCH
+                    | START_POLY
+                    | TURN_AROUND
+                    | TURN_LEFT
+                    | TURN_RIGHT ;
+
+
 // Actions keywords
 fragment DRAW : 'draw' ;
 fragment MOVE : 'move' ;
@@ -76,24 +96,6 @@ WS : [ \r\n\t]+ -> skip ;
 mode RULE_MODE ;
 
 RULE_ID_RULE_MODE : RULE_ID ;
-
-TURTLE_CMD : CUT_OFF_BRANCH
-           | DECR_DIAMETER
-           | END_BRANCH
-           | END_POLY
-           | INCR_COLOR_IDX
-           | PITCH_UP
-           | PITCH_DOWN
-           | PREDEFINED_SURF
-           | ROLL_LEFT
-           | ROLL_RIGHT
-           | RECORD_VERTEX
-           | ROTATE_TO_VERTICAL
-           | START_BRANCH
-           | START_POLY
-           | TURN_AROUND
-           | TURN_LEFT
-           | TURN_RIGHT ;
 
 STOCHASTIC_SEP : ',' -> popMode ;
 SEMI_COLON_END_RULE : ';' -> popMode;

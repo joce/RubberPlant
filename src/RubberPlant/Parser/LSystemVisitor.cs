@@ -70,7 +70,6 @@ namespace RubberPlant
                 return 0;
             }
 
-            m_currentRuleBody = new List<Atom>();
             VisitChildren(ctx);
             if (m_currentRuleBody.Count > 0)
             {
@@ -90,7 +89,7 @@ namespace RubberPlant
                 m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, atom.RuleName));
                 return 0;
             }
-            m_currentRuleBody = new List<Atom>();
+
             VisitChildren(ctx);
 
             m_currentRule = new Rule {RuleID = atom};
@@ -144,8 +143,6 @@ namespace RubberPlant
                 return 0;
             }
 
-            m_currentRuleBody = new List<Atom>();
-
             VisitChildren(ctx);
 
             m_currentRule.AddBody(m_currentRuleBody, weight);
@@ -153,17 +150,15 @@ namespace RubberPlant
             return 0;
         }
 
-        public override double VisitRule_atom(LSystemParser.Rule_atomContext ctx)
+        public override double VisitProd_rule(LSystemParser.Prod_ruleContext ctx)
         {
             if (ctx.RULE_ID_RULE_MODE() != null)
             {
-                var atom = new Atom(ctx.RULE_ID_RULE_MODE().GetText()[0]);
-                m_currentRuleBody.Add(atom);
-                m_usedRules.Add(atom);
-            }
-            else
-            {
-                m_currentRuleBody.Add(new Atom(ctx.TURTLE_CMD().GetText()[0]));
+                m_currentRuleBody = ctx.RULE_ID_RULE_MODE().Select(r => new Atom(r.GetText()[0])).ToList();
+                foreach (var atom in m_currentRuleBody)
+                {
+                    m_usedRules.Add(atom);
+                }
             }
 
             return VisitChildren(ctx);

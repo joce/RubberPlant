@@ -12,6 +12,8 @@ namespace RubberPlant.Tests
 
         [TestCase("SimpleTest.ls", 1)]
         [TestCase("MultipleDefinitions.ls", 2)]
+        [TestCase("EmptyBodyRule.ls", 1)]
+        [TestCase("TurtleCommandsAsRuleName.ls", 1)]
         public void ValidFilesLoadProperly(string testName, int lSystemCount)
         {
             var resourceName = "RubberPlant.Tests.ValidTestFiles." + testName;
