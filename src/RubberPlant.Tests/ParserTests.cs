@@ -113,7 +113,7 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors();
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(new List<Atom> {'{', 'F', '-', 'F', '}'}, systems[0].Rules['F']);
+            Assert.AreEqual(new List<Atom> {'{', 'F', '-', 'F', '}'}, systems[0].GetRule('F').Body);
         }
 
         [Test]
@@ -124,11 +124,10 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors();
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(0, systems[0].Rules.Count);
-            Assert.AreEqual(1, systems[0].StochasticRules.Count);
-            Assert.AreEqual(2, systems[0].StochasticRules['F'].Count);
-            Assert.That(0.3, Is.EqualTo(systems[0].StochasticRules['F'][0].Item1).Within(0.00001));
-            Assert.That(0.7, Is.EqualTo(systems[0].StochasticRules['F'][1].Item1).Within(0.00001));
+            Assert.AreEqual(1, systems[0].Rules.Count);
+            Assert.AreEqual(2, systems[0].GetRule('F').BodyCount);
+            Assert.That(0.3, Is.EqualTo(systems[0].GetRule('F')[0].Item1).Within(0.00001));
+            Assert.That(0.7, Is.EqualTo(systems[0].GetRule('F')[1].Item1).Within(0.00001));
         }
 
         [Test]
@@ -139,8 +138,8 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors(warningCount: 1);
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(0.5, systems[0].StochasticRules['F'][0].Item1);
-            Assert.AreEqual(0.5, systems[0].StochasticRules['F'][1].Item1);
+            Assert.AreEqual(0.5, systems[0].GetRule('F')[0].Item1);
+            Assert.AreEqual(0.5, systems[0].GetRule('F')[1].Item1);
         }
 
         [Test]
@@ -151,9 +150,9 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors(warningCount: 1);
             Assert.AreEqual(1, systems.Count);
-            Assert.That(0.33333, Is.EqualTo(systems[0].StochasticRules['F'][0].Item1).Within(0.00001));
-            Assert.That(0.33333, Is.EqualTo(systems[0].StochasticRules['F'][1].Item1).Within(0.00001));
-            Assert.That(0.33333, Is.EqualTo(systems[0].StochasticRules['F'][2].Item1).Within(0.00001));
+            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule('F')[0].Item1).Within(0.00001));
+            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule('F')[1].Item1).Within(0.00001));
+            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule('F')[2].Item1).Within(0.00001));
         }
 
         private IList<LSystem> LoadFromResource(string resourceName)

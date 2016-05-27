@@ -10,8 +10,9 @@ namespace RubberPlant
         public List<LSystem> AllLSystems { get; }
 
         private LSystem m_currentLSystem;
-        private List<Atom> m_currentRule;
-        private List<Tuple<float, List<Atom>>> m_currentStochasticRule;
+
+        private List<Atom> m_currentRuleBody;
+        private Rule m_currentRule;
         private HashSet<IDAtom> m_usedRules;
         private char m_currentlRuleName;
 
@@ -70,10 +71,12 @@ namespace RubberPlant
                 return 0;
             }
 
-            m_currentRule = new List<Atom>();
+            m_currentRuleBody = new List<Atom>();
             VisitChildren(ctx);
-            if (m_currentRule.Count > 0)
+            if (m_currentRuleBody.Count > 0)
             {
+                m_currentRule = new Rule();
+                m_currentRule.AddBody(m_currentRuleBody);
                 m_currentLSystem.Axiom = m_currentRule;
                 m_hasAxiom = true;
             }
@@ -88,10 +91,12 @@ namespace RubberPlant
                 m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, idAtom.RuleName));
                 return 0;
             }
-            m_currentRule = new List<Atom>();
+            m_currentRuleBody = new List<Atom>();
             VisitChildren(ctx);
 
-            m_currentLSystem.Rules[idAtom] = m_currentRule;
+            m_currentRule = new Rule {RuleID = idAtom};
+            m_currentRule.AddBody(m_currentRuleBody);
+            m_currentLSystem.Rules.Add(m_currentRule);
 
             return 0;
         }
@@ -105,7 +110,7 @@ namespace RubberPlant
                 return 0;
             }
 
-            m_currentStochasticRule = new List<Tuple<float, List<Atom>>>();
+            m_currentRule = new Rule {RuleID = idAtom};
             m_currentlRuleName = idAtom.RuleName;
 
             VisitChildren(ctx);
@@ -117,16 +122,14 @@ namespace RubberPlant
             }
 
             // Check if the weights add up to 1.0 precisely. If not, no sweat. We will normalize.
-            float totalWeight = m_currentStochasticRule.Select(r => r.Item1).Sum();
             // ReSharper disable once CompareOfFloatsByEqualityOperator
-            if (totalWeight != 1.0f)
+            if (m_currentRule.TotalWeight != 1.0f)
             {
                 m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, idAtom.RuleName));
-
-                m_currentStochasticRule = m_currentStochasticRule.Select(subrule => new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)).ToList();
+                m_currentRule.NormalizeWeights();
             }
 
-            m_currentLSystem.StochasticRules[idAtom] = m_currentStochasticRule;
+            m_currentLSystem.Rules.Add(m_currentRule);
 
             return 0;
         }
@@ -142,11 +145,11 @@ namespace RubberPlant
                 return 0;
             }
 
-            m_currentRule = new List<Atom>();
+            m_currentRuleBody = new List<Atom>();
 
             VisitChildren(ctx);
 
-            m_currentStochasticRule.Add(new Tuple<float, List<Atom>>(weight, m_currentRule));
+            m_currentRule.AddBody(m_currentRuleBody, weight);
 
             return 0;
         }
@@ -156,12 +159,12 @@ namespace RubberPlant
             if (ctx.RULE_ID_RULE_MODE() != null)
             {
                 var atom = new IDAtom(ctx.RULE_ID_RULE_MODE().GetText()[0]);
-                m_currentRule.Add(atom);
+                m_currentRuleBody.Add(atom);
                 m_usedRules.Add(atom);
             }
             else
             {
-                m_currentRule.Add(new TurtleAtom(ctx.TURTLE_CMD().GetText()[0]));
+                m_currentRuleBody.Add(new TurtleAtom(ctx.TURTLE_CMD().GetText()[0]));
             }
 
             return VisitChildren(ctx);

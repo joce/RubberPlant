@@ -61,9 +61,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="LSystem\Context.cs" />
     <Compile Include="LSystem\IDAtom.cs" />
     <Compile Include="LSystem\IRandom.cs" />
     <Compile Include="LSystem\Random.cs" />
+    <Compile Include="LSystem\Rule.cs" />
     <Compile Include="LSystem\TurtleAtom.cs" />
     <Compile Include="Parser\Error\ConsoleErrorOutput.cs" />
     <Compile Include="Parser\Error\DefaultFormatter.cs" />

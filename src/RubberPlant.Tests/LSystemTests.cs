@@ -11,10 +11,16 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesSimpleOneLevelOneRuleReplacement()
         {
+            var axiom = new Rule();
+            axiom.AddBody(new List<Atom> {'F', '+', 'F', '+', 'F'});
+
+            var rule = new Rule {RuleID = 'F'};
+            rule.AddBody(new List<Atom> {'F', 'F', 'F'});
+
             LSystem lsys = new LSystem
             {
-                Axiom = new List<Atom> {'F', '+', 'F', '+', 'F'},
-                Rules = {['F'] = new List<Atom> {'F', 'F', 'F'}},
+                Axiom = axiom,
+                Rules = new List<Rule> {rule},
                 Vocabulary = {['F'] = TurtleCommand.Draw}
             };
 
@@ -33,10 +39,16 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesOneLevelOneRuleReplacement()
         {
+            var axiom = new Rule();
+            axiom.AddBody(new List<Atom> {'F', '+', 'F', '+', 'F'});
+
+            var rule = new Rule {RuleID = 'F'};
+            rule.AddBody(new List<Atom> {'F', '-', 'f'});
+
             LSystem lsys = new LSystem
             {
-                Axiom = new List<Atom> {'F', '+', 'F', '+', 'F'},
-                Rules = {['F'] = new List<Atom> {'F', '-', 'f'}},
+                Axiom = axiom,
+                Rules = new List<Rule> {rule},
                 Vocabulary =
                 {
                     ['F'] = TurtleCommand.Draw,
@@ -59,15 +71,22 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesOneLevelMultiRuleReplacement()
         {
+            var axiom = new Rule();
+            axiom.AddBody(new List<Atom> {'F', '+', 'A', '+', 'B'});
+
+            var ruleF = new Rule {RuleID = 'F'};
+            ruleF.AddBody(new List<Atom> {'F', '-', 'f'});
+
+            var ruleA = new Rule {RuleID = 'A'};
+            ruleA.AddBody(new List<Atom> {'A', 'B'});
+
+            var ruleB = new Rule {RuleID = 'B', };
+            ruleB.AddBody(new List<Atom> {'F', 'f', 'F'});
+
             LSystem lsys = new LSystem
             {
-                Axiom = new List<Atom> {'F', '+', 'A', '+', 'B'},
-                Rules =
-                {
-                    ['F'] = new List<Atom> {'F', '-', 'f'},
-                    ['A'] = new List<Atom> {'A', 'B'},
-                    ['B'] = new List<Atom> {'F', 'f', 'F'}
-                },
+                Axiom = axiom,
+                Rules = new List<Rule> {ruleF, ruleA, ruleB},
                 Vocabulary =
                 {
                     ['F'] = TurtleCommand.Draw,
@@ -92,10 +111,16 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesSimpleTwoLevelOneRuleReplacement()
         {
+            var axiom = new Rule();
+            axiom.AddBody(new List<Atom> { 'F', '+', 'F', '+', 'F' });
+
+            var rule = new Rule { RuleID = 'F' };
+            rule.AddBody(new List<Atom> {'F', 'F', 'F'});
+
             LSystem lsys = new LSystem
             {
-                Axiom = new List<Atom> {'F', '+', 'F', '+', 'F'},
-                Rules = {['F'] = new List<Atom> {'F', 'F', 'F'}},
+                Axiom = axiom,
+                Rules = new List<Rule> {rule},
                 Vocabulary = {['F'] = TurtleCommand.Draw}
             };
 
@@ -114,10 +139,16 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesTwoLevelOneRuleReplacement()
         {
+            var axiom = new Rule();
+            axiom.AddBody(new List<Atom> { 'F', '+', 'F', '+', 'F' });
+
+            var rule = new Rule { RuleID = 'F' };
+            rule.AddBody(new List<Atom> {'F', '-', 'f'});
+
             LSystem lsys = new LSystem
             {
-                Axiom = new List<Atom> {'F', '+', 'F', '+', 'F'},
-                Rules = {['F'] = new List<Atom> {'F', '-', 'f'}},
+                Axiom = axiom,
+                Rules = new List<Rule> {rule},
                 Vocabulary =
                 {
                     ['F'] = TurtleCommand.Draw,
@@ -140,15 +171,22 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesTwoLevelMultiRuleReplacement()
         {
+            var axiom = new Rule();
+            axiom.AddBody(new List<Atom> { 'F', '+', 'A', '+', 'B' });
+
+            var ruleF = new Rule {RuleID = 'F'};
+            ruleF.AddBody(new List<Atom> {'F', '-', 'f'});
+
+            var ruleA = new Rule {RuleID = 'A'};
+            ruleA.AddBody(new List<Atom> {'A', 'B'});
+
+            var ruleB = new Rule {RuleID = 'B', };
+            ruleB.AddBody(new List<Atom> {'F', 'f', 'F'});
+
             LSystem lsys = new LSystem
             {
-                Axiom = new List<Atom> {'F', '+', 'A', '+', 'B'},
-                Rules =
-                {
-                    ['F'] = new List<Atom> {'F', '-', 'f'},
-                    ['A'] = new List<Atom> {'A', 'B'},
-                    ['B'] = new List<Atom> {'F', 'f', 'F'}
-                },
+                Axiom = axiom,
+                Rules = new List<Rule> {ruleF, ruleA, ruleB},
                 Vocabulary =
                 {
                     ['F'] = TurtleCommand.Draw,
@@ -175,18 +213,18 @@ namespace RubberPlant.Tests
         {
             Mock<IRandom> random = new Mock<IRandom>();
             random.Setup(r => r.NextDouble()).ReturnsInOrder(0.7, 0.2);
+            Rule.Random = random.Object;
+
+            var axiom = new Rule();
+            axiom.AddBody(new List<Atom> { 'F' });
+
+            var rule = new Rule { RuleID = 'F' };
+            rule.AddBody(new List<Atom> {'F', '+', 'F'}, 0.3f);
+            rule.AddBody(new List<Atom> {'-', 'F', '-'}, 0.7f);
             LSystem lsys = new LSystem
             {
-                Axiom = new List<Atom> { 'F' },
-                Random = random.Object,
-                StochasticRules =
-                {
-                    ['F'] = new List<Tuple<float, List<Atom>>>
-                    {
-                        new Tuple<float, List<Atom>>(0.3f, new List<Atom> {'F', '+', 'F'}),
-                        new Tuple<float, List<Atom>>(0.7f, new List<Atom> {'-', 'F', '-'})
-                    }
-                },
+                Axiom = axiom,
+                Rules = new List<Rule> {rule},
                 Vocabulary =
                 {
                     ['F'] = TurtleCommand.Draw,
