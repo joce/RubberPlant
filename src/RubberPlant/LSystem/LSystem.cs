@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 
 namespace RubberPlant
 {
@@ -9,13 +11,29 @@ namespace RubberPlant
         public Rule Axiom { get; set; }
         public double Angle { get; set; }
         public List<Rule> Rules { get; set; }
-        public Dictionary<IDAtom, TurtleCommand> Vocabulary { get; set; }
+        public Dictionary<Atom, TurtleCommand> Vocabulary { get; set; }
+
+        internal static readonly Dictionary<Atom, TurtleCommand> k_implicitTurtleCommands = new Dictionary<Atom, TurtleCommand>();
+
+        static LSystem()
+        {
+            Type t = typeof(TurtleCommand);
+            foreach (TurtleCommand enumVal in Enum.GetValues(typeof(TurtleCommand)))
+            {
+                FieldInfo field = t.GetField(enumVal.ToString());
+                if (field.IsDefined(typeof(CharValueAttribute), false))
+                {
+                    var attr = (CharValueAttribute)t.GetField(enumVal.ToString()).GetCustomAttributes(typeof(CharValueAttribute), false)[0];
+                    k_implicitTurtleCommands[attr.Value] = enumVal;
+                }
+            }
+        }
 
         public LSystem()
         {
             Axiom = new Rule();
             Rules = new List<Rule>();
-            Vocabulary = new Dictionary<IDAtom, TurtleCommand>();
+            Vocabulary = new Dictionary<Atom, TurtleCommand>(k_implicitTurtleCommands);
         }
 
         public bool HasRule(Atom atom)
@@ -59,23 +77,14 @@ namespace RubberPlant
             List<TurtleCommand> res = new List<TurtleCommand>();
             foreach (var atom in atoms)
             {
-                if (atom.GetType() == typeof (TurtleAtom))
+                TurtleCommand command;
+                if (Vocabulary.TryGetValue(atom, out command))
                 {
-                    var turtleAtom = (TurtleAtom) atom;
-                    res.Add(turtleAtom.Command);
+                    res.Add(command);
                 }
-                else if (atom.GetType() == typeof (IDAtom))
+                else
                 {
-                    var idAtom = (IDAtom)atom;
-                    TurtleCommand command;
-                    if (Vocabulary.TryGetValue(idAtom, out command))
-                    {
-                        res.Add(command);
-                    }
-                    else
-                    {
-                        res.Add(TurtleCommand.Nop);
-                    }
+                    res.Add(TurtleCommand.Nop);
                 }
             }
             return res;

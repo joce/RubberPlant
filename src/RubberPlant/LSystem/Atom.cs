@@ -1,20 +1,27 @@
 ﻿namespace RubberPlant
 {
-    public abstract class Atom
+    public class Atom
     {
-        protected bool Equals(Atom other)
+        public char RuleName { get; }
+
+        public Atom(char ruleName)
         {
-            throw new System.NotImplementedException();
+            RuleName = ruleName;
         }
 
         public override bool Equals(object obj)
         {
-            throw new System.NotImplementedException();
+            return obj.GetType() == typeof(Atom) && ((Atom)obj).RuleName == RuleName;
+        }
+
+        protected bool Equals(Atom other)
+        {
+            return RuleName == other.RuleName;
         }
 
         public override int GetHashCode()
         {
-            throw new System.NotImplementedException();
+            return RuleName.GetHashCode();
         }
 
         public static bool operator ==(Atom left, Atom right)
@@ -29,12 +36,7 @@
 
         public static implicit operator Atom(char ruleName)
         {
-            if ((ruleName >= 'a' && ruleName <= 'z') || (ruleName >= 'A' && ruleName <= 'Z'))
-            {
-                return new IDAtom(ruleName);
-            }
-
-            return new TurtleAtom(ruleName);
+            return new Atom(ruleName);
         }
     }
 }

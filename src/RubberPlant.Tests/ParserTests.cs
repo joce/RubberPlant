@@ -31,7 +31,7 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors();
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(vocabularyCount, systems[0].Vocabulary.Count);
+            Assert.AreEqual(vocabularyCount + LSystem.k_implicitTurtleCommands.Count, systems[0].Vocabulary.Count);
         }
 
         // Syntax errors
@@ -81,7 +81,6 @@ namespace RubberPlant.Tests
             Assert.AreEqual(3, systems[0].Rules.Count);
         }
 
-        // TODO
         [Test]
         public void RuleWithoutDefinedActionGeneratesWarning()
         {
@@ -90,15 +89,17 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors(warningCount: 1);
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(2, systems[0].Vocabulary.Count);
+            Assert.AreEqual(2 + LSystem.k_implicitTurtleCommands.Count, systems[0].Vocabulary.Count);
         }
 
+        // TODO
         [Test]
         [Ignore("Info: Rule isn't used anywhere")]
         public void ExtraneousRuleGeneratesInfo()
         {
         }
 
+        // TODO
         [Test]
         [Ignore("Info: Rule is used only within itself")]
         public void RuleUsedJustWithinItselfGeneratesInfo()

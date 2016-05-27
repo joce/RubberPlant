@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
@@ -13,7 +12,7 @@ namespace RubberPlant
 
         private List<Atom> m_currentRuleBody;
         private Rule m_currentRule;
-        private HashSet<IDAtom> m_usedRules;
+        private HashSet<Atom> m_usedRules;
         private char m_currentlRuleName;
 
         // Validation states
@@ -26,13 +25,13 @@ namespace RubberPlant
         {
             AllLSystems = new List<LSystem>();
             m_errorListener = errorListener;
-            m_usedRules = new HashSet<IDAtom>();
+            m_usedRules = new HashSet<Atom>();
         }
 
         public override double VisitLSystem(LSystemParser.LSystemContext ctx)
         {
             m_currentLSystem = new LSystem {Name = ctx.ID_NAME().GetText()};
-            m_usedRules = new HashSet<IDAtom>();
+            m_usedRules = new HashSet<Atom>();
             m_hasAngle = false;
             m_hasAxiom = false;
             VisitChildren(ctx);
@@ -85,16 +84,16 @@ namespace RubberPlant
 
         public override double VisitRule_stmt(LSystemParser.Rule_stmtContext ctx)
         {
-            IDAtom idAtom = new IDAtom(ctx.RULE_ID().GetText()[0]);
-            if (m_currentLSystem.HasRule(idAtom))
+            Atom atom = new Atom(ctx.RULE_ID().GetText()[0]);
+            if (m_currentLSystem.HasRule(atom))
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, idAtom.RuleName));
+                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, atom.RuleName));
                 return 0;
             }
             m_currentRuleBody = new List<Atom>();
             VisitChildren(ctx);
 
-            m_currentRule = new Rule {RuleID = idAtom};
+            m_currentRule = new Rule {RuleID = atom};
             m_currentRule.AddBody(m_currentRuleBody);
             m_currentLSystem.Rules.Add(m_currentRule);
 
@@ -103,15 +102,15 @@ namespace RubberPlant
 
         public override double VisitStochastic_rule_stmt(LSystemParser.Stochastic_rule_stmtContext ctx)
         {
-            IDAtom idAtom = new IDAtom(ctx.RULE_ID().GetText()[0]);
-            if (m_currentLSystem.HasRule(idAtom))
+            Atom atom = new Atom(ctx.RULE_ID().GetText()[0]);
+            if (m_currentLSystem.HasRule(atom))
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, idAtom.RuleName));
+                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, atom.RuleName));
                 return 0;
             }
 
-            m_currentRule = new Rule {RuleID = idAtom};
-            m_currentlRuleName = idAtom.RuleName;
+            m_currentRule = new Rule {RuleID = atom};
+            m_currentlRuleName = atom.RuleName;
 
             VisitChildren(ctx);
 
@@ -125,7 +124,7 @@ namespace RubberPlant
             // ReSharper disable once CompareOfFloatsByEqualityOperator
             if (m_currentRule.TotalWeight != 1.0f)
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, idAtom.RuleName));
+                m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, atom.RuleName));
                 m_currentRule.NormalizeWeights();
             }
 
@@ -158,13 +157,13 @@ namespace RubberPlant
         {
             if (ctx.RULE_ID_RULE_MODE() != null)
             {
-                var atom = new IDAtom(ctx.RULE_ID_RULE_MODE().GetText()[0]);
+                var atom = new Atom(ctx.RULE_ID_RULE_MODE().GetText()[0]);
                 m_currentRuleBody.Add(atom);
                 m_usedRules.Add(atom);
             }
             else
             {
-                m_currentRuleBody.Add(new TurtleAtom(ctx.TURTLE_CMD().GetText()[0]));
+                m_currentRuleBody.Add(new Atom(ctx.TURTLE_CMD().GetText()[0]));
             }
 
             return VisitChildren(ctx);
