@@ -13,6 +13,9 @@ namespace RubberPlant.App
         [Option('o', "output", Required = false, HelpText = "(Default: same as input) Output directory")]
         public string OutputDir { get; set; }
 
+        [Option("force-seed", Required = false, HelpText = "Force-set the seed for the RNG")]
+        public int? ForcedSeed { get; set; }
+
         [Value(0, MetaName = "input file",
             HelpText = "Input file to be processed.",
             Required = true)]

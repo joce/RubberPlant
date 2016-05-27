@@ -14,4 +14,6 @@
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l2 -r7 plant_e.ls
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l5 -r5 plant_f.ls
 ..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l5 -r6 sierpinski.ls
-..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l6 -r5 stochastic.ls
+..\bin\RubberPlant.App\Release\RubberPlant.App.exe -l6 -r5 --force-seed=0 stochastic.ls
+
+pause

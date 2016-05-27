@@ -5,7 +5,7 @@ using CommandLine;
 
 namespace RubberPlant.App
 {
-    class Program
+    internal static class Program
     {
         static void Main(string[] args)
         {
@@ -33,6 +33,11 @@ namespace RubberPlant.App
             {
                 var errorListener = new LSystemErrorListener();
                 systems = LSystemParser.ParseStream(fs, errorListener);
+            }
+
+            if (options.ForcedSeed != null)
+            {
+                Rule.Random = new Random(options.ForcedSeed.Value);
             }
 
             foreach (var system in systems)
