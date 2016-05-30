@@ -1,14 +1,8 @@
 lsystem MissingAxiom
 {
-    angle = -78.432e10;
+    angle : -78.432e10;
 
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        F -> F-F+F++FFFFF-F-F+F ;
-    }
+    r: F -> F-F+F++FFFFF-F-F+F ;
 }

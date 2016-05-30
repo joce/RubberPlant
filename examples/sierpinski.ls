@@ -2,15 +2,11 @@
 
 lsystem sierpinski
 {
-    angle = 60;
-    vocabulary
-    {
-        L, R: draw;
-    }
-    rules
-    {
-        axiom -> R;
-        L -> R+L+R ;
-        R -> L-R-L ;
-    }
+    angle : 60;
+
+    a: L, R -> draw;
+
+    axiom : R;
+    r: L -> R+L+R ;
+    r: R -> L-R-L ;
 }

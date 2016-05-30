@@ -1,15 +1,9 @@
 lsystem CurlyBracesRule
 {
-    angle = 0.2;
+    angle : 0.2;
 
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        axiom -> F ; // Start string
-        F -> {F-F} ;
-    }
+    axiom : F ; // Start string
+    r: F -> {F-F} ;
 }

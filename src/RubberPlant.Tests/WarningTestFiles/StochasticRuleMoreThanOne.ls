@@ -1,19 +1,11 @@
 lsystem StochasticRuleMoreThanOne
 {
-    angle = 90;
+    angle : 90;
 
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        axiom -> F ; // Start string
-        F {
-            1 -> FF ;
-            1 -> +F+F+ ;
-            1 -> -FFF-FF ;
-        }
-    }
+    axiom : F ; // Start string
+    r: F  1 -> FF ,
+          1 -> +F+F+ ,
+          1 -> -FFF-FF ;
 }

@@ -2,17 +2,12 @@
 
 lsystem plant_f
 {
-    angle = 22.5;
-    vocabulary
-    {
-        F: draw;
-        X: nop;
-    }
+    angle : 22.5;
 
-    rules
-    {
-        axiom -> X;
-        X -> F-[[X]+X]+F[+FX]-X ;
-        F -> FF ;
-    }
+    a: F -> draw;
+    a: X -> nop;
+
+    axiom : X;
+    r: X -> F-[[X]+X]+F[+FX]-X ;
+    r: F -> FF ;
 }

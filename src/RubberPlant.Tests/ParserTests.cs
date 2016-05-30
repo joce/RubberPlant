@@ -24,7 +24,6 @@ namespace RubberPlant.Tests
             AssertErrors();
         }
 
-        [TestCase("MultipleVocabularyBlocks.ls", 3)]
         [TestCase("MultiActionOneLine.ls", 4)]
         public void ActionsCanBeDefinedInMultipleWays(string testName, int vocabularyCount)
         {
@@ -37,18 +36,15 @@ namespace RubberPlant.Tests
         }
 
         // Syntax errors
-        [TestCase("UnnamedLSystem.ls", 0, 1)]
-        [TestCase("AxiomDefinedOutsideRules.ls", 0, 1)]
+        [TestCase("UnnamedLSystem.ls", 0, 4)]
         [TestCase("LexerError.ls", 0, 3)]
         // Sementic errors
         [TestCase("DuplicateAction.ls", 1, 0)]
-        [TestCase("DuplicateActionInMultipleBlocks.ls", 1, 0)]
         [TestCase("DuplicateActionOnSingleLine.ls", 1, 0)]
         [TestCase("DuplicateActionOnSingleLineAndOther.ls", 1, 0)]
         [TestCase("DuplicateAngle.ls", 1, 0)]
         [TestCase("DuplicateAxiom.ls", 1, 0)]
         [TestCase("DuplicateRule.ls", 1, 0)]
-        [TestCase("DuplicateRuleInMultipleBlocks.ls", 1, 0)]
         [TestCase("MissingAxiom.ls", 1, 0)]
         [TestCase("StochasticNegativeWeight.ls", 1, 0)]
         [TestCase("StochasticZeroWeight.ls", 1, 0)]
@@ -70,17 +66,6 @@ namespace RubberPlant.Tests
             AssertErrors(warningCount: 1);
             Assert.AreEqual(1, systems.Count);
             Assert.AreEqual(90, systems[0].Angle);
-        }
-
-        [Test]
-        public void RulesDefinedInMultipleBlocksAreOK()
-        {
-            var resourceName = "RubberPlant.Tests.ValidTestFiles.MultipleRuleBlocks.ls";
-
-            IList<LSystem> systems = LoadFromResource(resourceName);
-            AssertErrors();
-            Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(3, systems[0].Rules.Count);
         }
 
         [Test]

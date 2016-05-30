@@ -1,21 +1,17 @@
 // Inspired from The Algorithmic Beauty of Plants, pp. 28-29
 
 lsystem stochastic {
-    vocabulary {
-        F: draw;
-        f: move;
-        a, b, e: nop;
-    }
-    rules {
-        axiom -> [F]----e++++[F]----e++++[F]----e++++[F]----e++++[F]----e++++[F];
-        F {
-            0.33 -> F[+F]F[-F]F;
-            0.33 -> F[+F]F ;
-            0.33 -> F[-F]F ;
-        }
+    a: F -> draw;
+    a: f -> move;
+    a: a, b, e -> nop;
 
-        e -> f;
-        f -> ff;
-    }
-    angle = 22.5;
+    axiom : [F]----e++++[F]----e++++[F]----e++++[F]----e++++[F]----e++++[F];
+    r: F  0.33 -> F[+F]F[-F]F ,
+          0.33 -> F[+F]F ,
+          0.33 -> F[-F]F ;
+
+    r: e -> f;
+    r: f -> ff;
+
+    angle : 22.5;
 }

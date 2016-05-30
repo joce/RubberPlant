@@ -2,17 +2,13 @@
 
 lsystem gosper
 {
-    angle = 60;
-    vocabulary
-    {
-        L: draw;
-        R: draw;
-    }
+    angle : 60;
 
-    rules
-    {
-        axiom -> L;
-        L -> L+R++R-L--LL-R+ ;
-        R -> -L+RR++R+L--L-R ;
-    }
+    a: L -> draw;
+    a: R -> draw;
+
+    axiom : L;
+    r: L -> L+R++R-L--LL-R+ ;
+    r: R -> -L+RR++R+L--L-R ;
+
 }

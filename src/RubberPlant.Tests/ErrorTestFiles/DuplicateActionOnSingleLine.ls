@@ -1,15 +1,9 @@
 lsystem DuplicateActionOnSingleLineAndOther
 {
-    angle = -78.432e10;
+    angle : -78.432e10;
 
-    vocabulary
-    {
-        F, F : draw;
-    }
+    a : F, F -> draw;
 
-    rules
-    {
-        axiom -> F-F-F-F ; // Start string
-        F -> F-F+F++F;
-    }
+    axiom : F-F-F-F ; // Start string
+    r: F -> F-F+F++F;
 }

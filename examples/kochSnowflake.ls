@@ -2,14 +2,10 @@
 
 lsystem kochSnowflake
 {
-    angle = 60;
-    vocabulary
-    {
-        F: draw;
-    }
-    rules
-    {
-        axiom-> F--F--F;
-        F -> F+F--F+F ;
-    }
+    angle : 60;
+
+    a: F -> draw;
+
+    axiom : F--F--F;
+    r: F -> F+F--F+F ;
 }

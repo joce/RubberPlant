@@ -1,16 +1,10 @@
 lsystem DuplicateAngle
 {
-    angle = -78.432e10;
-    angle = 90;
+    angle : -78.432e10;
+    angle : 90;
 
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        axiom -> F-F-F-F ; // Start string
-        F -> F-F+F++F;
-    }
+    axiom : F-F-F-F ; // Start string
+    r: F -> F-F+F++F;
 }

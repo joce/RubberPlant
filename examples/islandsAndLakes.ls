@@ -2,16 +2,11 @@
 
 lsystem islandsAndLakes
 {
-    angle = 90;
-    vocabulary
-    {
-        F: draw;
-        f: move;
-    }
-    rules
-    {
-        axiom-> F+F+F+F;
-        F -> F+f-FF+F+FF+Ff+FF-f+FF-F-FF-Ff-FFF ;
-        f -> ffffff ;
-    }
+    angle : 90;
+    a: F -> draw;
+    a: f -> move;
+
+    axiom : F+F+F+F;
+    r: F -> F+f-FF+F+FF+Ff+FF-f+FF-F-FF-Ff-FFF ;
+    r: f -> ffffff ;
 }

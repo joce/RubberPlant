@@ -2,14 +2,10 @@
 
 lsystem plant_c
 {
-    angle = 22.5;
-    vocabulary
-    {
-        F: draw;
-    }
-    rules
-    {
-        axiom -> F;
-        F -> FF-[-F+F+F]+[+F-F-F] ;
-    }
+    angle : 22.5;
+
+    a: F -> draw;
+
+    axiom : F;
+    r: F -> FF-[-F+F+F]+[+F-F-F] ;
 }

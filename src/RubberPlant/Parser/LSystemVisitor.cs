@@ -10,6 +10,7 @@ namespace RubberPlant
 
         private LSystem m_currentLSystem;
 
+        private Atom m_currentRuleMatch;
         private List<Atom> m_currentRuleBody;
         private Rule m_currentRule;
         private HashSet<Atom> m_usedRules;
@@ -57,7 +58,7 @@ namespace RubberPlant
                 return 0;
             }
 
-            m_currentLSystem.Angle = double.Parse(ctx.NUMBER().GetText());
+            m_currentLSystem.Angle = double.Parse(ctx.ANGLE_VALUE().GetText());
             m_hasAngle = true;
             return VisitChildren(ctx);
         }
@@ -81,35 +82,33 @@ namespace RubberPlant
             return 0;
         }
 
-        public override double VisitRule_stmt(LSystemParser.Rule_stmtContext ctx)
+        public override double VisitRule_match(LSystemParser.Rule_matchContext ctx)
         {
-            Atom atom = new Atom(ctx.RULE_ID().GetText()[0]);
-            if (m_currentLSystem.HasRule(atom))
+            m_currentRuleMatch = new Atom(ctx.RULE_ID().GetText()[0]);
+            if (m_currentLSystem.HasRule(m_currentRuleMatch))
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, atom.RuleName));
+                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, m_currentRuleMatch.RuleName));
                 return 0;
             }
+            m_currentlRuleName = m_currentRuleMatch.RuleName;
 
+            return 0;
+        }
+
+        public override double VisitBasic_rule(LSystemParser.Basic_ruleContext ctx)
+        {
             VisitChildren(ctx);
 
-            m_currentRule = new Rule {RuleID = atom};
+            m_currentRule = new Rule {RuleID = m_currentRuleMatch};
             m_currentRule.AddBody(m_currentRuleBody);
             m_currentLSystem.Rules.Add(m_currentRule);
 
             return 0;
         }
 
-        public override double VisitStochastic_rule_stmt(LSystemParser.Stochastic_rule_stmtContext ctx)
+        public override double VisitStochastic_rule(LSystemParser.Stochastic_ruleContext ctx)
         {
-            Atom atom = new Atom(ctx.RULE_ID().GetText()[0]);
-            if (m_currentLSystem.HasRule(atom))
-            {
-                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, atom.RuleName));
-                return 0;
-            }
-
-            m_currentRule = new Rule {RuleID = atom};
-            m_currentlRuleName = atom.RuleName;
+            m_currentRule = new Rule();
 
             VisitChildren(ctx);
 
@@ -119,11 +118,13 @@ namespace RubberPlant
                 return 0;
             }
 
+            m_currentRule.RuleID = m_currentRuleMatch;
+
             // Check if the weights add up to 1.0 precisely. If not, no sweat. We will normalize.
             // ReSharper disable once CompareOfFloatsByEqualityOperator
             if (m_currentRule.TotalWeight != 1.0f)
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, atom.RuleName));
+                m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, m_currentRuleMatch.RuleName));
                 m_currentRule.NormalizeWeights();
             }
 
@@ -132,9 +133,9 @@ namespace RubberPlant
             return 0;
         }
 
-        public override double VisitStochastic_subrule_stmt(LSystemParser.Stochastic_subrule_stmtContext ctx)
+        public override double VisitStochastic_subrule(LSystemParser.Stochastic_subruleContext ctx)
         {
-            float weight = float.Parse(ctx.NUMBER().GetText());
+            float weight = float.Parse(ctx.STOCHASTIC_WEIGHT().GetText());
 
             // Weight of a stochastic rule can't be 0 or negative. That would make no sense.
             if (weight <= 0)
@@ -152,9 +153,9 @@ namespace RubberPlant
 
         public override double VisitProd_rule(LSystemParser.Prod_ruleContext ctx)
         {
-            if (ctx.RULE_ID_RULE_MODE() != null)
+            if (ctx.RULE_ID() != null)
             {
-                m_currentRuleBody = ctx.RULE_ID_RULE_MODE().Select(r => new Atom(r.GetText()[0])).ToList();
+                m_currentRuleBody = ctx.RULE_ID().Select(r => new Atom(r.GetText()[0])).ToList();
                 foreach (var atom in m_currentRuleBody)
                 {
                     m_usedRules.Add(atom);
@@ -166,7 +167,7 @@ namespace RubberPlant
 
         public override double VisitAction_stmt(LSystemParser.Action_stmtContext ctx)
         {
-            var rules = ctx.RULE_ID().Select(r => r.GetText()[0]).ToArray();
+            var rules = ctx.ACTION_RULE_ID().Select(r => r.GetText()[0]).ToArray();
 
             HashSet<char> extraDefined = new HashSet<char>();
 

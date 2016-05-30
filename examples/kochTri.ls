@@ -2,14 +2,10 @@
 
 lsystem kochTri
 {
-    angle = 90;
-    vocabulary
-    {
-        F: draw;
-    }
-    rules
-    {
-        axiom-> -F;
-        F -> F+F-F-F+F ;
-    }
+    angle : 90;
+
+    a: F -> draw;
+
+    axiom : -F;
+    r: F -> F+F-F-F+F ;
 }

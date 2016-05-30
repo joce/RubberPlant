@@ -1,9 +1,9 @@
 // Parser heavily inspired from Jonathan Feinberg's work on javalin (https://github.com/jdf/javalin)
 
-parser grammar LSystemParser;
+parser grammar LSystemParser ;
 
 options {
-    tokenVocab = LSystemLexer;
+    tokenVocab = LSystemLexer ;
 }
 
 lSystemDefinitions : lSystem+ EOF ;
@@ -11,24 +11,24 @@ lSystemDefinitions : lSystem+ EOF ;
 lSystem : LSYSTEM ID_NAME '{' statement* '}' ;
 
 statement : angle_stmt
-          | vocabulary_stmt
-          | rules_stmt ;
+          | action_stmt
+          | axiom_stmt
+          | rule_stmt ;
 
-angle_stmt : ANGLE '=' NUMBER SEMI_COLON ;
+angle_stmt : ANGLE_DEF START_ANGLE ANGLE_VALUE END_ANGLE ;
 
-vocabulary_stmt : VOCABULARY '{' action_stmt* '}' ;
+action_stmt : ACTION_DEF START_ACTION ACTION_RULE_ID (ACTION_SEPARATOR ACTION_RULE_ID)* ACTION_DEFINER ACTION END_ACTION ;
 
-// TODO allow multiple rules on single line, e.g. "A, B, C, D : draw;" or "f, h, y, z : move;"
-action_stmt : RULE_ID (SEPARATOR RULE_ID)* ':' ACTION SEMI_COLON ;
+axiom_stmt : AXIOM_DEF START_RULE prod_rule END_RULE ;
 
-rules_stmt : RULES '{' (stochastic_rule_stmt | rule_stmt | axiom_stmt)* '}' ;
+rule_stmt : RULE_DEF START_RULE rule_match (basic_rule | stochastic_rule) END_RULE ;
 
-axiom_stmt : AXIOM '->' prod_rule SEMI_COLON_END_RULE ;
+rule_match : RULE_ID ;
 
-stochastic_rule_stmt : RULE_ID '{' stochastic_subrule_stmt+ '}';
+basic_rule : RULE_DEFINER prod_rule ;
 
-stochastic_subrule_stmt : NUMBER '->' prod_rule SEMI_COLON_END_RULE ;
+stochastic_rule : stochastic_subrule (RULE_SEPARATOR stochastic_subrule)* ;
 
-rule_stmt : RULE_ID '->' prod_rule SEMI_COLON_END_RULE ;
+stochastic_subrule : STOCHASTIC_WEIGHT RULE_DEFINER prod_rule ;
 
-prod_rule : RULE_ID_RULE_MODE* ;
+prod_rule : RULE_ID* ;

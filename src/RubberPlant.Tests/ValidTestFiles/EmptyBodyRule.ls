@@ -1,15 +1,9 @@
 lsystem EmptyBodyRule
 {
-    angle = 90;
+    angle : 90;
 
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        axiom -> F ;
-        F -> ;
-    }
+    axiom : F ;
+    r: F -> ;
 }

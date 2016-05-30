@@ -1,16 +1,10 @@
 lsystem DuplicateAxiom
 {
-    angle = -78.432e10;
+    angle : -78.432e10;
 
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        axiom -> F-F-F-F ; // Start string
-        axiom -> FFFFF ; // Nope!
-        F -> F-F+F++F;
-    }
+    axiom : F-F-F-F ; // Start string
+    axiom : FFFFF ; // Nope!
+    r: F -> F-F+F++F;
 }

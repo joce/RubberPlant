@@ -1,19 +1,13 @@
 lsystem MultiActionOneLine
 {
-    angle = -78.432e10;
+    angle : -78.432e10;
 
-    vocabulary
-    {
-        A, F: draw;
-        B, C: move;
-    }
+    a: A, F -> draw;
+    a: B, C -> move;
 
-    rules
-    {
-        axiom -> F-A-B-C ; // Start string
-        F -> F-F+F++FFFFF-F-F+F ;
-        C -> ABC;
-        B -> AAA;
-        A -> FFFF;
-    }
+    ax: F-A-B-C ; // Start string
+    r: F -> F-F+F++FFFFF-F-F+F ;
+    r: C -> ABC;
+    r: B -> AAA;
+    r: A -> FFFF;
 }

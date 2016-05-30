@@ -79,15 +79,12 @@
     <Compile Include="TurtleTests.cs" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="ErrorTestFiles\AxiomDefinedOutsideRules.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAction.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateActionInMultipleBlocks.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLine.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateActionOnSingleLineAndOther.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAngle.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAxiom.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateRule.ls" />
-    <EmbeddedResource Include="ErrorTestFiles\DuplicateRuleInMultipleBlocks.ls" />
     <EmbeddedResource Include="ErrorTestFiles\LexerError.ls" />
     <EmbeddedResource Include="ErrorTestFiles\MissingAxiom.ls" />
     <EmbeddedResource Include="ErrorTestFiles\StochasticNegativeWeight.ls" />
@@ -97,8 +94,6 @@
     <EmbeddedResource Include="ValidTestFiles\EmptyBodyRule.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultiActionOneLine.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleDefinitions.ls" />
-    <EmbeddedResource Include="ValidTestFiles\MultipleRuleBlocks.ls" />
-    <EmbeddedResource Include="ValidTestFiles\MultipleVocabularyBlocks.ls" />
     <EmbeddedResource Include="ValidTestFiles\SimpleTest.ls" />
     <EmbeddedResource Include="ValidTestFiles\StochasticRule.ls" />
     <EmbeddedResource Include="ValidTestFiles\TurtleCommandsAsRuleName.ls" />

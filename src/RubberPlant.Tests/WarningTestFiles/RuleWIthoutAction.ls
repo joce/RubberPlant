@@ -1,16 +1,10 @@
 lsystem RuleWithoutAction
 {
-    angle = -78.432e10;
+    angle : -78.432e10;
 
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        axiom -> F-F-F-F ; // Start string
-        F -> F-F+F++AFAFAF-F-F+F ;
-        A -> FF ;
-    }
+    axiom : F-F-F-F ; // Start string
+    r: F -> F-F+F++AFAFAF-F-F+F ;
+    r: A -> FF ;
 }

@@ -1,13 +1,7 @@
 lsystem MissingAngle
 {
-    vocabulary
-    {
-        F: draw;
-    }
+    a: F -> draw;
 
-    rules
-    {
-        axiom -> F-F-F-F ; // Start string
-        F -> F-F+F++FFFFF-F-F+F ;
-    }
+    axiom : F-F-F-F ; // Start string
+    r: F -> F-F+F++FFFFF-F-F+F ;
 }

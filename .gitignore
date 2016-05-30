@@ -3,5 +3,8 @@
 
 /src/packages
 
+# some svg might crop up in test folders. We don't care.
+/src/RubberPlant.Tests/**/*.svg
+
 *.suo
 RubberPlant.*.user
