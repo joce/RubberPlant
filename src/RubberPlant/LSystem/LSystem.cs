@@ -8,10 +8,12 @@ namespace RubberPlant
     public class LSystem
     {
         public string Name { get; set; }
-        public Rule Axiom { get; set; }
+        public Rule Axiom { get; set; } = new Rule();
         public double Angle { get; set; }
-        public List<Rule> Rules { get; set; }
+        public List<Rule> Rules { get; set; } = new List<Rule>();
         public Dictionary<Atom, TurtleCommand> Vocabulary { get; set; }
+
+        public List<Atom> MatchIgnores { get; set; } = new List<Atom>();
 
         internal static readonly Dictionary<Atom, TurtleCommand> k_implicitTurtleCommands = new Dictionary<Atom, TurtleCommand>();
 
@@ -31,48 +33,76 @@ namespace RubberPlant
 
         public LSystem()
         {
-            Axiom = new Rule();
-            Rules = new List<Rule>();
             Vocabulary = new Dictionary<Atom, TurtleCommand>(k_implicitTurtleCommands);
         }
 
         public bool HasRule(Atom atom)
         {
-            return Rules.Any(r => r.RuleID == atom);
+            return Rules.Any(r => r.Descriptor.RuleID == atom);
         }
 
-        public Rule GetRule(Atom atom)
+        public bool HasRule(RuleDescriptor desc)
         {
-            return Rules.First(r => r.RuleID == atom);
+            return Rules.Any(r => r.Descriptor == desc);
         }
 
-        public List<TurtleCommand> Replace(int iterations)
+        public IEnumerable<Rule> GetRules(Atom atom)
         {
-            List<Atom> source = Axiom.Body;
+            return Rules.Where(r => r.Descriptor.RuleID == atom);
+        }
+
+        public Rule GetRule(RuleDescriptor desc)
+        {
+            return Rules.First(r => r.Descriptor == desc);
+        }
+
+        public List<Atom> Replace(int iterations)
+        {
+            List<Atom> source = Axiom.Replacement;
             List<Atom> destination = source;
             for (int i = 0; i < iterations; i++)
             {
+#if DEBUG_HELPER
+                string debugString = source.ToAtomString();
+#endif
                 destination = new List<Atom>();
-                foreach (var atom in source)
+                Context ctx = new Context()
                 {
-                    Context ctx = new Context() {Current = atom};
-                    var rule = Rules.FirstOrDefault(r => r.Match(ctx));
+                    Predecessors = new List<Atom>(),
+                    Current = null,
+                    Successors = source
+                };
+
+                while (source.Any())
+                {
+                    if (ctx.Current != null)
+                    {
+                        ctx.Predecessors.Insert(0, ctx.Current);
+                    }
+                    ctx.Current = source[0];
+                    source.RemoveAt(0);
+                    var rule = Rules.FirstOrDefault(r => r.Match(ctx, MatchIgnores));
                     if (rule != null)
                     {
-                        destination.AddRange(rule.Body);
+                        destination.AddRange(rule.Replacement);
                     }
                     else
                     {
-                        destination.Add(atom);
+                        destination.Add(ctx.Current);
                     }
                 }
                 source = destination;
             }
 
-            return AsTurtleCommands(destination);
+            return destination;
         }
 
-        private List<TurtleCommand> AsTurtleCommands(List<Atom> atoms)
+        public List<TurtleCommand> ReplaceAndTranslate(int iterations)
+        {
+            return AsTurtleCommands(Replace(iterations));
+        }
+
+        internal List<TurtleCommand> AsTurtleCommands(List<Atom> atoms)
         {
             List<TurtleCommand> res = new List<TurtleCommand>();
             foreach (var atom in atoms)
@@ -81,10 +111,6 @@ namespace RubberPlant
                 if (Vocabulary.TryGetValue(atom, out command))
                 {
                     res.Add(command);
-                }
-                else
-                {
-                    res.Add(TurtleCommand.Nop);
                 }
             }
             return res;

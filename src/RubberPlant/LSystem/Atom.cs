@@ -9,6 +9,11 @@
             RuleName = ruleName;
         }
 
+        public override string ToString()
+        {
+            return RuleName.ToString();
+        }
+
         public override bool Equals(object obj)
         {
             return obj.GetType() == typeof(Atom) && ((Atom)obj).RuleName == RuleName;

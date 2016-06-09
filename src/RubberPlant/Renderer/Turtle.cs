@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 
 namespace RubberPlant
@@ -33,7 +32,7 @@ namespace RubberPlant
 
         private State m_currentState = new State();
 
-        private Stack<State> m_states = new Stack<State>();
+        private readonly Stack<State> m_states = new Stack<State>();
 
         public Turtle()
         {

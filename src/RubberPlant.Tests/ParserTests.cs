@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
 
@@ -9,6 +10,7 @@ namespace RubberPlant.Tests
     public class ParserTests
     {
         private TestParserErrorListener m_errorListener;
+        private static readonly RuleDescriptor k_ruleF = new RuleDescriptor {RuleID = new Atom('F')};
 
         [TestCase("SimpleTest.ls", 1)]
         [TestCase("MultipleDefinitions.ls", 2)]
@@ -45,6 +47,7 @@ namespace RubberPlant.Tests
         [TestCase("DuplicateAngle.ls", 1, 0)]
         [TestCase("DuplicateAxiom.ls", 1, 0)]
         [TestCase("DuplicateRule.ls", 1, 0)]
+        [TestCase("IgnoreBranch.ls", 1, 0)]
         [TestCase("MissingAxiom.ls", 1, 0)]
         [TestCase("StochasticNegativeWeight.ls", 1, 0)]
         [TestCase("StochasticZeroWeight.ls", 1, 0)]
@@ -101,7 +104,7 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors();
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(new List<Atom> {'{', 'F', '-', 'F', '}'}, systems[0].GetRule('F').Body);
+            Assert.AreEqual( "{F-F}".ToAtoms(), systems[0].GetRule(k_ruleF).Replacement);
         }
 
         [Test]
@@ -113,9 +116,9 @@ namespace RubberPlant.Tests
             AssertErrors();
             Assert.AreEqual(1, systems.Count);
             Assert.AreEqual(1, systems[0].Rules.Count);
-            Assert.AreEqual(2, systems[0].GetRule('F').BodyCount);
-            Assert.That(0.3, Is.EqualTo(systems[0].GetRule('F')[0].Item1).Within(0.00001));
-            Assert.That(0.7, Is.EqualTo(systems[0].GetRule('F')[1].Item1).Within(0.00001));
+            Assert.AreEqual(2, systems[0].GetRule(k_ruleF).ReplacementCount);
+            Assert.That(0.3, Is.EqualTo(systems[0].GetRule(k_ruleF)[0].Item1).Within(0.00001));
+            Assert.That(0.7, Is.EqualTo(systems[0].GetRule(k_ruleF)[1].Item1).Within(0.00001));
         }
 
         [Test]
@@ -126,8 +129,8 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors(warningCount: 1);
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual(0.5, systems[0].GetRule('F')[0].Item1);
-            Assert.AreEqual(0.5, systems[0].GetRule('F')[1].Item1);
+            Assert.AreEqual(0.5, systems[0].GetRule(k_ruleF)[0].Item1);
+            Assert.AreEqual(0.5, systems[0].GetRule(k_ruleF)[1].Item1);
         }
 
         [Test]
@@ -138,9 +141,63 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors(warningCount: 1);
             Assert.AreEqual(1, systems.Count);
-            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule('F')[0].Item1).Within(0.00001));
-            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule('F')[1].Item1).Within(0.00001));
-            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule('F')[2].Item1).Within(0.00001));
+            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule(k_ruleF)[0].Item1).Within(0.00001));
+            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule(k_ruleF)[1].Item1).Within(0.00001));
+            Assert.That(0.33333, Is.EqualTo(systems[0].GetRule(k_ruleF)[2].Item1).Within(0.00001));
+        }
+
+        [Test]
+        public void RulesWithPreAndPostConditionsLoadProperly()
+        {
+            var resourceName = "RubberPlant.Tests.ValidTestFiles.PrePostContitions.ls";
+
+            IList<LSystem> systems = LoadFromResource(resourceName);
+            AssertErrors();
+            Assert.AreEqual(1, systems.Count);
+            Assert.AreEqual(4, systems[0].Rules.Count);
+        }
+
+        [Test]
+        public void RulePreConditionsLoadBackwards()
+        {
+            var resourceName = "RubberPlant.Tests.ValidTestFiles.PrePostContitions.ls";
+
+            IList<LSystem> systems = LoadFromResource(resourceName);
+            AssertErrors();
+            Assert.AreEqual("+ABF".ToAtoms(), systems[0].GetRules('A').First().Descriptor.PreCondition);
+        }
+
+        [Test]
+        public void RulePostConditionsLoadForwards()
+        {
+            var resourceName = "RubberPlant.Tests.ValidTestFiles.PrePostContitions.ls";
+
+            IList<LSystem> systems = LoadFromResource(resourceName);
+            AssertErrors();
+            Assert.AreEqual("FABB+".ToAtoms(), systems[0].GetRules('F').First().Descriptor.PostCondition);
+        }
+
+        [Test]
+        public void RulesWithImpossibleConditionsGenerateWarnings()
+        {
+            var resourceName = "RubberPlant.Tests.WarningTestFiles.ImpossiblePrePostContitions.ls";
+
+            IList<LSystem> systems = LoadFromResource(resourceName);
+            AssertErrors(warningCount:1);
+            Assert.AreEqual(1, systems.Count);
+            Assert.AreEqual(3, systems[0].Rules.Count);
+        }
+
+        [Test]
+        public void RulesWithDuplicateIgnoreGenerateInfo()
+        {
+            var resourceName = "RubberPlant.Tests.InfoTestFiles.MultiIgnore.ls";
+
+            IList<LSystem> systems = LoadFromResource(resourceName);
+            AssertErrors(infoCount: 1);
+            Assert.AreEqual(1, systems.Count);
+            Assert.AreEqual(4, systems[0].Rules.Count);
+            Assert.AreEqual(2, systems[0].MatchIgnores.Count);
         }
 
         private IList<LSystem> LoadFromResource(string resourceName)

@@ -75,7 +75,9 @@
     <Compile Include="MoqExtensions.cs" />
     <Compile Include="ParserTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RuleDescriptorTests.cs" />
     <Compile Include="TestParserErrorListener.cs" />
+    <Compile Include="Extensions.cs" />
     <Compile Include="TurtleTests.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -85,18 +87,22 @@
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAngle.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateAxiom.ls" />
     <EmbeddedResource Include="ErrorTestFiles\DuplicateRule.ls" />
+    <EmbeddedResource Include="ErrorTestFiles\IgnoreBranch.ls" />
     <EmbeddedResource Include="ErrorTestFiles\LexerError.ls" />
     <EmbeddedResource Include="ErrorTestFiles\MissingAxiom.ls" />
     <EmbeddedResource Include="ErrorTestFiles\StochasticNegativeWeight.ls" />
     <EmbeddedResource Include="ErrorTestFiles\StochasticZeroWeight.ls" />
     <EmbeddedResource Include="ErrorTestFiles\UnnamedLSystem.ls" />
+    <EmbeddedResource Include="InfoTestFiles\MultiIgnore.ls" />
     <EmbeddedResource Include="ValidTestFiles\CurlyBracesRule.ls" />
     <EmbeddedResource Include="ValidTestFiles\EmptyBodyRule.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultiActionOneLine.ls" />
     <EmbeddedResource Include="ValidTestFiles\MultipleDefinitions.ls" />
+    <EmbeddedResource Include="ValidTestFiles\PrePostContitions.ls" />
     <EmbeddedResource Include="ValidTestFiles\SimpleTest.ls" />
     <EmbeddedResource Include="ValidTestFiles\StochasticRule.ls" />
     <EmbeddedResource Include="ValidTestFiles\TurtleCommandsAsRuleName.ls" />
+    <EmbeddedResource Include="WarningTestFiles\ImpossiblePrePostContitions.ls" />
     <EmbeddedResource Include="WarningTestFiles\MissingAngle.ls" />
     <EmbeddedResource Include="WarningTestFiles\RuleWithoutAction.ls" />
     <EmbeddedResource Include="WarningTestFiles\StochasticRuleLessThanOne.ls" />

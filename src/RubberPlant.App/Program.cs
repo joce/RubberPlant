@@ -48,7 +48,7 @@ namespace RubberPlant.App
                     Angle = system.Angle,
                     StepLength = options.Length
                 };
-                t.Render(options.OutputDir, system.Name, system.Replace(options.Replacement));
+                t.Render(options.OutputDir, system.Name, system.ReplaceAndTranslate(options.Replacement));
             }
         }
     }

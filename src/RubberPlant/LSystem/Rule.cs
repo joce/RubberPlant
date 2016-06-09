@@ -13,46 +13,51 @@ namespace RubberPlant
             set { s_random = value; }
         }
 
-        private List<Tuple<float, List<Atom>>> m_bodies = new List<Tuple<float, List<Atom>>>();
+        private List<Tuple<float, List<Atom>>> m_replacements = new List<Tuple<float, List<Atom>>>();
 
-        public Atom RuleID { get; set; }
-        public List<Atom> Body => m_bodies.Count == 1 ? m_bodies[0].Item2 : GetRandomBody();
-        public float TotalWeight => m_bodies.Select(r => r.Item1).Sum();
-        public int BodyCount => m_bodies.Count;
+        public RuleDescriptor Descriptor { get; } = new RuleDescriptor();
+        public List<Atom> Replacement => m_replacements.Count == 1 ? m_replacements[0].Item2 : GetRandomReplacement();
+        public float TotalWeight => m_replacements.Select(r => r.Item1).Sum();
+        public int ReplacementCount => m_replacements.Count;
 
-        public void AddBody(List<Atom> body)
+        public void AddReplacement(List<Atom> body)
         {
-            AddBody(body, 1);
+            AddReplacement(body, 1);
         }
 
-        public void AddBody(List<Atom> body, float weight)
+        public void AddReplacement(List<Atom> body, float weight)
         {
-            m_bodies.Add(new Tuple<float, List<Atom>>(weight, body));
+            m_replacements.Add(new Tuple<float, List<Atom>>(weight, body));
         }
 
         public void NormalizeWeights()
         {
-            if (m_bodies.Count == 0)
+            if (m_replacements.Count == 0)
             {
                 throw new InvalidOperationException("No stochastic rules to normalize on.");
             }
 
-            float totalWeight = m_bodies.Select(r => r.Item1).Sum();
-            m_bodies = m_bodies.Select(subrule => new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)).ToList();
+            float totalWeight = m_replacements.Select(r => r.Item1).Sum();
+            m_replacements = m_replacements.Select(subrule => new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)).ToList();
         }
 
-        public virtual bool Match(Context context)
+        public bool Match(Context context, IList<Atom> ignores)
         {
-            return context.Current ==RuleID;
+            return Descriptor.Match(context, ignores);
+        }
+
+        public override string ToString()
+        {
+            return Descriptor.ToString();
         }
 
         // For testing purposes
-        internal Tuple<float, List<Atom>> this[int i] => m_bodies[i];
+        internal Tuple<float, List<Atom>> this[int i] => m_replacements[i];
 
-        private List<Atom> GetRandomBody()
+        private List<Atom> GetRandomReplacement()
         {
             var rnd = (float)Random.NextDouble();
-            foreach (var subrule in m_bodies)
+            foreach (var subrule in m_replacements)
             {
                 if (rnd <= subrule.Item1)
                 {

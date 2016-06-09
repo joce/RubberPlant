@@ -5,7 +5,7 @@ lsystem MultiActionOneLine
     a: A, F -> draw;
     a: B, C -> move;
 
-    ax: F-A-B-C ; // Start string
+    x: F-A-B-C ; // Start string
     r: F -> F-F+F++FFFFF-F-F+F ;
     r: C -> ABC;
     r: B -> AAA;

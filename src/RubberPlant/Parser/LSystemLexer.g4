@@ -1,4 +1,4 @@
-// Grammar heavily inspired from Jonathan Feinberg's work on javalin (https://github.com/jdf/javalin)
+// Grammar inspired from Jonathan Feinberg's work on javalin (https://github.com/jdf/javalin)
 
 lexer grammar LSystemLexer ;
 
@@ -8,12 +8,13 @@ LSYSTEM : 'lsystem'  -> pushMode(NAME_MODE) ;
 OPEN_BRACE : '{' ;
 CLOSE_BRACE : '}' ;
 
-RULE_DEF : ('r' | 'rule') -> pushMode(RULE_MODE) ;
-AXIOM_DEF : ('x' | 'ax' | 'axiom') -> pushMode(RULE_MODE) ;
-ACTION_DEF : ('a' | 'action') -> pushMode(ACTION_MODE) ;
+RULE_DEF : 'r' ('ule')? -> pushMode(RULE_MODE) ;
+AXIOM_DEF : ('x' | 'axiom') -> pushMode(RULE_MODE) ;
+ACTION_DEF : 'a' ('ction')? -> pushMode(ACTION_MODE) ;
 ANGLE_DEF : ('g' | 'angle') -> pushMode(ANGLE_MODE) ;
+IGNORE_DEF : 'i' ('gnore')? -> pushMode(IGNORE_MODE) ;
 
-//DEFINE_DEF : ('d' | 'define') -> pushMode(DEFINE_MODE) ;
+//DEFINE_DEF : 'd' ('efine')? -> pushMode(DEFINE_MODE) ;
 
 NUMBER : '-'? INT '.' INT EXP? // 1.35, 1.35E-9, 0.3, -4.5
        | '-'? INT EXP // 1e10 -3e4
@@ -42,7 +43,6 @@ fragment TURTLE_CMD : '%'   // CUT_OFF_BRANCH
                     | '|'   // TURN_AROUND
                     | '+'   // TURN_LEFT
                     | '-' ; // TURN_RIGHT
-
 
 // Comment
 LINE_COMMENT : '//' .*? '\r'? '\n' -> skip ;
@@ -124,3 +124,21 @@ COMMENT_ANGLE : COMMENT -> skip ;
 
 // Whitespace
 WS_ANGLE : WS -> skip ;
+
+
+///////////////////////////////////////////////////////////////////////////////
+mode IGNORE_MODE ;
+
+START_IGNORE : ':' ;
+END_IGNORE : ';' -> popMode ;
+
+IGNORE_SEPARATOR : ',' ;
+IGNORE_RULE_ID : [A-Za-z]
+               | TURTLE_CMD ;
+
+// Comment
+LINE_COMMENT_IGNORE : LINE_COMMENT -> skip ;
+COMMENT_IGNORE : COMMENT -> skip ;
+
+// Whitespace
+WS_IGNORE : WS -> skip ;

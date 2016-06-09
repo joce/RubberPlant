@@ -89,7 +89,7 @@ namespace RubberPlant
                 {
                     RenderPath(sb, adjX, adjY);
                 }
-                sb.AppendLine("  </g>");
+                sb.AppendFormat("  </g>\n");
                 OutputFooter(sb);
             }
 
@@ -137,14 +137,14 @@ namespace RubberPlant
             {
                 sb.Append("Z ");
             }
-            sb.AppendLine("\" />");
+            sb.AppendFormat("\" />\n");
         }
 
         private void OutputHeader(StringBuilder sb, float maxX, float maxY)
         {
-            sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>");
-            sb.AppendLine("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"");
-            sb.AppendLine("    \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">");
+            sb.AppendFormat("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n");
+            sb.AppendFormat("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"\n");
+            sb.AppendFormat("    \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n");
             sb.AppendFormat("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{0}\" height=\"{1}\">\n", maxX, maxY);
             sb.AppendFormat("  <desc>{0} LSystem</desc>\n", m_lsysName);
             sb.AppendFormat("  <rect width=\"100%\" height=\"100%\" style=\"fill: white\"/>\n");
@@ -152,7 +152,7 @@ namespace RubberPlant
 
         private void OutputFooter(StringBuilder sb)
         {
-            sb.AppendLine("</svg>");
+            sb.AppendFormat("</svg>\n");
         }
     }
 }
