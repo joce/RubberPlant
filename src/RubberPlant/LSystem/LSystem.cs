@@ -68,16 +68,16 @@ namespace RubberPlant
                 destination = new List<Atom>();
                 Context ctx = new Context()
                 {
-                    Predecessors = new List<Atom>(),
+                    Left = new List<Atom>(),
                     Current = null,
-                    Successors = source
+                    Right = source
                 };
 
                 while (source.Any())
                 {
                     if (ctx.Current != null)
                     {
-                        ctx.Predecessors.Insert(0, ctx.Current);
+                        ctx.Left.Insert(0, ctx.Current);
                     }
                     ctx.Current = source[0];
                     source.RemoveAt(0);

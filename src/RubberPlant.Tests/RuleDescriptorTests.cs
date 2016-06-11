@@ -148,8 +148,8 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FFf}B".Reverse().ToAtoms(),
-                Successors = "BBa]A".ToAtoms()
+                Left = "FFf}B".Reverse().ToAtoms(),
+                Right = "BBa]A".ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -163,8 +163,8 @@ namespace RubberPlant.Tests
             {
                 Current = 'B',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FFf}B".Reverse().ToAtoms(),
-                Successors = "BBa]A".ToAtoms()
+                Left = "FFf}B".Reverse().ToAtoms(),
+                Right = "BBa]A".ToAtoms()
             };
 
             Assert.IsFalse(desc.Match(ctx));
@@ -184,8 +184,8 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "BFFf-".Reverse().ToAtoms(),
-                Successors = "BBa]A".ToAtoms()
+                Left = "BFFf-".Reverse().ToAtoms(),
+                Right = "BBa]A".ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -205,8 +205,8 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FFf}B".Reverse().ToAtoms(),
-                Successors = "BBa]A".ToAtoms()
+                Left = "FFf}B".Reverse().ToAtoms(),
+                Right = "BBa]A".ToAtoms()
             };
 
             Assert.IsFalse(desc.Match(ctx));
@@ -225,8 +225,8 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FFf}B".Reverse().ToAtoms(),
-                Successors = "BB+]A".ToAtoms()
+                Left = "FFf}B".Reverse().ToAtoms(),
+                Right = "BB+]A".ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -245,8 +245,8 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FFf}B".Reverse().ToAtoms(),
-                Successors = "BBa]A".ToAtoms()
+                Left = "FFf}B".Reverse().ToAtoms(),
+                Right = "BBa]A".ToAtoms()
             };
 
             Assert.IsFalse(desc.Match(ctx));
@@ -267,8 +267,8 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "BFFf+".Reverse().ToAtoms(),
-                Successors = "BBa]A".ToAtoms()
+                Left = "BFFf+".Reverse().ToAtoms(),
+                Right = "BBa]A".ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -289,15 +289,15 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FFf}B".Reverse().ToAtoms(),
-                Successors = "BBa]A".ToAtoms()
+                Left = "FFf}B".Reverse().ToAtoms(),
+                Right = "BBa]A".ToAtoms()
             };
 
             Assert.IsFalse(desc.Match(ctx));
         }
 
         [Test]
-        public void MatchWithPredecessorShorterThanPreconditionFails()
+        public void MatchWithLeftContextShorterThanPreconditionFails()
         {
             RuleDescriptor desc = new RuleDescriptor
             {
@@ -310,14 +310,14 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FFf".Reverse().ToAtoms()
+                Left = "FFf".Reverse().ToAtoms()
             };
 
             Assert.IsFalse(desc.Match(ctx));
         }
 
         [Test]
-        public void MatchWithSuccessorShorterThanPostconditionFails()
+        public void MatchWithRightContextShorterThanPostconditionFails()
         {
             RuleDescriptor desc = new RuleDescriptor
             {
@@ -328,7 +328,7 @@ namespace RubberPlant.Tests
             Context ctx = new Context
             {
                 Current = 'F',
-                Successors = "BB".ToAtoms()
+                Right = "BB".ToAtoms()
             };
 
             Assert.IsFalse(desc.Match(ctx));
@@ -348,7 +348,7 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "-F-+Ff".Reverse().ToAtoms()
+                Left = "-F-+Ff".Reverse().ToAtoms()
             };
 
             IList<Atom> ignores = "-+".ToAtoms();
@@ -367,7 +367,7 @@ namespace RubberPlant.Tests
             Context ctx = new Context
             {
                 Current = 'F',
-                Successors = "-F-+Ff".ToAtoms()
+                Right = "-F-+Ff".ToAtoms()
             };
 
             IList<Atom> ignores = "-+".ToAtoms();
@@ -388,7 +388,7 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FF[AB]f".Reverse().ToAtoms()
+                Left = "FF[AB]f".Reverse().ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -408,7 +408,7 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FF[BA]f".Reverse().ToAtoms()
+                Left = "FF[BA]f".Reverse().ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -426,7 +426,7 @@ namespace RubberPlant.Tests
             Context ctx = new Context
             {
                 Current = 'F',
-                Successors = "FF[AB]f".ToAtoms()
+                Right = "FF[AB]f".ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -444,7 +444,7 @@ namespace RubberPlant.Tests
             Context ctx = new Context
             {
                 Current = 'F',
-                Successors = "FF[AB]f".ToAtoms()
+                Right = "FF[AB]f".ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -464,7 +464,7 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = "FF[[A]B]f".Reverse().ToAtoms()
+                Left = "FF[[A]B]f".Reverse().ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -472,7 +472,7 @@ namespace RubberPlant.Tests
 
         [TestCase("FF[A]f", "FF[A[B]]f")]
         [TestCase("FF[A]f", "FF[G[B]A]f")]
-        public void MatchWithPreconditionWithMultiplePushedBranchAndBranchMatchWorks(string preCondition, string predecessors)
+        public void MatchWithPreconditionWithMultiplePushedBranchAndBranchMatchWorks(string preCondition, string leftContext)
         {
             RuleDescriptor desc = new RuleDescriptor
             {
@@ -485,7 +485,7 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = predecessors.Reverse().ToAtoms()
+                Left = leftContext.Reverse().ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -503,7 +503,7 @@ namespace RubberPlant.Tests
             Context ctx = new Context
             {
                 Current = 'F',
-                Successors = "FF[[A]B]f".ToAtoms()
+                Right = "FF[[A]B]f".ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -511,7 +511,7 @@ namespace RubberPlant.Tests
 
         [TestCase("FF[A]f", "FF[A[B]]f")]
         [TestCase("FF[A]f", "FF[A[B]G]f")]
-        public void MatchWithPostconditionWithMultiplePushedBranchAndBranchMatchWorks(string postCondition, string successors)
+        public void MatchWithPostconditionWithMultiplePushedBranchAndBranchMatchWorks(string postCondition, string rightContext)
         {
             RuleDescriptor desc = new RuleDescriptor
             {
@@ -522,7 +522,7 @@ namespace RubberPlant.Tests
             Context ctx = new Context
             {
                 Current = 'F',
-                Successors = successors.ToAtoms()
+                Right = rightContext.ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx));
@@ -530,7 +530,7 @@ namespace RubberPlant.Tests
 
         [TestCase("FF[A]f", "F-F[A-[B]]f+")]
         [TestCase("FF[A]f", "F-F[G-[B]A-]f+")]
-        public void MatchWithPreconditionWithMultiplePushedBranchAndIgnoresAndBranchMatchWorks(string preCondition, string predecessors)
+        public void MatchWithPreconditionWithMultiplePushedBranchAndIgnoresAndBranchMatchWorks(string preCondition, string leftContext)
         {
             RuleDescriptor desc = new RuleDescriptor
             {
@@ -543,7 +543,7 @@ namespace RubberPlant.Tests
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
-                Predecessors = predecessors.Reverse().ToAtoms()
+                Left = leftContext.Reverse().ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx, "+-".ToAtoms()));
@@ -551,7 +551,7 @@ namespace RubberPlant.Tests
 
         [TestCase("FF[A]f", "F-F[A-[B]]f+")]
         [TestCase("FF[A]f", "F-F[A-[B]G-]f+")]
-        public void MatchWithPostconditionWithMultiplePushedBranchAndIgnoresAndBranchMatchWorks(string postCondition, string successors)
+        public void MatchWithPostconditionWithMultiplePushedBranchAndIgnoresAndBranchMatchWorks(string postCondition, string rightContext)
         {
             RuleDescriptor desc = new RuleDescriptor
             {
@@ -562,7 +562,7 @@ namespace RubberPlant.Tests
             Context ctx = new Context
             {
                 Current = 'F',
-                Successors = successors.ToAtoms()
+                Right = rightContext.ToAtoms()
             };
 
             Assert.IsTrue(desc.Match(ctx, "+-".ToAtoms()));
@@ -583,8 +583,8 @@ namespace RubberPlant.Tests
                 Context ctx = new Context
                 {
                     Current = 'S',
-                    Predecessors = "ABC[DE][".Reverse().ToAtoms(),
-                    Successors = "G[HI[JK]L]MNO]".ToAtoms()
+                    Left = "ABC[DE][".Reverse().ToAtoms(),
+                    Right = "G[HI[JK]L]MNO]".ToAtoms()
                 };
 
                 Assert.IsTrue(desc.Match(ctx, "+-".ToAtoms()));
@@ -602,8 +602,8 @@ namespace RubberPlant.Tests
                 Context ctx = new Context
                 {
                     Current = 'S',
-                    Predecessors = "ONM[L[KJ]IH]G".Reverse().ToAtoms(),
-                    Successors = "[ED]CBA".ToAtoms()
+                    Left = "ONM[L[KJ]IH]G".Reverse().ToAtoms(),
+                    Right = "[ED]CBA".ToAtoms()
                 };
 
                 Assert.IsTrue(desc.Match(ctx, "+-".ToAtoms()));

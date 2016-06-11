@@ -13,7 +13,7 @@ namespace RubberPlant
         // PreCondition is expected to be in reverse order,
         // e.g. if you want to match a sting such as
         // ABC D EFG
-        // where D is the current atom and ABC the predecessor, you need to have
+        // where D is the current atom and ABC the left context, you need to have
         // CBA as precondition. If you're using the parser to create the LSystem
         // (and the descriptors, and the preconditions, etc), the order will be
         // as expected.
@@ -30,66 +30,66 @@ namespace RubberPlant
         {
             // The following is the same as:
             // return context.Current == RuleID &&
-            //        MatchPredecessor(context, ignores) &&
-            //        MatchSuccessor(context, ignores);
+            //        MatchLeft(context, ignores) &&
+            //        MatchRight(context, ignores);
             //
             // but it's easier to debug.
 
-            bool pred = false;
-            bool succ = false;
+            bool left = false;
+            bool right = false;
             bool current = (context.Current == RuleID);
             if (current)
-                pred = MatchPredecessor(context, ignores);
-            if (pred)
-                succ = MatchSuccessor(context, ignores);
+                left = MatchLeft(context, ignores);
+            if (left)
+                right = MatchRight(context, ignores);
 
-            return current && pred && succ;
+            return current && left && right;
         }
 
-        private bool MatchPredecessor(Context context, IList<Atom> ignores)
+        private bool MatchLeft(Context context, IList<Atom> ignores)
         {
-            int predIdx = 0;
+            int leftIdx = 0;
             foreach (var pre in PreCondition)
             {
-                if (predIdx >= context.Predecessors.Count)
+                if (leftIdx >= context.Left.Count)
                 {
                     return false;
                 }
 
-                if (pre != context.Predecessors[predIdx])
+                if (pre != context.Left[leftIdx])
                 {
                     bool skipBranchesAndIgnores;
 
                     do
                     {
                         // Skip any opening branches
-                        while (context.Predecessors[predIdx] == '[')
+                        while (context.Left[leftIdx] == '[')
                         {
-                            predIdx++;
-                            if (predIdx >= context.Predecessors.Count)
+                            leftIdx++;
+                            if (leftIdx >= context.Left.Count)
                             {
                                 return false;
                             }
                         }
 
-                        // Skip branch in predecessor.
-                        if (context.Predecessors[predIdx] == ']')
+                        // Skip branch in left context.
+                        if (context.Left[leftIdx] == ']')
                         {
                             // skip branch.
                             int branchDepth = 0;
                             do
                             {
-                                if (context.Predecessors[predIdx] == ']')
+                                if (context.Left[leftIdx] == ']')
                                 {
                                     branchDepth++;
                                 }
-                                else if (context.Predecessors[predIdx] == '[')
+                                else if (context.Left[leftIdx] == '[')
                                 {
                                     branchDepth--;
                                 }
 
-                                predIdx++;
-                                if (predIdx >= context.Predecessors.Count)
+                                leftIdx++;
+                                if (leftIdx >= context.Left.Count)
                                 {
                                     return false;
                                 }
@@ -97,86 +97,86 @@ namespace RubberPlant
                         }
 
                         // Skip ignores
-                        while (ignores.Contains(context.Predecessors[predIdx]))
+                        while (ignores.Contains(context.Left[leftIdx]))
                         {
-                            predIdx++;
-                            if (predIdx >= context.Predecessors.Count)
+                            leftIdx++;
+                            if (leftIdx >= context.Left.Count)
                             {
                                 return false;
                             }
                         }
 
-                        skipBranchesAndIgnores = context.Predecessors[predIdx] == '[' || context.Predecessors[predIdx] == ']';
+                        skipBranchesAndIgnores = context.Left[leftIdx] == '[' || context.Left[leftIdx] == ']';
                     } while (skipBranchesAndIgnores);
                 }
 
                 // Close branch matching
-                if (pre != context.Predecessors[predIdx] && pre == '[')
+                if (pre != context.Left[leftIdx] && pre == '[')
                 {
                     int branchDepth = 0;
                     do
                     {
-                        if (context.Predecessors[predIdx] == ']')
+                        if (context.Left[leftIdx] == ']')
                         {
                             branchDepth++;
                         }
-                        else if (context.Predecessors[predIdx] == '[')
+                        else if (context.Left[leftIdx] == '[')
                         {
                             branchDepth--;
                         }
-                        predIdx++;
-                        if (predIdx >= context.Predecessors.Count)
+                        leftIdx++;
+                        if (leftIdx >= context.Left.Count)
                         {
                             return false;
                         }
-                    } while (branchDepth != 0 || context.Predecessors[predIdx] != '[');
+                    } while (branchDepth != 0 || context.Left[leftIdx] != '[');
                 }
 
-                if (pre != context.Predecessors[predIdx])
+                if (pre != context.Left[leftIdx])
                 {
                     return false;
                 }
 
-                predIdx++;
+                leftIdx++;
             }
 
             return true;
         }
 
-        private bool MatchSuccessor(Context context, IList<Atom> ignores)
+        private bool MatchRight(Context context, IList<Atom> ignores)
         {
-            int succIdx = 0;
+            int rightIdx = 0;
             foreach (var post in PostCondition)
             {
-                if (succIdx >= context.Successors.Count)
+                if (rightIdx >= context.Right.Count)
                 {
                     return false;
                 }
 
-                if (post != context.Successors[succIdx])
+                if (post != context.Right[rightIdx])
                 {
                     bool skipBranchesAndIgnores;
 
                     do
                     {
-                        // Skip branch in successor.
-                        if (context.Successors[succIdx] == '[')
+                        // Skip branch in right context.
+                        if (context.Right[rightIdx] == '[')
                         {
                             // skip branch.
                             int branchDepth = 0;
                             do
                             {
-                                if (context.Successors[succIdx] == '[')
+                                if (context.Right[rightIdx] == '[')
                                 {
                                     branchDepth++;
                                 }
-                                else if (context.Successors[succIdx] == ']')
+                                else if (context.Right[rightIdx] == ']')
                                 {
                                     branchDepth--;
                                 }
 
-                                succIdx++;
-                                if (succIdx >= context.Successors.Count)
+                                rightIdx++;
+                                if (rightIdx >= context.Right.Count)
                                 {
                                     return false;
                                 }
@@ -184,47 +184,47 @@ namespace RubberPlant
                         }
 
                         // Skip ignores
-                        while (ignores.Contains(context.Successors[succIdx]))
+                        while (ignores.Contains(context.Right[rightIdx]))
                         {
-                            succIdx++;
-                            if (succIdx >= context.Successors.Count)
+                            rightIdx++;
+                            if (rightIdx >= context.Right.Count)
                             {
                                 return false;
                             }
                         }
 
-                        skipBranchesAndIgnores = context.Successors[succIdx] == '[';
+                        skipBranchesAndIgnores = context.Right[rightIdx] == '[';
                     } while (skipBranchesAndIgnores);
                 }
 
                 // Close branch matching
-                if (post != context.Successors[succIdx] && post == ']')
+                if (post != context.Right[rightIdx] && post == ']')
                 {
                     int branchDepth = 0;
                     do
                     {
-                        if (context.Successors[succIdx] == '[')
+                        if (context.Right[rightIdx] == '[')
                         {
                             branchDepth++;
                         }
-                        else if (context.Successors[succIdx] == ']')
+                        else if (context.Right[rightIdx] == ']')
                         {
                             branchDepth--;
                         }
-                        succIdx++;
-                        if (succIdx >= context.Successors.Count)
+                        rightIdx++;
+                        if (rightIdx >= context.Right.Count)
                         {
                             return false;
                         }
-                    } while (branchDepth != 0 || context.Successors[succIdx] != ']');
+                    } while (branchDepth != 0 || context.Right[rightIdx] != ']');
                 }
 
-                if (post != context.Successors[succIdx])
+                if (post != context.Right[rightIdx])
                 {
                     return false;
                 }
 
-                succIdx++;
+                rightIdx++;
             }
 
             return true;
