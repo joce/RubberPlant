@@ -9,7 +9,7 @@ namespace RubberPlant.App
     {
         static void Main(string[] args)
         {
-            ParserResult<Options> results = CommandLine.Parser.Default.ParseArguments<Options>(args);
+            ParserResult<Options> results = Parser.Default.ParseArguments<Options>(args);
             if (results.Tag == ParserResultType.NotParsed)
             {
                 return;

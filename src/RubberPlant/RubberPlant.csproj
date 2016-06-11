@@ -61,6 +61,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="GlobalSuppressions.cs" />
     <Compile Include="LSystem\Context.cs" />
     <Compile Include="LSystem\EnumerableExtensions.cs" />
     <Compile Include="LSystem\IRandom.cs" />

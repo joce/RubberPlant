@@ -71,6 +71,7 @@
     <Otherwise />
   </Choose>
   <ItemGroup>
+    <Compile Include="GlobalSuppressions.cs" />
     <Compile Include="LSystemTests.cs" />
     <Compile Include="MoqExtensions.cs" />
     <Compile Include="ParserTests.cs" />

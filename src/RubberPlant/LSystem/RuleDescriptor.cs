@@ -28,20 +28,18 @@ namespace RubberPlant
 
         public bool Match(Context context, IList<Atom> ignores)
         {
-            // The following is the same as:
-            // return context.Current == RuleID &&
-            //        MatchLeft(context, ignores) &&
-            //        MatchRight(context, ignores);
-            //
-            // but it's easier to debug.
-
             bool left = false;
             bool right = false;
             bool current = (context.Current == RuleID);
             if (current)
+            {
                 left = MatchLeft(context, ignores);
+            }
+
             if (left)
+            {
                 right = MatchRight(context, ignores);
+            }
 
             return current && left && right;
         }

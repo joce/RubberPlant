@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -87,6 +88,7 @@ namespace RubberPlant.Tests
         [Ignore("Info: Rule isn't used anywhere")]
         public void ExtraneousRuleGeneratesInfo()
         {
+            throw new NotImplementedException();
         }
 
         // TODO
@@ -94,6 +96,7 @@ namespace RubberPlant.Tests
         [Ignore("Info: Rule is used only within itself")]
         public void RuleUsedJustWithinItselfGeneratesInfo()
         {
+            throw new NotImplementedException();
         }
 
         [Test]

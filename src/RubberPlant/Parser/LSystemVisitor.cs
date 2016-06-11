@@ -138,7 +138,10 @@ namespace RubberPlant
 
             // Check if the weights add up to 1.0 precisely. If not, no sweat. We will normalize.
             // ReSharper disable once CompareOfFloatsByEqualityOperator
+#pragma warning disable S1244 // Floating point numbers should not be tested for equality
+            // ReSharper disable once CompareOfFloatsByEqualityOperator
             if (m_currentRule.TotalWeight != 1.0f)
+#pragma warning restore S1244 // Floating point numbers should not be tested for equality
             {
                 m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, m_currentRule.Descriptor.RuleID));
                 m_currentRule.NormalizeWeights();
