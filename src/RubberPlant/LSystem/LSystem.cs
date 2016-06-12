@@ -99,10 +99,10 @@ namespace RubberPlant
 
         public List<TurtleCommand> ReplaceAndTranslate(int iterations)
         {
-            return AsTurtleCommands(Replace(iterations));
+            return TranslateToTurtleCommands(Replace(iterations));
         }
 
-        internal List<TurtleCommand> AsTurtleCommands(List<Atom> atoms)
+        internal List<TurtleCommand> TranslateToTurtleCommands(List<Atom> atoms)
         {
             List<TurtleCommand> res = new List<TurtleCommand>();
             foreach (var atom in atoms)

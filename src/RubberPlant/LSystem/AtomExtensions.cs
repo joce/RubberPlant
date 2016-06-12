@@ -19,12 +19,12 @@ namespace RubberPlant
 
         public static List<Atom> ToAtoms(this string s)
         {
-            return s.Select(c => new Atom(c)).ToList();
+            return s.Where(c=> !char.IsWhiteSpace(c)).Select(c => new Atom(c)).ToList();
         }
 
         public static List<Atom> ToAtoms(this IEnumerable<char> s)
         {
-            return s.Select(c => new Atom(c)).ToList();
+            return s.Where(c => !char.IsWhiteSpace(c)).Select(c => new Atom(c)).ToList();
         }
     }
 }
