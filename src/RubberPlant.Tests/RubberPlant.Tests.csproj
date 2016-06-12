@@ -82,7 +82,6 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RuleDescriptorTests.cs" />
     <Compile Include="TestParserErrorListener.cs" />
-    <Compile Include="Extensions.cs" />
     <Compile Include="TurtleTests.cs" />
   </ItemGroup>
   <ItemGroup>
