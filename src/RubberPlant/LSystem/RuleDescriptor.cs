@@ -122,6 +122,7 @@ namespace RubberPlant
                         {
                             branchDepth--;
                         }
+
                         leftIdx++;
                         if (leftIdx >= context.Left.Count)
                         {
@@ -209,6 +210,7 @@ namespace RubberPlant
                         {
                             branchDepth--;
                         }
+
                         rightIdx++;
                         if (rightIdx >= context.Right.Count)
                         {

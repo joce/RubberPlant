@@ -8,8 +8,8 @@ namespace RubberPlant
     public class LSystem
     {
         public string Name { get; set; }
-        public Rule Axiom { get; set; } = new Rule();
         public double Angle { get; set; }
+        public Rule Axiom { get; set; } = new Rule();
         public List<Rule> Rules { get; set; } = new List<Rule>();
         public Dictionary<Atom, TurtleCommand> Vocabulary { get; set; }
 
