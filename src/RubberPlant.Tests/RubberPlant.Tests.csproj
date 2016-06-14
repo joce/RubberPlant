@@ -80,7 +80,7 @@
     <Compile Include="MoqExtensions.cs" />
     <Compile Include="ParserTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RuleDescriptorTests.cs" />
+    <Compile Include="RulePredecessorTests.cs" />
     <Compile Include="TestParserErrorListener.cs" />
     <Compile Include="TurtleTests.cs" />
   </ItemGroup>

@@ -10,7 +10,7 @@ namespace RubberPlant
 
         private LSystem m_currentLSystem;
 
-        private List<Atom> m_currentRuleReplacement;
+        private List<Atom> m_currentRuleSuccessor;
         private Rule m_currentRule;
         private HashSet<Atom> m_usedRules;
 
@@ -70,24 +70,24 @@ namespace RubberPlant
             }
 
             VisitChildren(ctx);
-            if (m_currentRuleReplacement.Count > 0)
+            if (m_currentRuleSuccessor.Count > 0)
             {
                 m_currentRule = new Rule();
-                m_currentRule.AddReplacement(m_currentRuleReplacement);
+                m_currentRule.AddSuccessor(m_currentRuleSuccessor);
                 m_currentLSystem.Axiom = m_currentRule;
                 m_hasAxiom = true;
             }
             return 0;
         }
 
-        public override double VisitRule_description(LSystemParser.Rule_descriptionContext ctx)
+        public override double VisitRule_predecessor(LSystemParser.Rule_predecessorContext ctx)
         {
             VisitChildren(ctx);
 
-            m_currentRule.Descriptor.RuleID = ctx.RULE_ID().GetText()[0];
-            if (m_currentLSystem.HasRule(m_currentRule.Descriptor))
+            m_currentRule.Predecessor.RuleID = ctx.RULE_ID().GetText()[0];
+            if (m_currentLSystem.HasRule(m_currentRule.Predecessor))
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, m_currentRule.Descriptor.RuleID));
+                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} has more than one rule defined for {1}.", m_currentLSystem.Name, m_currentRule.Predecessor.RuleID));
             }
 
             return 0;
@@ -96,14 +96,14 @@ namespace RubberPlant
         public override double VisitPre_cond(LSystemParser.Pre_condContext ctx)
         {
             // Precondition is stored backwards for easier matching
-            m_currentRule.Descriptor.PreCondition = ctx.RULE_ID().Select(r => new Atom(r.GetText()[0])).Reverse().ToList();
+            m_currentRule.Predecessor.PreCondition = ctx.RULE_ID().Select(r => new Atom(r.GetText()[0])).Reverse().ToList();
 
             return 0;
         }
 
         public override double VisitPost_cond(LSystemParser.Post_condContext ctx)
         {
-            m_currentRule.Descriptor.PostCondition = ctx.RULE_ID().Select(r => new Atom(r.GetText()[0])).ToList();
+            m_currentRule.Predecessor.PostCondition = ctx.RULE_ID().Select(r => new Atom(r.GetText()[0])).ToList();
 
             return 0;
         }
@@ -117,16 +117,16 @@ namespace RubberPlant
             return 0;
         }
 
-        public override double VisitBasic_rule(LSystemParser.Basic_ruleContext ctx)
+        public override double VisitBasic_successor(LSystemParser.Basic_successorContext ctx)
         {
             VisitChildren(ctx);
 
-            m_currentRule.AddReplacement(m_currentRuleReplacement);
+            m_currentRule.AddSuccessor(m_currentRuleSuccessor);
 
             return 0;
         }
 
-        public override double VisitStochastic_rule(LSystemParser.Stochastic_ruleContext ctx)
+        public override double VisitStochastic_successor(LSystemParser.Stochastic_successorContext ctx)
         {
             VisitChildren(ctx);
 
@@ -143,37 +143,37 @@ namespace RubberPlant
             if (m_currentRule.TotalWeight != 1.0f)
 #pragma warning restore S1244 // Floating point numbers should not be tested for equality
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, m_currentRule.Descriptor.RuleID));
+                m_errorListener.VisitError(ctx, ErrorLevel.Warning, string.Format("LSystem {0} stochastic rule {1} weights do not total 1. Values will be normalized.", m_currentLSystem.Name, m_currentRule.Predecessor.RuleID));
                 m_currentRule.NormalizeWeights();
             }
 
             return 0;
         }
 
-        public override double VisitStochastic_subrule(LSystemParser.Stochastic_subruleContext ctx)
+        public override double VisitStochastic_successor_part(LSystemParser.Stochastic_successor_partContext ctx)
         {
             float weight = float.Parse(ctx.STOCHASTIC_WEIGHT().GetText());
 
             // Weight of a stochastic rule can't be 0 or negative. That would make no sense.
             if (weight <= 0)
             {
-                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} stochastic rule {1} has negative or zero value ({2}). This makes no sense.", m_currentLSystem.Name, m_currentRule.Descriptor.RuleID, weight));
+                m_errorListener.VisitError(ctx, ErrorLevel.Error, string.Format("LSystem {0} stochastic rule {1} has negative or zero value ({2}). This makes no sense.", m_currentLSystem.Name, m_currentRule.Predecessor.RuleID, weight));
                 return 0;
             }
 
             VisitChildren(ctx);
 
-            m_currentRule.AddReplacement(m_currentRuleReplacement, weight);
+            m_currentRule.AddSuccessor(m_currentRuleSuccessor, weight);
 
             return 0;
         }
 
-        public override double VisitProd_rule(LSystemParser.Prod_ruleContext ctx)
+        public override double VisitSuccessor(LSystemParser.SuccessorContext ctx)
         {
             if (ctx.RULE_ID() != null)
             {
-                m_currentRuleReplacement = ctx.RULE_ID().Select(r => new Atom(r.GetText()[0])).ToList();
-                foreach (var atom in m_currentRuleReplacement)
+                m_currentRuleSuccessor = ctx.RULE_ID().Select(r => new Atom(r.GetText()[0])).ToList();
+                foreach (var atom in m_currentRuleSuccessor)
                 {
                     m_usedRules.Add(atom);
                 }
@@ -285,11 +285,11 @@ namespace RubberPlant
             // TODO Check that no pre or post condition contain ignored symbols.
             foreach (var rule in m_currentLSystem.Rules)
             {
-                var nonDefinedPreCond = rule.Descriptor.PreCondition.Except(m_usedRules).ToList();
+                var nonDefinedPreCond = rule.Predecessor.PreCondition.Except(m_usedRules).ToList();
                 if (nonDefinedPreCond.Any())
                 {
                     var nonDefined = string.Join(", ", nonDefinedPreCond);
-                    StringBuilder sb = new StringBuilder(string.Format("LSystem {0} rule {1} uses undefined symbol(s) {2}.\n", m_currentLSystem.Name, rule.Descriptor.RuleID, nonDefined));
+                    StringBuilder sb = new StringBuilder(string.Format("LSystem {0} rule {1} uses undefined symbol(s) {2}.\n", m_currentLSystem.Name, rule.Predecessor.RuleID, nonDefined));
                     sb.Append("This rule will be unreachable.");
                     m_errorListener.VisitError(ctx, ErrorLevel.Warning, sb.ToString());
                 }

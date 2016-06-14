@@ -11,7 +11,7 @@ namespace RubberPlant.Tests
     public class ParserTests
     {
         private TestParserErrorListener m_errorListener;
-        private static readonly RuleDescriptor k_ruleF = new RuleDescriptor {RuleID = new Atom('F')};
+        private static readonly RulePredecessor k_ruleF = new RulePredecessor {RuleID = new Atom('F')};
 
         [TestCase("SimpleTest.ls", 1)]
         [TestCase("MultipleDefinitions.ls", 2)]
@@ -107,7 +107,7 @@ namespace RubberPlant.Tests
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors();
             Assert.AreEqual(1, systems.Count);
-            Assert.AreEqual( "{F-F}".ToAtoms(), systems[0].GetRule(k_ruleF).Replacement);
+            Assert.AreEqual( "{F-F}".ToAtoms(), systems[0].GetRule(k_ruleF).Successor);
         }
 
         [Test]
@@ -119,7 +119,7 @@ namespace RubberPlant.Tests
             AssertErrors();
             Assert.AreEqual(1, systems.Count);
             Assert.AreEqual(1, systems[0].Rules.Count);
-            Assert.AreEqual(2, systems[0].GetRule(k_ruleF).ReplacementCount);
+            Assert.AreEqual(2, systems[0].GetRule(k_ruleF).SuccessorCount);
             Assert.That(0.3, Is.EqualTo(systems[0].GetRule(k_ruleF)[0].Item1).Within(0.00001));
             Assert.That(0.7, Is.EqualTo(systems[0].GetRule(k_ruleF)[1].Item1).Within(0.00001));
         }
@@ -167,7 +167,7 @@ namespace RubberPlant.Tests
 
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors();
-            Assert.AreEqual("+ABF".ToAtoms(), systems[0].GetRules('A').First().Descriptor.PreCondition);
+            Assert.AreEqual("+ABF".ToAtoms(), systems[0].GetRules('A').First().Predecessor.PreCondition);
         }
 
         [Test]
@@ -177,7 +177,7 @@ namespace RubberPlant.Tests
 
             IList<LSystem> systems = LoadFromResource(resourceName);
             AssertErrors();
-            Assert.AreEqual("FABB+".ToAtoms(), systems[0].GetRules('F').First().Descriptor.PostCondition);
+            Assert.AreEqual("FABB+".ToAtoms(), systems[0].GetRules('F').First().Predecessor.PostCondition);
         }
 
         [Test]

@@ -20,13 +20,13 @@ namespace RubberPlant.Tests
             m_axiom = new Rule();
 
             m_ruleF = new Rule();
-            m_ruleF.Descriptor.RuleID = 'F';
+            m_ruleF.Predecessor.RuleID = 'F';
 
             m_ruleA = new Rule();
-            m_ruleA.Descriptor.RuleID = 'A';
+            m_ruleA.Predecessor.RuleID = 'A';
 
             m_ruleB = new Rule();
-            m_ruleB.Descriptor.RuleID = 'B';
+            m_ruleB.Predecessor.RuleID = 'B';
 
             m_lSystem = new LSystem() {Axiom = m_axiom};
         }
@@ -34,9 +34,9 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesSimpleOneLevelOneRuleReplacement()
         {
-            m_axiom.AddReplacement("F+F+F".ToAtoms());
+            m_axiom.AddSuccessor("F+F+F".ToAtoms());
 
-            m_ruleF.AddReplacement("FFF".ToAtoms());
+            m_ruleF.AddSuccessor("FFF".ToAtoms());
 
             m_lSystem.Rules = new List<Rule> {m_ruleF};
 
@@ -48,9 +48,9 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesOneLevelOneRuleReplacement()
         {
-            m_axiom.AddReplacement("F+F+F".ToAtoms());
+            m_axiom.AddSuccessor("F+F+F".ToAtoms());
 
-            m_ruleF.AddReplacement("F-f".ToAtoms());
+            m_ruleF.AddSuccessor("F-f".ToAtoms());
 
             m_lSystem.Rules = new List<Rule> {m_ruleF};
 
@@ -62,11 +62,11 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesOneLevelMultiRuleReplacement()
         {
-            m_axiom.AddReplacement("F+A+B".ToAtoms());
+            m_axiom.AddSuccessor("F+A+B".ToAtoms());
 
-            m_ruleF.AddReplacement("F-f".ToAtoms());
-            m_ruleA.AddReplacement("AB".ToAtoms());
-            m_ruleB.AddReplacement("FfF".ToAtoms());
+            m_ruleF.AddSuccessor("F-f".ToAtoms());
+            m_ruleA.AddSuccessor("AB".ToAtoms());
+            m_ruleB.AddSuccessor("FfF".ToAtoms());
 
             m_lSystem.Rules = new List<Rule> {m_ruleF, m_ruleA, m_ruleB};
 
@@ -78,9 +78,9 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesSimpleTwoLevelOneRuleReplacement()
         {
-            m_axiom.AddReplacement("F+F+F".ToAtoms());
+            m_axiom.AddSuccessor("F+F+F".ToAtoms());
 
-            m_ruleF.AddReplacement("FFF".ToAtoms());
+            m_ruleF.AddSuccessor("FFF".ToAtoms());
 
             m_lSystem.Rules = new List<Rule> {m_ruleF};
 
@@ -92,9 +92,9 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesTwoLevelOneRuleReplacement()
         {
-            m_axiom.AddReplacement("F+F+F".ToAtoms());
+            m_axiom.AddSuccessor("F+F+F".ToAtoms());
 
-            m_ruleF.AddReplacement("F-f".ToAtoms());
+            m_ruleF.AddSuccessor("F-f".ToAtoms());
 
             m_lSystem.Rules = new List<Rule> {m_ruleF};
 
@@ -106,11 +106,11 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemDoesTwoLevelMultiRuleReplacement()
         {
-            m_axiom.AddReplacement("F+A+B".ToAtoms());
+            m_axiom.AddSuccessor("F+A+B".ToAtoms());
 
-            m_ruleF.AddReplacement("F-f".ToAtoms());
-            m_ruleA.AddReplacement("AB".ToAtoms());
-            m_ruleB.AddReplacement("FfF".ToAtoms());
+            m_ruleF.AddSuccessor("F-f".ToAtoms());
+            m_ruleA.AddSuccessor("AB".ToAtoms());
+            m_ruleB.AddSuccessor("FfF".ToAtoms());
 
             m_lSystem.Rules = new List<Rule> {m_ruleF, m_ruleA, m_ruleB};
 
@@ -126,10 +126,10 @@ namespace RubberPlant.Tests
             random.Setup(r => r.NextDouble()).ReturnsInOrder(0.7, 0.2);
             Rule.Random = random.Object;
 
-            m_axiom.AddReplacement("F".ToAtoms());
+            m_axiom.AddSuccessor("F".ToAtoms());
 
-            m_ruleF.AddReplacement("F+F".ToAtoms(), 0.3f);
-            m_ruleF.AddReplacement("-F-".ToAtoms(), 0.7f);
+            m_ruleF.AddSuccessor("F+F".ToAtoms(), 0.3f);
+            m_ruleF.AddSuccessor("-F-".ToAtoms(), 0.7f);
 
             m_lSystem.Rules = new List<Rule> {m_ruleF};
 
@@ -188,11 +188,11 @@ namespace RubberPlant.Tests
         [Test]
         public void LSystemConvertsAndTranslates()
         {
-            m_axiom.AddReplacement("F+A+B".ToAtoms());
+            m_axiom.AddSuccessor("F+A+B".ToAtoms());
 
-            m_ruleF.AddReplacement("F-f".ToAtoms());
-            m_ruleA.AddReplacement("AB".ToAtoms());
-            m_ruleB.AddReplacement("FfF".ToAtoms());
+            m_ruleF.AddSuccessor("F-f".ToAtoms());
+            m_ruleA.AddSuccessor("AB".ToAtoms());
+            m_ruleB.AddSuccessor("FfF".ToAtoms());
 
             m_lSystem.Rules = new List<Rule> {m_ruleF, m_ruleA, m_ruleB};
             m_lSystem.Vocabulary['F'] = TurtleCommand.Draw;
@@ -224,16 +224,16 @@ namespace RubberPlant.Tests
         public void LSystemABOPContextualReplacement(int iterations, string expectedResult)
         {
             // From The Algorithmic Beauty of Plants, p. 31
-            m_axiom.AddReplacement("baaaaaaaa".ToAtoms());
+            m_axiom.AddSuccessor("baaaaaaaa".ToAtoms());
 
             var ruleA = new Rule();
-            ruleA.Descriptor.RuleID = 'a';
-            ruleA.Descriptor.PreCondition = "b".ToAtoms();
-            ruleA.AddReplacement("b".ToAtoms());
+            ruleA.Predecessor.RuleID = 'a';
+            ruleA.Predecessor.PreCondition = "b".ToAtoms();
+            ruleA.AddSuccessor("b".ToAtoms());
 
             var ruleB = new Rule();
-            ruleB.Descriptor.RuleID = 'b';
-            ruleB.AddReplacement("a".ToAtoms());
+            ruleB.Predecessor.RuleID = 'b';
+            ruleB.AddSuccessor("a".ToAtoms());
 
             LSystem lsys = new LSystem
             {

@@ -38,27 +38,27 @@ namespace RubberPlant
 
         public bool HasRule(Atom atom)
         {
-            return Rules.Any(r => r.Descriptor.RuleID == atom);
+            return Rules.Any(r => r.Predecessor.RuleID == atom);
         }
 
-        public bool HasRule(RuleDescriptor desc)
+        public bool HasRule(RulePredecessor desc)
         {
-            return Rules.Any(r => r.Descriptor == desc);
+            return Rules.Any(r => r.Predecessor == desc);
         }
 
         public IEnumerable<Rule> GetRules(Atom atom)
         {
-            return Rules.Where(r => r.Descriptor.RuleID == atom);
+            return Rules.Where(r => r.Predecessor.RuleID == atom);
         }
 
-        public Rule GetRule(RuleDescriptor desc)
+        public Rule GetRule(RulePredecessor desc)
         {
-            return Rules.First(r => r.Descriptor == desc);
+            return Rules.First(r => r.Predecessor == desc);
         }
 
         public List<Atom> Replace(int iterations)
         {
-            List<Atom> source = Axiom.Replacement;
+            List<Atom> source = Axiom.Successor;
             List<Atom> destination = source;
             for (int i = 0; i < iterations; i++)
             {
@@ -84,7 +84,7 @@ namespace RubberPlant
                     var rule = Rules.FirstOrDefault(r => r.Match(ctx, MatchIgnores));
                     if (rule != null)
                     {
-                        destination.AddRange(rule.Replacement);
+                        destination.AddRange(rule.Successor);
                     }
                     else
                     {

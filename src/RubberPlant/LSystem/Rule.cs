@@ -13,51 +13,51 @@ namespace RubberPlant
             set { s_random = value; }
         }
 
-        private List<Tuple<float, List<Atom>>> m_replacements = new List<Tuple<float, List<Atom>>>();
+        private List<Tuple<float, List<Atom>>> m_successors = new List<Tuple<float, List<Atom>>>();
 
-        public RuleDescriptor Descriptor { get; } = new RuleDescriptor();
-        public List<Atom> Replacement => m_replacements.Count == 1 ? m_replacements[0].Item2 : GetRandomReplacement();
-        public float TotalWeight => m_replacements.Select(r => r.Item1).Sum();
-        public int ReplacementCount => m_replacements.Count;
+        public RulePredecessor Predecessor { get; } = new RulePredecessor();
+        public List<Atom> Successor => m_successors.Count == 1 ? m_successors[0].Item2 : GetRandomSuccessor();
+        public float TotalWeight => m_successors.Select(r => r.Item1).Sum();
+        public int SuccessorCount => m_successors.Count;
 
-        public void AddReplacement(List<Atom> body)
+        public void AddSuccessor(List<Atom> body)
         {
-            AddReplacement(body, 1);
+            AddSuccessor(body, 1);
         }
 
-        public void AddReplacement(List<Atom> body, float weight)
+        public void AddSuccessor(List<Atom> body, float weight)
         {
-            m_replacements.Add(new Tuple<float, List<Atom>>(weight, body));
+            m_successors.Add(new Tuple<float, List<Atom>>(weight, body));
         }
 
         public void NormalizeWeights()
         {
-            if (m_replacements.Count == 0)
+            if (m_successors.Count == 0)
             {
                 throw new InvalidOperationException("No stochastic rules to normalize on.");
             }
 
-            float totalWeight = m_replacements.Select(r => r.Item1).Sum();
-            m_replacements = m_replacements.Select(subrule => new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)).ToList();
+            float totalWeight = m_successors.Select(r => r.Item1).Sum();
+            m_successors = m_successors.Select(subrule => new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)).ToList();
         }
 
         public bool Match(EvalContext evalContext, IList<Atom> ignores)
         {
-            return Descriptor.Match(evalContext, ignores);
+            return Predecessor.Match(evalContext, ignores);
         }
 
         public override string ToString()
         {
-            return Descriptor.ToString();
+            return Predecessor.ToString();
         }
 
         // For testing purposes
-        internal Tuple<float, List<Atom>> this[int i] => m_replacements[i];
+        internal Tuple<float, List<Atom>> this[int i] => m_successors[i];
 
-        private List<Atom> GetRandomReplacement()
+        private List<Atom> GetRandomSuccessor()
         {
             var rnd = (float)Random.NextDouble();
-            foreach (var subrule in m_replacements)
+            foreach (var subrule in m_successors)
             {
                 if (rnd <= subrule.Item1)
                 {

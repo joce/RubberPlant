@@ -6,7 +6,7 @@ using System.Text;
 
 namespace RubberPlant
 {
-    public class RuleDescriptor
+    public class RulePredecessor
     {
         public Atom RuleID { get; set; }
 
@@ -15,7 +15,7 @@ namespace RubberPlant
         // ABC D EFG
         // where D is the current atom and ABC the left eval context, you need to have
         // CBA as precondition. If you're using the parser to create the LSystem
-        // (and the descriptors, and the preconditions, etc), the order will be
+        // (and the predecessors, and the preconditions, etc), the order will be
         // as expected.
         // To be noted, the eval context is expected to be in reverse order as well.
         public List<Atom> PreCondition { get; set; } = new List<Atom>();
@@ -255,7 +255,7 @@ namespace RubberPlant
 
         public override bool Equals(object obj)
         {
-            RuleDescriptor other = obj as RuleDescriptor;
+            RulePredecessor other = obj as RulePredecessor;
             if (other != null)
             {
                 return Equals(other);
@@ -263,7 +263,7 @@ namespace RubberPlant
             return false;
         }
 
-        protected bool Equals(RuleDescriptor other)
+        protected bool Equals(RulePredecessor other)
         {
             if (PreCondition.Count != other.PreCondition.Count || PreCondition.Where((t, i) => t != other.PreCondition[i]).Any())
             {
@@ -289,12 +289,12 @@ namespace RubberPlant
             }
         }
 
-        public static bool operator ==(RuleDescriptor left, RuleDescriptor right)
+        public static bool operator ==(RulePredecessor left, RulePredecessor right)
         {
             return Equals(left, right);
         }
 
-        public static bool operator !=(RuleDescriptor left, RuleDescriptor right)
+        public static bool operator !=(RulePredecessor left, RulePredecessor right)
         {
             return !Equals(left, right);
         }

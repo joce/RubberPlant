@@ -22,20 +22,20 @@ action_stmt : ACTION_DEF START_ACTION ACTION_RULE_ID (ACTION_SEPARATOR ACTION_RU
 
 ignore_stmt : IGNORE_DEF START_IGNORE IGNORE_RULE_ID+ END_IGNORE ;
 
-axiom_stmt : AXIOM_DEF START_RULE prod_rule END_RULE ;
+axiom_stmt : AXIOM_DEF START_RULE successor END_RULE ;
 
-rule_stmt : RULE_DEF START_RULE rule_description (basic_rule | stochastic_rule) END_RULE ;
+rule_stmt : RULE_DEF START_RULE rule_predecessor (basic_successor | stochastic_successor) END_RULE ;
 
-rule_description : pre_cond? RULE_ID post_cond? ;
+rule_predecessor : pre_cond? RULE_ID post_cond? ;
 
-pre_cond: RULE_ID+ '<' ;
+pre_cond : RULE_ID+ '<' ;
 
-post_cond: '>' RULE_ID+ ;
+post_cond : '>' RULE_ID+ ;
 
-basic_rule : RULE_DEFINER prod_rule;
+basic_successor : RULE_DEFINER successor ;
 
-stochastic_rule : stochastic_subrule (RULE_SEPARATOR stochastic_subrule)* ;
+stochastic_successor : stochastic_successor_part (RULE_SEPARATOR stochastic_successor_part)* ;
 
-stochastic_subrule : STOCHASTIC_WEIGHT RULE_DEFINER prod_rule ;
+stochastic_successor_part : STOCHASTIC_WEIGHT RULE_DEFINER successor ;
 
-prod_rule : RULE_ID* ;
+successor : RULE_ID* ;

@@ -5,7 +5,7 @@ using NUnit.Framework;
 namespace RubberPlant.Tests
 {
     [TestFixture]
-    public class RuleDescriptorTests
+    public class RulePredecessorTests
     {
         [Test]
         public void RuleToStringPrintsAsExpectedWithoutPreOrPostCondition()
@@ -14,7 +14,7 @@ namespace RubberPlant.Tests
             for (int i = 0; i < 26; i++)
             {
                 char ruleID = (char)('A' + i);
-                RuleDescriptor r = new RuleDescriptor {RuleID = ruleID};
+                RulePredecessor r = new RulePredecessor {RuleID = ruleID};
                 Assert.AreEqual(ruleID.ToString(), r.ToString());
             }
 
@@ -22,7 +22,7 @@ namespace RubberPlant.Tests
             for (int i = 0; i < 26; i++)
             {
                 char ruleID = (char)('a' + i);
-                RuleDescriptor r = new RuleDescriptor {RuleID = ruleID};
+                RulePredecessor r = new RulePredecessor {RuleID = ruleID};
                 Assert.AreEqual(ruleID.ToString(), r.ToString());
             }
 
@@ -30,7 +30,7 @@ namespace RubberPlant.Tests
             foreach (var turtleCommand in LSystem.k_implicitTurtleCommands.Keys)
             {
                 char ruleID = turtleCommand.RuleName;
-                RuleDescriptor r = new RuleDescriptor {RuleID = ruleID};
+                RulePredecessor r = new RulePredecessor {RuleID = ruleID};
                 Assert.AreEqual(ruleID.ToString(), r.ToString());
             }
         }
@@ -38,21 +38,21 @@ namespace RubberPlant.Tests
         [Test]
         public void RuleToStringPrintsAsExpectedWithPreCondition()
         {
-            RuleDescriptor r = new RuleDescriptor {RuleID = 'A', PreCondition = "BBa]A".ToAtoms()};
+            RulePredecessor r = new RulePredecessor {RuleID = 'A', PreCondition = "BBa]A".ToAtoms()};
             Assert.AreEqual("BBa]A < A", r.ToString());
         }
 
         [Test]
         public void RuleToStringPrintsAsExpectedWithPostCondition()
         {
-            RuleDescriptor r = new RuleDescriptor {RuleID = 'A', PostCondition = "BBa]A".ToAtoms()};
+            RulePredecessor r = new RulePredecessor {RuleID = 'A', PostCondition = "BBa]A".ToAtoms()};
             Assert.AreEqual("A > BBa]A", r.ToString());
         }
 
         [Test]
         public void RuleToStringPrintsAsExpectedWithPreOrPostCondition()
         {
-            RuleDescriptor r = new RuleDescriptor
+            RulePredecessor r = new RulePredecessor
             {
                 RuleID = 'A',
                 PreCondition = "FFf}B".ToAtoms(),
@@ -64,7 +64,7 @@ namespace RubberPlant.Tests
         [Test]
         public void RuleEqualityWorksAsExpected()
         {
-            RuleDescriptor rA = new RuleDescriptor
+            RulePredecessor rA = new RulePredecessor
             {
                 RuleID = 'A',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -73,7 +73,7 @@ namespace RubberPlant.Tests
             };
 
             // Same as rA
-            RuleDescriptor rA1 = new RuleDescriptor
+            RulePredecessor rA1 = new RulePredecessor
             {
                 RuleID = 'A',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -82,7 +82,7 @@ namespace RubberPlant.Tests
             };
 
             // Same as rA, but no precondition
-            RuleDescriptor rAPre = new RuleDescriptor
+            RulePredecessor rAPre = new RulePredecessor
             {
                 RuleID = 'A',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -90,14 +90,14 @@ namespace RubberPlant.Tests
             };
 
             // Same as rA, but no post-condition
-            RuleDescriptor rAPost = new RuleDescriptor
+            RulePredecessor rAPost = new RulePredecessor
             {
                 RuleID = 'A',
                 PostCondition = "BBa]A".ToAtoms()
             };
 
             // Same as rA, but different pre condition
-            RuleDescriptor rADiffPre = new RuleDescriptor
+            RulePredecessor rADiffPre = new RulePredecessor
             {
                 RuleID = 'A',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -106,7 +106,7 @@ namespace RubberPlant.Tests
             };
 
             // Same as rA, but different post-condition
-            RuleDescriptor rADiffPost = new RuleDescriptor
+            RulePredecessor rADiffPost = new RulePredecessor
             {
                 RuleID = 'A',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -115,13 +115,13 @@ namespace RubberPlant.Tests
             };
 
             // Same rule as rA, but no pre or post-condition
-            RuleDescriptor rAPlain = new RuleDescriptor
+            RulePredecessor rAPlain = new RulePredecessor
             {
                 RuleID = 'A'
             };
 
             // Same pre and post-condition as rA, but different rule ID
-            RuleDescriptor rB = new RuleDescriptor
+            RulePredecessor rB = new RulePredecessor
             {
                 RuleID = 'B',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -143,7 +143,7 @@ namespace RubberPlant.Tests
         [Test]
         public void SimpleMatchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor {RuleID = 'F'};
+            RulePredecessor desc = new RulePredecessor {RuleID = 'F'};
             EvalContext ctx = new EvalContext
             {
                 Current = 'F',
@@ -158,7 +158,7 @@ namespace RubberPlant.Tests
         [Test]
         public void SimpleNonMatchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor {RuleID = 'F'};
+            RulePredecessor desc = new RulePredecessor {RuleID = 'F'};
             EvalContext ctx = new EvalContext
             {
                 Current = 'B',
@@ -173,7 +173,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithSimplePreconditionWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -194,7 +194,7 @@ namespace RubberPlant.Tests
         [Test]
         public void NonMatchWithSimplePreconditionWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -215,7 +215,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithSimplePostconditionWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = "BB+".ToAtoms()
@@ -235,7 +235,7 @@ namespace RubberPlant.Tests
         [Test]
         public void NonMatchWithSimplePostconditionWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = "FBf".ToAtoms()
@@ -255,7 +255,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithSimpleConditionsWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -277,7 +277,7 @@ namespace RubberPlant.Tests
         [Test]
         public void NonMatchWithSimpleConditionsWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -299,7 +299,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithLeftContextShorterThanPreconditionFails()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -319,7 +319,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithRightContextShorterThanPostconditionFails()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = "BBf".ToAtoms()
@@ -337,7 +337,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithIgnoresInPreConditionWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -358,7 +358,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithIgnoresInPostConditionWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = "FFf".ToAtoms()
@@ -377,7 +377,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithPreconditionWithSimplePushedBranchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -397,7 +397,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithPreconditionWithSimplePushedBranchAndBranchMatchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -417,7 +417,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithPostconditionWithSimplePushedBranchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = "FFf".ToAtoms()
@@ -435,7 +435,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithPostconditionWithSimplePushedBranchAndBranchMatchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = "FF[A]f".ToAtoms()
@@ -453,7 +453,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithPreconditionWithMultiplePushedBranchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -474,7 +474,7 @@ namespace RubberPlant.Tests
         [TestCase("FF[A]f", "FF[G[B]A]f")]
         public void MatchWithPreconditionWithMultiplePushedBranchAndBranchMatchWorks(string preCondition, string leftContext)
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -494,7 +494,7 @@ namespace RubberPlant.Tests
         [Test]
         public void MatchWithPostconditionWithMultiplePushedBranchWorks()
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = "FFf".ToAtoms()
@@ -513,7 +513,7 @@ namespace RubberPlant.Tests
         [TestCase("FF[A]f", "FF[A[B]G]f")]
         public void MatchWithPostconditionWithMultiplePushedBranchAndBranchMatchWorks(string postCondition, string rightContext)
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = postCondition.ToAtoms()
@@ -532,7 +532,7 @@ namespace RubberPlant.Tests
         [TestCase("FF[A]f", "F-F[G-[B]A-]f+")]
         public void MatchWithPreconditionWithMultiplePushedBranchAndIgnoresAndBranchMatchWorks(string preCondition, string leftContext)
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 // Reversed,  because that's how it's going to be read in by the parser
@@ -553,7 +553,7 @@ namespace RubberPlant.Tests
         [TestCase("FF[A]f", "F-F[A-[B]G-]f+")]
         public void MatchWithPostconditionWithMultiplePushedBranchAndIgnoresAndBranchMatchWorks(string postCondition, string rightContext)
         {
-            RuleDescriptor desc = new RuleDescriptor
+            RulePredecessor desc = new RulePredecessor
             {
                 RuleID = 'F',
                 PostCondition = postCondition.ToAtoms()
@@ -573,7 +573,7 @@ namespace RubberPlant.Tests
         {
             {
                 // From The Algorithmic Beauty of Plants, p. 32
-                RuleDescriptor desc = new RuleDescriptor
+                RulePredecessor desc = new RulePredecessor
                 {
                     RuleID = 'S',
                     PreCondition = "BC".Reverse().ToAtoms(),
@@ -592,7 +592,7 @@ namespace RubberPlant.Tests
 
             {
                 // Reverse from The Algorithmic Beauty of Plants, p. 32
-                RuleDescriptor desc = new RuleDescriptor
+                RulePredecessor desc = new RulePredecessor
                 {
                     RuleID = 'S',
                     PreCondition = "M[H]G".Reverse().ToAtoms(),
