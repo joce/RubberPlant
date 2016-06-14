@@ -8,11 +8,11 @@ LSYSTEM : 'lsystem'  -> pushMode(NAME_MODE) ;
 OPEN_BRACE : '{' ;
 CLOSE_BRACE : '}' ;
 
-RULE_DEF : 'r' ('ule')? -> pushMode(RULE_MODE) ;
-AXIOM_DEF : ('x' | 'axiom') -> pushMode(RULE_MODE) ;
-ACTION_DEF : 'a' ('ction')? -> pushMode(ACTION_MODE) ;
-ANGLE_DEF : ('g' | 'angle') -> pushMode(ANGLE_MODE) ;
-IGNORE_DEF : 'i' ('gnore')? -> pushMode(IGNORE_MODE) ;
+RULE : 'r' ('ule')? WS* ':' -> pushMode(RULE_MODE) ;
+AXIOM : ('x' | 'axiom') WS* ':' -> pushMode(RULE_MODE) ;
+ACTION : 'a' ('ction')? WS* ':' -> pushMode(ACTION_MODE) ;
+ANGLE : ('g' | 'angle') WS* ':' -> pushMode(ANGLE_MODE) ;
+IGNORE : 'i' ('gnore')? WS* ':' -> pushMode(IGNORE_MODE) ;
 
 //DEFINE_DEF : 'd' ('efine')? -> pushMode(DEFINE_MODE) ;
 
@@ -68,7 +68,6 @@ WS_NAME: WS -> skip ;
 ///////////////////////////////////////////////////////////////////////////////
 mode RULE_MODE ;
 
-START_RULE : ':' ;
 RULE_SEPARATOR : ',' ;
 END_RULE : ';' -> popMode ;
 RULE_DEFINER : '->' ;
@@ -91,16 +90,15 @@ WS_RULE : WS -> skip ;
 ///////////////////////////////////////////////////////////////////////////////
 mode ACTION_MODE ;
 
-START_ACTION : ':' ;
 ACTION_SEPARATOR : ',' ;
 END_ACTION : ';' -> popMode ;
 ACTION_DEFINER : '->' ;
 
 ACTION_RULE_ID : [A-Za-z] ;
 
-ACTION : 'move'
-       | 'draw'
-       | 'nop' ;
+ACTION_VERB : 'move'
+            | 'draw'
+            | 'nop' ;
 
 // Comment
 LINE_COMMENT_ACTION : LINE_COMMENT -> skip ;
@@ -113,7 +111,6 @@ WS_ACTION : WS -> skip ;
 ///////////////////////////////////////////////////////////////////////////////
 mode ANGLE_MODE ;
 
-START_ANGLE : ':' ;
 END_ANGLE : ';' -> popMode ;
 
 ANGLE_VALUE : NUMBER ;
@@ -129,7 +126,6 @@ WS_ANGLE : WS -> skip ;
 ///////////////////////////////////////////////////////////////////////////////
 mode IGNORE_MODE ;
 
-START_IGNORE : ':' ;
 END_IGNORE : ';' -> popMode ;
 
 IGNORE_SEPARATOR : ',' ;

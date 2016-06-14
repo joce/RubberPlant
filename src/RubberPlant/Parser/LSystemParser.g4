@@ -16,15 +16,15 @@ statement : angle_stmt
           | axiom_stmt
           | rule_stmt ;
 
-angle_stmt : ANGLE_DEF START_ANGLE ANGLE_VALUE END_ANGLE ;
+angle_stmt : ANGLE ANGLE_VALUE END_ANGLE ;
 
-action_stmt : ACTION_DEF START_ACTION ACTION_RULE_ID (ACTION_SEPARATOR ACTION_RULE_ID)* ACTION_DEFINER ACTION END_ACTION ;
+action_stmt : ACTION ACTION_RULE_ID (ACTION_SEPARATOR ACTION_RULE_ID)* ACTION_DEFINER ACTION_VERB END_ACTION ;
 
-ignore_stmt : IGNORE_DEF START_IGNORE IGNORE_RULE_ID+ END_IGNORE ;
+ignore_stmt : IGNORE IGNORE_RULE_ID+ END_IGNORE ;
 
-axiom_stmt : AXIOM_DEF START_RULE successor END_RULE ;
+axiom_stmt : AXIOM successor END_RULE ;
 
-rule_stmt : RULE_DEF START_RULE rule_predecessor (basic_successor | stochastic_successor) END_RULE ;
+rule_stmt : RULE rule_predecessor (basic_successor | stochastic_successor) END_RULE ;
 
 rule_predecessor : pre_cond? RULE_ID post_cond? ;
 

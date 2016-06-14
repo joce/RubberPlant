@@ -216,7 +216,7 @@ namespace RubberPlant
 
             foreach (var rule in rules)
             {
-                m_currentLSystem.Vocabulary[rule] = ctx.ACTION().GetText().ToCommand();
+                m_currentLSystem.Vocabulary[rule] = ctx.ACTION_VERB().GetText().ToCommand();
             }
 
             return VisitChildren(ctx);
