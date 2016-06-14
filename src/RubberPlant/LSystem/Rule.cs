@@ -41,9 +41,9 @@ namespace RubberPlant
             m_replacements = m_replacements.Select(subrule => new Tuple<float, List<Atom>>(subrule.Item1/totalWeight, subrule.Item2)).ToList();
         }
 
-        public bool Match(Context context, IList<Atom> ignores)
+        public bool Match(EvalContext evalContext, IList<Atom> ignores)
         {
-            return Descriptor.Match(context, ignores);
+            return Descriptor.Match(evalContext, ignores);
         }
 
         public override string ToString()

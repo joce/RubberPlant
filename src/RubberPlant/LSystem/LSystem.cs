@@ -66,7 +66,7 @@ namespace RubberPlant
                 string debugString = source.ToAtomString();
 #endif
                 destination = new List<Atom>();
-                Context ctx = new Context()
+                EvalContext ctx = new EvalContext()
                 {
                     Left = new List<Atom>(),
                     Current = null,

@@ -144,7 +144,7 @@ namespace RubberPlant.Tests
         public void SimpleMatchWorks()
         {
             RuleDescriptor desc = new RuleDescriptor {RuleID = 'F'};
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -159,7 +159,7 @@ namespace RubberPlant.Tests
         public void SimpleNonMatchWorks()
         {
             RuleDescriptor desc = new RuleDescriptor {RuleID = 'F'};
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'B',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -180,7 +180,7 @@ namespace RubberPlant.Tests
                 PreCondition = "FFf-".Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -201,7 +201,7 @@ namespace RubberPlant.Tests
                 PreCondition = "FB".Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -221,7 +221,7 @@ namespace RubberPlant.Tests
                 PostCondition = "BB+".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -241,7 +241,7 @@ namespace RubberPlant.Tests
                 PostCondition = "FBf".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -263,7 +263,7 @@ namespace RubberPlant.Tests
                 PostCondition = "BBa".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -285,7 +285,7 @@ namespace RubberPlant.Tests
                 PostCondition = "FBf".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -306,7 +306,7 @@ namespace RubberPlant.Tests
                 PreCondition = "FFf}".Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -325,7 +325,7 @@ namespace RubberPlant.Tests
                 PostCondition = "BBf".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 Right = "BB".ToAtoms()
@@ -344,7 +344,7 @@ namespace RubberPlant.Tests
                 PreCondition = "FFf".Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -364,7 +364,7 @@ namespace RubberPlant.Tests
                 PostCondition = "FFf".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 Right = "-F-+Ff".ToAtoms()
@@ -384,7 +384,7 @@ namespace RubberPlant.Tests
                 PreCondition = "FFf".Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -404,7 +404,7 @@ namespace RubberPlant.Tests
                 PreCondition = "FF[A]f".Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -423,7 +423,7 @@ namespace RubberPlant.Tests
                 PostCondition = "FFf".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 Right = "FF[AB]f".ToAtoms()
@@ -441,7 +441,7 @@ namespace RubberPlant.Tests
                 PostCondition = "FF[A]f".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 Right = "FF[AB]f".ToAtoms()
@@ -460,7 +460,7 @@ namespace RubberPlant.Tests
                 PreCondition = "FFf".Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -481,7 +481,7 @@ namespace RubberPlant.Tests
                 PreCondition = preCondition.Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -500,7 +500,7 @@ namespace RubberPlant.Tests
                 PostCondition = "FFf".ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 Right = "FF[[A]B]f".ToAtoms()
@@ -519,7 +519,7 @@ namespace RubberPlant.Tests
                 PostCondition = postCondition.ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 Right = rightContext.ToAtoms()
@@ -539,7 +539,7 @@ namespace RubberPlant.Tests
                 PreCondition = preCondition.Reverse().ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 // Reversed, because that's how the LSystem is expected to present it
@@ -559,7 +559,7 @@ namespace RubberPlant.Tests
                 PostCondition = postCondition.ToAtoms()
             };
 
-            Context ctx = new Context
+            EvalContext ctx = new EvalContext
             {
                 Current = 'F',
                 Right = rightContext.ToAtoms()
@@ -580,7 +580,7 @@ namespace RubberPlant.Tests
                     PostCondition = "G[H]M".ToAtoms()
                 };
 
-                Context ctx = new Context
+                EvalContext ctx = new EvalContext
                 {
                     Current = 'S',
                     Left = "ABC[DE][".Reverse().ToAtoms(),
@@ -599,7 +599,7 @@ namespace RubberPlant.Tests
                     PostCondition = "CB".ToAtoms()
                 };
 
-                Context ctx = new Context
+                EvalContext ctx = new EvalContext
                 {
                     Current = 'S',
                     Left = "ONM[L[KJ]IH]G".Reverse().ToAtoms(),

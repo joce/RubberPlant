@@ -2,7 +2,7 @@
 
 namespace RubberPlant
 {
-    public class Context
+    public class EvalContext
     {
         // TODO The following should be tested in the LSystem tests.
 

@@ -63,7 +63,7 @@
   <ItemGroup>
     <Compile Include="LSystem\AtomExtensions.cs" />
     <Compile Include="GlobalSuppressions.cs" />
-    <Compile Include="LSystem\Context.cs" />
+    <Compile Include="LSystem\EvalContext.cs" />
     <Compile Include="LSystem\IRandom.cs" />
     <Compile Include="LSystem\Random.cs" />
     <Compile Include="LSystem\Rule.cs" />
