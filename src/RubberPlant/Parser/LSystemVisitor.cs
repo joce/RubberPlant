@@ -56,7 +56,7 @@ namespace RubberPlant
                 return 0;
             }
 
-            m_currentLSystem.Angle = double.Parse(ctx.ANGLE_VALUE().GetText());
+            m_currentLSystem.Angle = float.Parse(ctx.ANGLE_VALUE().GetText());
             m_hasAngle = true;
             return VisitChildren(ctx);
         }

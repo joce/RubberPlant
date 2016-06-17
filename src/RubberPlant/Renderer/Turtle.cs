@@ -8,34 +8,43 @@ namespace RubberPlant
     {
         public IRenderer Renderer { get; set; }
 
-        private double m_angle;
-
-        // Angle is stored internally in rad, but consumed and exposed externally as degrees.
-        public double Angle
+        // Angle is stored and consumed internally in radians, but exposed externally as degrees.
+        private float m_angle;
+        public float Angle
         {
             get { return RadToDeg(m_angle); }
-            set { m_angle = DegToRad(value); }
-        }
-
-        public float StepLength { get; set; }
-
-        class State
-        {
-            public Vector3 CurrentPos { get; set; }
-            public double CurrentAngle { get; set; }
-
-            public State()
+            set
             {
-                CurrentAngle = Math.PI/2;
+                m_angle = DegToRad(value);
+                m_turnLeft = Matrix4x4.CreateRotationZ(m_angle);
+                m_turnRight = Matrix4x4.CreateRotationZ(-m_angle);
             }
         }
 
-        private State m_currentState = new State();
+        private float m_stepLength;
+        public float StepLength
+        {
+            get { return m_stepLength; }
+            set
+            {
+                m_stepLength = value;
+                m_translate = Matrix4x4.Identity;
+                m_translate.Translation = new Vector3(m_stepLength, 0, 0);
+            }
+        }
 
-        private readonly Stack<State> m_states = new Stack<State>();
+        private Matrix4x4 m_currentState;
+
+        private readonly Stack<Matrix4x4> m_states = new Stack<Matrix4x4>();
+
+        // Operation matrices
+        private Matrix4x4 m_translate;
+        private Matrix4x4 m_turnLeft;
+        private Matrix4x4 m_turnRight;
 
         public Turtle()
         {
+            m_currentState = Matrix4x4.CreateRotationZ((float)Math.PI/2);
             StepLength = 1;
         }
 
@@ -53,48 +62,25 @@ namespace RubberPlant
                 switch (command)
                 {
                     case TurtleCommand.Move:
-                        {
-                            float cos = (float)Math.Cos(m_currentState.CurrentAngle);
-                            float sin = (float)Math.Sin(m_currentState.CurrentAngle);
-                            m_currentState.CurrentPos = new Vector3(Round(m_currentState.CurrentPos.X + cos*StepLength), Round(m_currentState.CurrentPos.Y + sin*StepLength), 0);
-                        }
+                        m_currentState = m_translate * m_currentState;
                         break;
 
                     case TurtleCommand.Draw:
-                        {
-                            float cos = (float)Math.Cos(m_currentState.CurrentAngle);
-                            float sin = (float)Math.Sin(m_currentState.CurrentAngle);
-
-                            Vector3 nextPos = new Vector3(Round(m_currentState.CurrentPos.X + cos*StepLength), Round(m_currentState.CurrentPos.Y + sin*StepLength), 0);
-                            Renderer.DrawSegment(m_currentState.CurrentPos, nextPos);
-                            m_currentState.CurrentPos = nextPos;
-                        }
+                        Vector3 previousState = m_currentState.Translation;
+                        m_currentState = m_translate * m_currentState;
+                        Renderer.DrawSegment(Round(previousState), Round(m_currentState.Translation));
                         break;
 
                     case TurtleCommand.TurnLeft:
-                        m_currentState.CurrentAngle += m_angle;
-                        if (m_currentState.CurrentAngle > 2*Math.PI)
-                        {
-                            m_currentState.CurrentAngle -= 2*Math.PI;
-                        }
+                        m_currentState = m_turnLeft * m_currentState;
                         break;
 
                     case TurtleCommand.TurnRight:
-                        m_currentState.CurrentAngle -= m_angle;
-                        if (m_currentState.CurrentAngle < 0)
-                        {
-                            m_currentState.CurrentAngle += 2*Math.PI;
-                        }
+                        m_currentState = m_turnRight * m_currentState;
                         break;
 
                     case TurtleCommand.StartBranch:
                         m_states.Push(m_currentState);
-                        var newStsate = new State
-                        {
-                            CurrentAngle = m_currentState.CurrentAngle,
-                            CurrentPos = m_currentState.CurrentPos
-                        };
-                        m_currentState = newStsate;
                         break;
 
                     case TurtleCommand.EndBranch:
@@ -116,19 +102,19 @@ namespace RubberPlant
             Renderer.EndRender();
         }
 
-        private double DegToRad(double deg)
+        private static float DegToRad(double deg)
         {
-            return deg * Math.PI/180;
+            return (float)(deg * Math.PI/180.0);
         }
 
-        private float RadToDeg(double rad)
+        private static float RadToDeg(double rad)
         {
-            return (float)(rad * 180.0f/Math.PI);
+            return (float)(rad * 180.0/Math.PI);
         }
 
-        private float Round(double val)
+        private static Vector3 Round(Vector3 val)
         {
-            return (float) Math.Round(val, 5);
+            return new Vector3((float)Math.Round(val.X, 5), (float)Math.Round(val.Y, 5), (float)Math.Round(val.Z, 5));
         }
     }
 }
