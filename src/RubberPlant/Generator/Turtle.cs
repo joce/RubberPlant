@@ -6,7 +6,7 @@ namespace RubberPlant
 {
     public class Turtle
     {
-        public IRenderer Renderer { get; set; }
+        public IGenerator Generator { get; set; }
 
         // Angle is stored and consumed internally in radians, but exposed externally as degrees.
         private float m_angle;
@@ -48,14 +48,14 @@ namespace RubberPlant
             StepLength = 1;
         }
 
-        public void Render(string outputDir, string lsysName, IEnumerable<TurtleCommand> commands)
+        public void Generate(string outputDir, string lsysName, IEnumerable<TurtleCommand> commands)
         {
-            if (Renderer == null)
+            if (Generator == null)
             {
                 return;
             }
 
-            Renderer.StartRender(outputDir, lsysName);
+            Generator.StartGenerate(outputDir, lsysName);
 
             foreach (var command in commands)
             {
@@ -68,7 +68,7 @@ namespace RubberPlant
                     case TurtleCommand.Draw:
                         Vector3 previousState = m_currentState.Translation;
                         m_currentState = m_translate * m_currentState;
-                        Renderer.DrawSegment(Round(previousState), Round(m_currentState.Translation));
+                        Generator.DrawSegment(Round(previousState), Round(m_currentState.Translation));
                         break;
 
                     case TurtleCommand.TurnLeft:
@@ -99,7 +99,7 @@ namespace RubberPlant
                 }
             }
 
-            Renderer.EndRender();
+            Generator.EndGenerate();
         }
 
         private static float DegToRad(double deg)

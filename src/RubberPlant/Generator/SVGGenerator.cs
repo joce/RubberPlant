@@ -7,24 +7,24 @@ using System.Text;
 
 namespace RubberPlant
 {
-    public enum SVGRenderTechnique
+    public enum SVGGeneratorTechnique
     {
         Lines,
         Path
     }
 
-    public class SVGRenderer : IRenderer
+    public class SVGGenerator : IGenerator
     {
-        public SVGRenderTechnique Technique { get; set; }
+        public SVGGeneratorTechnique Technique { get; set; }
 
         private List<Tuple<Vector3, Vector3>> m_linesList;
         private string m_outputDir;
         private string m_lsysName;
         private float m_strokeWidth;
 
-        public void StartRender(string outputDir, string lsysName)
+        public void StartGenerate(string outputDir, string lsysName)
         {
-            Technique = SVGRenderTechnique.Path;
+            Technique = SVGGeneratorTechnique.Path;
             m_linesList= new List<Tuple<Vector3, Vector3>>();
             m_outputDir = outputDir;
             m_lsysName = lsysName;
@@ -38,7 +38,7 @@ namespace RubberPlant
             m_linesList.Add(Tuple.Create(start, end));
         }
 
-        public void EndRender()
+        public void EndGenerate()
         {
             StringBuilder sb = new StringBuilder();
 
@@ -81,13 +81,13 @@ namespace RubberPlant
 
                 OutputHeader(sb, maxX, maxY);
                 sb.AppendFormat("  <g stroke=\"black\" fill=\"none\" stroke-width=\"{0}\">\n", m_strokeWidth);
-                if (Technique == SVGRenderTechnique.Lines)
+                if (Technique == SVGGeneratorTechnique.Lines)
                 {
-                    RenderLines(sb, adjX, adjY);
+                    GenerateLines(sb, adjX, adjY);
                 }
                 else
                 {
-                    RenderPath(sb, adjX, adjY);
+                    GeneratePath(sb, adjX, adjY);
                 }
                 sb.AppendFormat("  </g>\n");
                 OutputFooter(sb);
@@ -99,7 +99,7 @@ namespace RubberPlant
             }
         }
 
-        private void RenderLines(StringBuilder sb, float adjX, float adjY)
+        private void GenerateLines(StringBuilder sb, float adjX, float adjY)
         {
             foreach (var line in m_linesList)
             {
@@ -107,7 +107,7 @@ namespace RubberPlant
             }
         }
 
-        private void RenderPath(StringBuilder sb, float adjX, float adjY)
+        private void GeneratePath(StringBuilder sb, float adjX, float adjY)
         {
             Vector3 previous = new Vector3(float.MinValue, float.MinValue, 0);
             Vector3 firstOfPath = new Vector3(float.MaxValue, float.MaxValue, 0);

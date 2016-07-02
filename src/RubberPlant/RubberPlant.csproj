@@ -61,6 +61,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Generator\IGenerator.cs" />
+    <Compile Include="Generator\SVGGenerator.cs" />
+    <Compile Include="Generator\Turtle.cs" />
     <Compile Include="LSystem\AtomExtensions.cs" />
     <Compile Include="GlobalSuppressions.cs" />
     <Compile Include="LSystem\EvalContext.cs" />
@@ -86,9 +89,6 @@
     <Compile Include="Parser\LSystemVisitor.cs" />
     <Compile Include="LSystem\TurtleCommand.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Renderer\IRenderer.cs" />
-    <Compile Include="Renderer\SVGRenderer.cs" />
-    <Compile Include="Renderer\Turtle.cs" />
   </ItemGroup>
   <ItemGroup>
     <Antlr4 Include="Parser\LSystemLexer.g4">

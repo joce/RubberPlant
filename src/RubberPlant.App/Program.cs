@@ -44,11 +44,11 @@ namespace RubberPlant.App
             {
                 var t = new Turtle
                 {
-                    Renderer = new SVGRenderer(),
+                    Generator = new SVGGenerator(),
                     Angle = system.Angle,
                     StepLength = options.Length
                 };
-                t.Render(options.OutputDir, system.Name, system.ReplaceAndTranslate(options.Replacement));
+                t.Generate(options.OutputDir, system.Name, system.ReplaceAndTranslate(options.Replacement));
             }
         }
     }
