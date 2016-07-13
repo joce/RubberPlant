@@ -71,6 +71,7 @@
     <Compile Include="LSystem\Random.cs" />
     <Compile Include="LSystem\Rule.cs" />
     <Compile Include="LSystem\RulePredecessor.cs" />
+    <Compile Include="MathHelpers.cs" />
     <Compile Include="Parser\Error\ConsoleErrorOutput.cs" />
     <Compile Include="Parser\Error\DefaultFormatter.cs" />
     <Compile Include="Parser\Error\ErrorEnums.cs" />
@@ -89,6 +90,7 @@
     <Compile Include="Parser\LSystemVisitor.cs" />
     <Compile Include="LSystem\TurtleCommand.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="VectorExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
     <Antlr4 Include="Parser\LSystemLexer.g4">
