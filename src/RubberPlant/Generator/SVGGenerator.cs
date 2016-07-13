@@ -31,11 +31,15 @@ namespace RubberPlant
             m_strokeWidth = 1;
         }
 
-        public void DrawSegment(Vector3 start, Vector3 end)
+        public void DrawSegment(Matrix4x4 heading, float length)
         {
+            Vector3 start = heading.Translation;
+            Matrix4x4 tr = Matrix4x4.Identity;
+            tr.Translation = new Vector3(length, 0, 0);
+            Vector3 end = (tr * heading).Translation;
             start.Y = -start.Y;
             end.Y = -end.Y;
-            m_linesList.Add(Tuple.Create(start, end));
+            m_linesList.Add(Tuple.Create(start.Round(5), end.Round(5)));
         }
 
         public void EndGenerate()

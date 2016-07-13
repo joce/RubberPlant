@@ -12,10 +12,10 @@ namespace RubberPlant
         private float m_angle;
         public float Angle
         {
-            get { return RadToDeg(m_angle); }
+            get { return MathHelpers.RadToDeg(m_angle); }
             set
             {
-                m_angle = DegToRad(value);
+                m_angle = MathHelpers.DegToRad(value);
                 m_turnLeft = Matrix4x4.CreateRotationZ(m_angle);
                 m_turnRight = Matrix4x4.CreateRotationZ(-m_angle);
             }
@@ -66,9 +66,8 @@ namespace RubberPlant
                         break;
 
                     case TurtleCommand.Draw:
-                        Vector3 previousState = m_currentState.Translation;
+                        Generator.DrawSegment(m_currentState, StepLength);
                         m_currentState = m_translate * m_currentState;
-                        Generator.DrawSegment(Round(previousState), Round(m_currentState.Translation));
                         break;
 
                     case TurtleCommand.TurnLeft:
@@ -100,21 +99,6 @@ namespace RubberPlant
             }
 
             Generator.EndGenerate();
-        }
-
-        private static float DegToRad(double deg)
-        {
-            return (float)(deg * Math.PI/180.0);
-        }
-
-        private static float RadToDeg(double rad)
-        {
-            return (float)(rad * 180.0/Math.PI);
-        }
-
-        private static Vector3 Round(Vector3 val)
-        {
-            return new Vector3((float)Math.Round(val.X, 5), (float)Math.Round(val.Y, 5), (float)Math.Round(val.Z, 5));
         }
     }
 }
