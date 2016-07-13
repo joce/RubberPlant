@@ -1,6 +1,7 @@
 /bin
 /obj
 
+/src/.vs
 /src/packages
 
 # some svg might crop up in test folders. We don't care.
