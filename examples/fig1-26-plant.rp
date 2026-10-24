@@ -1,0 +1,15 @@
+(* ABOP Fig 1.26: plant with flowers. The book's undefined ‘ symbol is omitted. *)
+#derivations 5
+#angle 18
+
+#axiom plant
+plant     -> internode + [ plant + flower ] - - //
+             [ - - leaf ] internode [ + + leaf ] -
+             [ plant flower ] + + plant flower;
+internode -> F seg [ // & & leaf ] [ // ^ ^ leaf ] F seg;
+seg       -> seg F seg;
+leaf      -> [ ' { +f-f f-f+ | +f-f f-f } ];
+flower    -> [ & & & pedicel / wedge //// wedge ////
+             wedge //// wedge //// wedge ];
+pedicel   -> F F;
+wedge     -> [ ^F ] [ { & & & & -f+f | -f+f } ];

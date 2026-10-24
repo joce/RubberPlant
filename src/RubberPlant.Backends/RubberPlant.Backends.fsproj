@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Compile Include="Svg.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RubberPlant.Core\RubberPlant.Core.fsproj" />
+  </ItemGroup>
+
+</Project>

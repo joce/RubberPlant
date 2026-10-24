@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RubberPlant.Backends/RubberPlant.Backends.fsproj" />
+    <Project Path="src/RubberPlant.Cli/RubberPlant.Cli.fsproj" />
+    <Project Path="src/RubberPlant.Core/RubberPlant.Core.fsproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RubberPlant.Backends.Tests/RubberPlant.Backends.Tests.fsproj" />
+    <Project Path="tests/RubberPlant.Core.Tests/RubberPlant.Core.Tests.fsproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,6 @@
+(* ABOP Fig 1.24b *)
+#derivations 5
+#angle 20
+
+#axiom F
+F -> F[+F]F[-F][F];

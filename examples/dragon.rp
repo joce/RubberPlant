@@ -1,0 +1,9 @@
+(* ABOP Fig 1.10a: dragon curve *)
+#derivations 10
+#angle 90
+
+#axiom Fl
+Fl -> Fl + Fr +;
+Fr -> - Fl - Fr;
+Fl as F;
+Fr as F;

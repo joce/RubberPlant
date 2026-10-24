@@ -1,0 +1,10 @@
+(* ABOP L-system 1.7 (parametric). Draws nothing; try `rubberplant derive`. *)
+#derivations 4
+
+#axiom B(2)A(4,4)
+A(x,y) :
+    when y <= 3 -> A(x*2, x+y)
+    else        -> B(x) A(x/y, 0);
+B(x) :
+    when x < 1  -> C
+    else        -> B(x-1);
