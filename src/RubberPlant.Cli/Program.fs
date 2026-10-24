@@ -100,7 +100,14 @@ let private parseArgs (argv: string list) : Args =
             | _ -> raise (UsageError $"--derivations expects a non-negative integer, got '%s{v}'")
         | "--angle" :: v :: rest -> go rest { acc with Angle = Some(parseFloat "--angle" v) }
         | "--step" :: v :: rest -> go rest { acc with Step = Some(parseFloat "--step" v) }
-        | "--width" :: v :: rest -> go rest { acc with Width = Some(parseFloat "--width" v) }
+        | "--width" :: v :: rest ->
+            // Same domain as `#width`; overrides are applied after the checker runs.
+            let w = parseFloat "--width" v
+
+            if w < 0.0 then
+                raise (UsageError "--width must be non-negative")
+
+            go rest { acc with Width = Some w }
         | "--taper" :: v :: rest ->
             let t = parseFloat "--taper" v
 
@@ -197,18 +204,22 @@ let private run (args: Args) : int =
                         { Svg.defaultOptions with
                             Size = defaultArg args.Size Svg.defaultOptions.Size }
 
-                    let svg = Svg.render options output.Geometry
                     let outPath = defaultArg args.Output (Path.ChangeExtension(args.Input, ".svg"))
 
-                    try
-                        File.WriteAllText(outPath, svg)
-                        printfn "wrote %s" outPath
-                        0
-                    with
-                    | :? IOException
-                    | :? UnauthorizedAccessException as e ->
-                        eprintfn "%s: error: can't write the output: %s" outPath e.Message
+                    match Svg.render options output.Geometry with
+                    | Error msg ->
+                        eprintfn "%s: error: %s" args.Input msg
                         1
+                    | Ok svg ->
+                        try
+                            File.WriteAllText(outPath, svg)
+                            printfn "wrote %s" outPath
+                            0
+                        with
+                        | :? IOException
+                        | :? UnauthorizedAccessException as e ->
+                            eprintfn "%s: error: can't write the output: %s" outPath e.Message
+                            1
 
 [<EntryPoint>]
 let main argv =

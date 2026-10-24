@@ -504,7 +504,7 @@ Rotations use ABOP's matrices R<sub>U</sub>, R<sub>L</sub>, R<sub>H</sub> (§1.5
 
 ### 5.2 Symbols (Chapter 1)
 
-When a turtle symbol has parameters, the first parameter overrides the default (ABOP §1.10.3). Extra parameters are ignored, with one warning per module name and parameter count. The parameter must be finite, and the turtle's position must stay finite; otherwise it's a runtime error, so backends only ever receive finite geometry.
+When a turtle symbol has parameters, the first parameter overrides the default (ABOP §1.10.3). Extra parameters are ignored, with one warning per module name and parameter count. The value a symbol consumes, whether its parameter or the setting it defaults to, must be finite, and so must the turtle's position; otherwise it's a runtime error, so backends only ever receive finite geometry. Unused parameters (the extra ones, or any parameter of `|`, `{`, `}`) are ignored, even if they aren't finite. The initial width (from `#width` or a command-line override) must be finite and non-negative.
 
 | Symbol | Default | With parameter `(a)` | Effect |
 |---|---|---|---|
@@ -522,7 +522,7 @@ When a turtle symbol has parameters, the first parameter overrides the default (
 | `{` | — | — | Start a polygon; the current P is its first vertex |
 | `}` | — | — | Close and emit a filled polygon |
 | `!` | width × (1 − taper/100) | width := *a* (*a* ≥ 0) | Change line width (ABOP Fig 1.25, Appendix B; parametric form from Ch 2). Bare `!` compounds: with `#taper 30`, `! !` gives width × 0.49. ABOP has no increment symbol; grow width with `!(w)` |
-| `'` | color + 1 | color := *a*, truncated toward zero | Next color index (ABOP Fig 1.25). How indices map to colors is up to the backend (SVG: a fixed palette that wraps around) |
+| `'` | color + 1 | color := *a*, truncated toward zero | Next color index (ABOP Fig 1.25). The index is a 32-bit signed integer: `'(a)` truncates, then saturates to [−2<sup>31</sup>, 2<sup>31</sup> − 1]; bare `'` stops at 2<sup>31</sup> − 1. How indices map to colors is up to the backend (SVG: a fixed palette that wraps around) |
 
 Every other module is **ignored** by the turtle. That's what makes node-rewriting symbols like `L`, `R`, `X` and `A` work (ABOP §1.4.2).
 
@@ -536,7 +536,7 @@ Between `{` and `}`:
 - `[` and `]` inside a polygon save and restore the turtle state, but not the vertex list. One polygon is collected per `{`.
 - At `}`, the vertex list becomes a filled polygon in the current color.
 - Nested `{` starts a new polygon (a stack of polygons).
-- `{` and `}` are turtle modules, not structural brackets, so they can be unbalanced. A `}` with no open polygon is ignored, and polygons still open at the end of the string are dropped, each with a warning.
+- `{` and `}` are turtle modules, not structural brackets, so they can be unbalanced. A `}` with no open polygon is ignored, and polygons still open at the end of the string are dropped. Each kind of imbalance gives one warning per drawing, however many times it occurs.
 
 ### 5.4 Output
 
@@ -544,7 +544,7 @@ The turtle produces backend-neutral **geometry**:
 - `Segment(p0, p1, width, color)`
 - `Polygon(vertices, color)`
 
-Later chapters add more primitives: capsules and generalized cylinders, surfaces. Backends (SVG, OBJ, glTF, …) consume this geometry. Scale and framing are backend concerns; SVG fits the drawing to the viewport, which replaces ABOP's "decrease *d* between images".
+Later chapters add more primitives: capsules and generalized cylinders, surfaces. Backends (SVG, OBJ, glTF, …) consume this geometry. Scale and framing are backend concerns; SVG fits the drawing to the viewport, which replaces ABOP's "decrease *d* between images". SVG line widths are in pixels, so it reserves half the widest line around the drawing; if the image is too small for that, rendering fails rather than clipping.
 
 ---
 

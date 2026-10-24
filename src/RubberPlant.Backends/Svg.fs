@@ -49,12 +49,17 @@ let private points (g: Geometry) =
         | Segment(p0, p1, _, _) -> [ p0; p1 ]
         | Polygon(vs, _) -> vs)
 
-/// Renders geometry as SVG. The geometry must be finite (the turtle
-/// guarantees it), and `options.Size` must exceed twice the margin.
-let render (options: Options) (geometry: Geometry) : string =
-    if not (options.Size > 2.0 * options.Margin) || options.Margin < 0.0 then
-        invalidArg (nameof options) $"Size (%g{options.Size}) must be greater than twice the margin (%g{options.Margin})"
+let private maxStrokeWidth (geometry: Geometry) =
+    geometry
+    |> List.fold
+        (fun acc p ->
+            match p with
+            | Segment(_, _, w, _) -> max acc w
+            | Polygon _ -> acc)
+        0.0
 
+/// Draws with `pad` pixels around the drawing (margin plus half the widest stroke).
+let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
     let pts = points geometry |> Array.ofSeq
 
     let minX, maxX, minY, maxY =
@@ -65,22 +70,6 @@ let render (options: Options) (geometry: Geometry) : string =
             (pts |> Array.maxBy _.X).X,
             (pts |> Array.minBy _.Y).Y,
             (pts |> Array.maxBy _.Y).Y
-
-    // Strokes are centered on the segments and widths are in pixels, so
-    // reserve half the widest stroke on each side (round caps included).
-    let maxStroke =
-        geometry
-        |> List.fold
-            (fun acc p ->
-                match p with
-                | Segment(_, _, w, _) -> max acc w
-                | Polygon _ -> acc)
-            0.0
-
-    let pad =
-        let wanted = options.Margin + maxStroke / 2.0
-        // Keep a positive drawable area even for strokes wider than the canvas.
-        if options.Size - 2.0 * wanted > 0.0 then wanted else options.Margin
 
     let w, h = maxX - minX, maxY - minY
     let inner = options.Size - 2.0 * pad
@@ -150,3 +139,20 @@ let render (options: Options) (geometry: Geometry) : string =
     flush ()
     line "</svg>"
     sb.ToString()
+
+/// Renders geometry as SVG. The geometry must be finite (the turtle
+/// guarantees it). Strokes are centered on the segments and widths are in
+/// pixels, so half the widest stroke is reserved on each side, round caps
+/// included. Fails if the margins and the widest stroke leave no room to
+/// draw: the drawing is never silently clipped.
+let render (options: Options) (geometry: Geometry) : Result<string, string> =
+    let maxStroke = maxStrokeWidth geometry
+    let pad = options.Margin + maxStroke / 2.0
+
+    if options.Margin < 0.0 || not (options.Size > 2.0 * options.Margin) then
+        Error $"the image size (%g{options.Size} px) must be greater than twice the margin (%g{options.Margin} px)"
+    elif not (options.Size - 2.0 * pad > 0.0) then
+        Error
+            $"the widest line (%g{maxStroke} px) doesn't fit in a %g{options.Size} px image with %g{options.Margin} px margins; use a larger size or thinner lines"
+    else
+        Ok(draw options pad geometry)

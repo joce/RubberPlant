@@ -15,11 +15,19 @@ let private update = Environment.GetEnvironmentVariable "RUBBERPLANT_UPDATE_GOLD
 
 let private normalize (s: string) = s.Replace("\r\n", "\n")
 
+let private ok (r: Result<string, string>) =
+    match r with
+    | Ok svg -> svg
+    | Error msg -> failtestf "render failed: %s" msg
+
+let private wideSeg (width: float) =
+    Segment(Vec3.create 0.0 0.0 0.0, Vec3.create 0.0 1.0 0.0, width, 0)
+
 let private renderExample (name: string) =
     let source = File.ReadAllText(Path.Combine(examples, name + ".rp"))
 
     match Pipeline.compile source |> Result.bind (fst >> Pipeline.run) with
-    | Ok output -> Svg.render Svg.defaultOptions output.Geometry
+    | Ok output -> Svg.render Svg.defaultOptions output.Geometry |> ok
     | Error ds -> failtestf "%s:\n%s" name (ds |> List.map (Diagnostic.format name) |> String.concat "\n")
 
 let private golden (name: string) =
@@ -56,19 +64,18 @@ let tests =
 
           test "fits the drawing to the canvas, +Y up" {
               // Width-1 strokes: padding is the margin plus half a pixel.
-              let svg = Svg.render options [ seg (0.0, 0.0) (0.0, 2.0); seg (0.0, 2.0) (1.0, 2.0) ]
+              let svg = Svg.render options [ seg (0.0, 0.0) (0.0, 2.0); seg (0.0, 2.0) (1.0, 2.0) ] |> ok
               Expect.stringContains svg """width="70.5" height="120" """ "aspect ratio kept"
               Expect.stringContains svg """d="M10.5 109.5 L10.5 10.5 L60 10.5" """ "connected segments share a subpath"
           }
 
           test "disconnected segments start a new subpath" {
-              let svg = Svg.render options [ seg (0.0, 0.0) (0.0, 1.0); seg (1.0, 0.0) (1.0, 1.0) ]
+              let svg = Svg.render options [ seg (0.0, 0.0) (0.0, 1.0); seg (1.0, 0.0) (1.0, 1.0) ] |> ok
               Expect.stringContains svg """d="M10.5 109.5 L10.5 10.5 M109.5 109.5 L109.5 10.5" """ ""
           }
 
           test "wide strokes fit in the viewport" {
-              let wide = Segment(Vec3.create 0.0 0.0 0.0, Vec3.create 0.0 1.0 0.0, 100.0, 0)
-              let svg = Svg.render Svg.defaultOptions [ wide ]
+              let svg = Svg.render Svg.defaultOptions [ wideSeg 100.0 ] |> ok
               // Half the stroke (50) plus the margin (10) on each side.
               Expect.stringContains svg """width="120" height="800" """ ""
               Expect.stringContains svg """d="M60 740 L60 60" """ ""
@@ -76,11 +83,21 @@ let tests =
 
           test "size must exceed twice the margin" {
               for size in [ 1.0; 20.0 ] do
-                  Expect.throwsT<System.ArgumentException>
-                      (fun () -> Svg.render { options with Size = size } [ seg (0.0, 0.0) (0.0, 1.0) ] |> ignore)
-                      $"size %g{size}"
+                  Expect.isError (Svg.render { options with Size = size } [ Polygon([ Vec3.zero ], 0) ]) $"size %g{size}"
 
-              Svg.render { options with Size = 21.0 } [ seg (0.0, 0.0) (0.0, 1.0) ] |> ignore
+              Svg.render { options with Size = 21.0 } [ Polygon([ Vec3.zero ], 0) ] |> ok |> ignore
+          }
+
+          test "strokes that can't fit are an error, never clipped" {
+              // Default canvas: 800 px, 10 px margins, so the widest stroke must be < 780 px.
+              Expect.isError (Svg.render Svg.defaultOptions [ wideSeg 800.0 ]) "above capacity"
+              Expect.isError (Svg.render Svg.defaultOptions [ wideSeg 780.0 ]) "at capacity: no room left to draw"
+              Expect.isError (Svg.render { Svg.defaultOptions with Size = 100.0 } [ wideSeg 100.0 ]) "small canvas"
+
+              let svg = Svg.render Svg.defaultOptions [ wideSeg 778.0 ] |> ok
+              // pad = 10 + 389 = 399; the stroke is centered at x = 399 in a 798 px wide image.
+              Expect.stringContains svg """width="798" height="800" """ "just below capacity"
+              Expect.stringContains svg """d="M399 401 L399 399" """ ""
           }
 
           test "style changes start a new path" {
@@ -89,6 +106,7 @@ let tests =
                       options
                       [ seg (0.0, 0.0) (0.0, 1.0)
                         Segment(Vec3.create 0.0 1.0 0.0, Vec3.create 0.0 2.0 0.0, 3.0, 1) ]
+                  |> ok
 
               Expect.stringContains svg """stroke="#1a1a1a" stroke-width="1" """ ""
               Expect.stringContains svg """stroke="#2e7d32" stroke-width="3" """ ""
@@ -96,7 +114,7 @@ let tests =
 
           test "polygons are filled" {
               let tri = [ Vec3.create 0.0 0.0 0.0; Vec3.create 1.0 0.0 0.0; Vec3.create 0.0 1.0 0.0 ]
-              let svg = Svg.render options [ Polygon(tri, 2) ]
+              let svg = Svg.render options [ Polygon(tri, 2) ] |> ok
               Expect.stringContains svg """<polygon points="10,110 110,110 10,10" fill="#6d4c41"/>""" "no strokes: no extra padding"
           }
 
@@ -106,7 +124,7 @@ let tests =
           }
 
           test "empty geometry" {
-              let svg = Svg.render options []
+              let svg = Svg.render options [] |> ok
               Expect.stringContains svg "<svg" ""
               Expect.stringContains svg "</svg>" ""
           } ]

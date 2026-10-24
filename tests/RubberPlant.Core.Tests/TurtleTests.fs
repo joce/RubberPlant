@@ -261,6 +261,27 @@ let tests =
               Expect.equal (drawError "#axiom !(-1) F").Code Codes.InvalidGeometry ""
           }
 
+          test "non-finite default is checked when consumed" {
+              // The pop would hide the NaN frame; the consumed angle must still be finite.
+              Expect.equal (drawError "#angle exp(1000)\n#axiom [+]F").Code Codes.InvalidGeometry ""
+              Expect.equal (drawError "#step exp(1000)\n#axiom F").Code Codes.InvalidGeometry ""
+          }
+
+          test "unused parameters may be non-finite" {
+              let g, warnings = draw "#axiom |(log(0)) F(1, log(0))"
+              Expect.equal (List.length g) 1 ""
+              Expect.equal (warnings |> List.map _.Code) [ Codes.ExtraTurtleParameters; Codes.ExtraTurtleParameters ] ""
+          }
+
+          test "initial width from an override is checked" {
+              let m, _ = compileOk "#axiom F"
+              let m = { m with Settings = { m.Settings with Width = -1.0 } }
+
+              match Pipeline.run m with
+              | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry ""
+              | r -> failtestf "expected an error, got %A" r
+          }
+
           test "huge angles keep the frame orthonormal" {
               Expect.floatClose Accuracy.high (Builtins.cosDeg 1e20) (Builtins.cosDeg (1e20 % 360.0)) ""
 
@@ -273,12 +294,17 @@ let tests =
               | s -> failtestf "unexpected %A" s
           }
 
-          test "huge color index saturates" {
-              let g, _ = draw "#axiom '(1e20) F"
+          test "color indices: truncate toward zero, then saturate" {
+              let colors src =
+                  draw src
+                  |> fst
+                  |> List.map (function
+                      | Segment(_, _, _, c) -> c
+                      | _ -> failtest "segments only")
 
-              match g with
-              | [ Segment(_, _, _, c) ] -> Expect.equal c System.Int32.MaxValue ""
-              | _ -> failtest "one segment expected"
+              Expect.equal (colors "#axiom '(1e20) F '(2147483648) F '(-1e20) F") [ System.Int32.MaxValue; System.Int32.MaxValue; System.Int32.MinValue ] "saturation"
+              Expect.equal (colors "#axiom '(-1.7) F '(2.9) F") [ -1; 2 ] "truncation toward zero"
+              Expect.equal (colors "#axiom '(2147483647) ' F") [ System.Int32.MaxValue ] "bare ' saturates at the top"
           }
 
           test "extra-parameter warnings: per name and arity" {

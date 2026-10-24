@@ -55,7 +55,9 @@ let tests =
                   let input = Path.Combine(dir, "koch.rp")
                   Expect.equal (run [ "render"; input; "--size"; "1" ]) 2 "size 1"
                   Expect.equal (run [ "render"; input; "--size"; "20" ]) 2 "size 20"
-                  Expect.equal (run [ "render"; input; "--size"; "21"; "-o"; Path.Combine(dir, "x.svg") ]) 0 "size 21")
+                  // With width-1 lines, 10.5 px is reserved on each side: 21 leaves no room, 22 does.
+                  Expect.equal (run [ "render"; input; "--size"; "21"; "-o"; Path.Combine(dir, "x.svg") ]) 1 "size 21"
+                  Expect.equal (run [ "render"; input; "--size"; "22"; "-o"; Path.Combine(dir, "x.svg") ]) 0 "size 22")
           }
 
           test "--seed range matches #seed" {
@@ -63,6 +65,22 @@ let tests =
                   let input = Path.Combine(dir, "koch.rp")
                   Expect.equal (run [ "check"; input; "--seed"; "9007199254740991" ]) 0 "largest exact integer"
                   Expect.equal (run [ "check"; input; "--seed"; "9007199254740993" ]) 2 "beyond 2^53")
+          }
+
+          test "--width must be non-negative" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+                  Expect.equal (run [ "render"; input; "--width"; "-1" ]) 2 "negative"
+                  Expect.equal (run [ "render"; input; "--width"; "0"; "-o"; Path.Combine(dir, "x.svg") ]) 0 "zero is fine")
+          }
+
+          test "strokes too wide for the image are an error" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "wide.rp")
+                  File.WriteAllText(input, "#width 800\n#axiom F\n")
+                  let out = Path.Combine(dir, "wide.svg")
+                  Expect.equal (run [ "render"; input; "-o"; out ]) 1 "exit code"
+                  Expect.isFalse (File.Exists out) "nothing written")
           }
 
           test "usage errors" {

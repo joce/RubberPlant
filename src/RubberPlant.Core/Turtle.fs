@@ -105,6 +105,12 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
         t <- { t with P = p1 }
 
     let run () =
+        // The initial width can come from a CLI override, which the checker never saw.
+        if not (System.Double.IsFinite settings.Width) || settings.Width < 0.0 then
+            raise (
+                TurtleError $"the initial width must be finite and non-negative, got %s{formatNumber settings.Width}"
+            )
+
         for sym in drawing do
             match sym with
             | Push -> stack.Push t
@@ -121,38 +127,53 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
                                 $"the turtle ignores the extra parameters of `%s{name}` (it uses %d{arity}, got %d{args.Length})"
                         )
 
-                    if args.Length > 0 && not (System.Double.IsFinite args[0]) then
-                        raise (TurtleError $"`%s{format [| sym |]}`: turtle parameters must be finite")
+                    // The value a command consumes: its first parameter, or the
+                    // setting it defaults to. Only consumed values must be finite;
+                    // unused parameters are ignored (with the warning above).
+                    let arg (setting: string) (dflt: float) =
+                        let v = if args.Length > 0 then args[0] else dflt
 
-                    let arg dflt =
-                        if args.Length > 0 then args[0] else dflt
+                        if not (System.Double.IsFinite v) then
+                            if args.Length > 0 then
+                                raise (TurtleError $"`%s{format [| sym |]}`: turtle parameters must be finite")
+                            else
+                                raise (
+                                    TurtleError $"`%s{name}` uses `#%s{setting}`, which is not finite (%s{formatNumber v})"
+                                )
+
+                        v
 
                     match name with
-                    | "F" -> move (arg settings.Step) true
-                    | "f" -> move (arg settings.Step) false
-                    | "+" -> t <- turn (arg settings.Angle) t
-                    | "-" -> t <- turn -(arg settings.Angle) t
-                    | "&" -> t <- pitch (arg settings.Angle) t
-                    | "^" -> t <- pitch -(arg settings.Angle) t
-                    | "\\" -> t <- roll (arg settings.Angle) t
-                    | "/" -> t <- roll -(arg settings.Angle) t
+                    | "F" -> move (arg "step" settings.Step) true
+                    | "f" -> move (arg "step" settings.Step) false
+                    | "+" -> t <- turn (arg "angle" settings.Angle) t
+                    | "-" -> t <- turn -(arg "angle" settings.Angle) t
+                    | "&" -> t <- pitch (arg "angle" settings.Angle) t
+                    | "^" -> t <- pitch -(arg "angle" settings.Angle) t
+                    | "\\" -> t <- roll (arg "angle" settings.Angle) t
+                    | "/" -> t <- roll -(arg "angle" settings.Angle) t
                     | "|" -> t <- turn 180.0 t
                     | "!" ->
                         let w =
                             if args.Length > 0 then
-                                if args[0] < 0.0 then
+                                let w = arg "width" 0.0
+
+                                if w < 0.0 then
                                     raise (TurtleError $"`%s{format [| sym |]}`: widths must be non-negative")
 
-                                args[0]
+                                w
                             else
                                 t.Width * (1.0 - settings.Taper / 100.0)
 
                         t <- { t with Width = w }
                     | "'" ->
-                        // Truncate toward zero, saturating at the int range.
+                        // Color indices are 32-bit signed integers: `'(a)` truncates
+                        // toward zero, then saturates; bare `'` saturates at the top.
                         let c =
                             if args.Length > 0 then
-                                int (max -2147483648.0 (min 2147483647.0 (truncate args[0])))
+                                int (max -2147483648.0 (min 2147483647.0 (truncate (arg "color" 0.0))))
+                            elif t.Color = System.Int32.MaxValue then
+                                t.Color
                             else
                                 t.Color + 1
 
