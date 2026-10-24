@@ -11,7 +11,12 @@ open System.Globalization
 open FParsec
 open RubberPlant.Ast
 
-type State = { InDirective: bool; Source: string }
+type State =
+    { InDirective: bool
+      /// Line on which the last token ended (0 before the first token). A
+      /// directive must be the first token on its line (§2.2); comments are
+      /// trivia, so they don't count.
+      LastTokenLine: int64 }
 
 type private P<'a> = Parser<'a, State>
 
@@ -43,8 +48,6 @@ let private (<??>) (p: P<'a>) (label: string) : P<'a> =
 // Character classes ---------------------------------------------------------
 
 let private isDigit c = c >= '0' && c <= '9'
-let private isNameStart c = Char.IsLetter c || c = '_'
-let private isNameChar c = isNameStart c || isDigit c
 
 let private ruleKeywords = set [ "as"; "when"; "else"; "weight" ]
 
@@ -88,17 +91,35 @@ let private isTriviaStart (s: CharStream<State>) =
     | '(' -> s.Peek 1 = '*'
     | _ -> false
 
+/// Length of the name-start character at offset `i` (0 if none). Letters
+/// are Unicode scalars, so a supplementary-plane letter has length 2.
+let private nameStartAt (s: CharStream<State>) (i: int) =
+    let c = s.Peek i
+
+    if c = '_' then
+        1
+    else
+        let struct (len, letter) = Unicode.scalarAt c (s.Peek(i + 1))
+        if letter then len else 0
+
+let private nameCharAt (s: CharStream<State>) (i: int) =
+    if isDigit (s.Peek i) then 1 else nameStartAt s i
+
 /// Length of the name starting at the current position (0 if none).
 let private nameLength (s: CharStream<State>) =
-    if isNameStart (s.Peek()) then
-        let mutable i = 1
+    let first = nameStartAt s 0
 
-        while isNameChar (s.Peek i) do
-            i <- i + 1
+    if first = 0 then
+        0
+    else
+        let mutable i = first
+        let mutable len = nameCharAt s i
+
+        while len > 0 do
+            i <- i + len
+            len <- nameCharAt s i
 
         i
-    else
-        0
 
 let private peekName (s: CharStream<State>) = s.PeekString(nameLength s)
 
@@ -106,15 +127,8 @@ let private isArrowAt (s: CharStream<State>) =
     let c = s.Peek()
     c = '→' || ((c = '-' || c = '−') && s.Peek 1 = '>')
 
-/// True if only spaces and tabs precede the current position on its line.
-let private atLineStart (s: CharStream<State>) =
-    let src = s.UserState.Source
-    let mutable i = int s.Index - 1
-
-    while i >= 0 && (src[i] = ' ' || src[i] = '\t') do
-        i <- i - 1
-
-    i < 0 || src[i] = '\n'
+/// True if no token precedes the current position on its line.
+let private atLineStart (s: CharStream<State>) = s.Line > s.UserState.LastTokenLine
 
 /// Describes the token at the current position, for error messages.
 let private describeHere (s: CharStream<State>) =
@@ -124,7 +138,7 @@ let private describeHere (s: CharStream<State>) =
         match s.Peek() with
         | '\n'
         | '\r' -> "end of line"
-        | c when isNameStart c -> $"`%s{peekName s}`"
+        | _ when nameLength s > 0 -> $"`%s{peekName s}`"
         | _ when isArrowAt s -> "`->`"
         | c -> $"`%c{c}`"
 
@@ -147,7 +161,7 @@ let private skipComment (s: CharStream<State>) : Reply<unit> =
         fatalAt start Codes.UnterminatedComment "unterminated comment"
 
 /// Skips spaces, tabs and comments; newlines too, unless inside a directive.
-let private ws: P<unit> =
+let private skipTrivia: P<unit> =
     fun s ->
         let inDirective = s.UserState.InDirective
         let mutable result = Reply(())
@@ -168,6 +182,14 @@ let private ws: P<unit> =
             | _ -> go <- false
 
         result
+
+/// Skips the trivia after a token, recording the line the token ended on.
+let private ws: P<unit> =
+    fun s ->
+        if s.UserState.LastTokenLine <> s.Line then
+            s.UserState <- { s.UserState with LastTokenLine = s.Line }
+
+        skipTrivia s
 
 /// A one-character punctuation token.
 let private punct (c: char) : P<unit> =
@@ -219,7 +241,7 @@ let private moduleStop (expecting: string) (ruleEnd: bool) : P<'a> =
         elif ruleEnd && (isArrowAt s || c = ':' || c = '<' || c = '>' || ruleKeywords.Contains name) then
             fail Codes.MissingSemicolon $"missing `;`? unexpected %s{describeHere s}"
         elif c = '#' then
-            if ruleEnd && atLineStart s && isNameStart (s.Peek 1) then
+            if ruleEnd && atLineStart s && nameStartAt s 1 > 0 then
                 fail Codes.MissingSemicolon "missing `;` before this directive?"
             else
                 fail Codes.ReservedChar "`#` is reserved here"
@@ -245,8 +267,9 @@ let private moduleStop (expecting: string) (ruleEnd: bool) : P<'a> =
 // Expressions -----------------------------------------------------------------
 
 let private number: P<float> =
-    regex @"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
-    |>> fun t -> Double.Parse(t, NumberStyles.Float, CultureInfo.InvariantCulture)
+    // U+2212 (book minus) is an alias for "-", including in exponents (§2.7).
+    regex @"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+\-−]?[0-9]+)?"
+    |>> fun t -> Double.Parse(t.Replace('−', '-'), NumberStyles.Float, CultureInfo.InvariantCulture)
     <?> "number"
 
 /// An identifier: a name that isn't a rule keyword or the lone wildcard `_`.
@@ -391,8 +414,11 @@ let private moduleName: P<string * Pos> =
         then
             Reply(Error, expected "module")
         else
-            s.Skip()
-            Reply((string (normalize c), p))
+            // One Unicode scalar: a surrogate pair is a single symbol.
+            let struct (len, _) = Unicode.scalarAt c (s.Peek 1)
+            let sym = if len = 1 then string (normalize c) else s.PeekString len
+            s.Skip len
+            Reply((sym, p))
 
 let private moduleNameTok = moduleName .>> ws
 
@@ -613,7 +639,15 @@ let private buildBranches
                               Successor = succ }
                     | _ -> None)
 
-            if isInterp then
+            let firstWeight =
+                branches
+                |> List.tryPick (function
+                    | BWeight(p, _, _, _) -> Some p
+                    | _ -> None)
+
+            if isInterp && firstWeight.IsSome then
+                err firstWeight.Value Codes.MixedBranches "interpretation rules have no weights"
+            elif isInterp then
                 Result.Ok(Interpretation(h, InterpGuarded(guards, elseSucc), rulePos))
             elif weights.IsEmpty then
                 Result.Ok(Production(h, ProdGuarded(guards, elseSucc), rulePos))
@@ -739,7 +773,7 @@ let private directive: P<Item> =
                         fun _ -> fatalAt p Codes.ReservedDirective $"`#%s{name}` is reserved and not supported yet"
                     | _ -> fun _ -> fatalAt p Codes.UnknownDirective $"unknown directive `#%s{name}`"
 
-                (setInDirective true >>. ws >>. body .>> setInDirective false .>> ws) s
+                (setInDirective true >>. ws >>. body .>> setInDirective false .>> skipTrivia) s
 
 // File ------------------------------------------------------------------------
 
@@ -747,7 +781,7 @@ let private item: P<Item> =
     fun s ->
         if s.Peek() = '#' then directive s else (rule |>> RuleItem) s
 
-let private file: P<File> = ws >>. manyTill item eof
+let private file: P<File> = skipTrivia >>. manyTill item eof
 
 /// Finds our own diagnostic in an FParsec error, if there is one.
 let rec private findDiagnostic (msgs: ErrorMessageList) =
@@ -770,11 +804,11 @@ let private describeAt (source: string) (index: int) =
 
         if c = '\n' || c = '\r' then
             "end of line"
-        elif isNameStart c then
-            let mutable j = index + 1
+        elif Unicode.nameStartLength source index > 0 then
+            let mutable j = index + Unicode.nameStartLength source index
 
-            while j < source.Length && isNameChar source[j] do
-                j <- j + 1
+            while Unicode.nameCharLength source j > 0 do
+                j <- j + Unicode.nameCharLength source j
 
             $"`%s{source.Substring(index, j - index)}`"
         else
@@ -816,7 +850,7 @@ let parse (source: string) : Result<File, Diagnostic list> =
         else
             source
 
-    let state = { InDirective = false; Source = source }
+    let state = { InDirective = false; LastTokenLine = 0L }
 
     match runParserOnString file state "" source with
     | Success(result, _, _) -> Result.Ok result
@@ -824,8 +858,8 @@ let parse (source: string) : Result<File, Diagnostic list> =
 
 /// Parses a single expression (for tests and tools).
 let parseExpr (source: string) : Result<Expr, Diagnostic list> =
-    let state = { InDirective = false; Source = source }
+    let state = { InDirective = false; LastTokenLine = 0L }
 
-    match runParserOnString (ws >>. expr .>> eof) state "" source with
+    match runParserOnString (skipTrivia >>. expr .>> eof) state "" source with
     | Success(result, _, _) -> Result.Ok result
     | Failure(_, err, _) -> Result.Error [ toDiagnostic source err ]

@@ -112,7 +112,7 @@ let parametric =
           }
 
           test "built-in functions in degrees" {
-              Expect.equal (derived "#derivations 1\n#axiom A\nA -> B(sin(90), cos(180), atan2(1, 1), round(2.5), max(1, 2));") "B(1,-1,45,3,2)" ""
+              Expect.equal (derived "#derivations 1\n#axiom A\nA -> B(sin(90), cos(180), atan2(1, 1), round(2.5), max(1, 2), round(-2.5));") "B(1,-1,45,3,2,-3)" ""
           }
 
           test "boolean operators" {
@@ -176,6 +176,16 @@ let context =
               Expect.equal (derived "#derivations 1\n#axiom + B\n* < + > * -> -;") "+B" "no left neighbor"
           }
 
+          test "wildcard skips ignored modules" {
+              Expect.equal (derived "#derivations 1\n#ignore F\n#axiom A F + F B\n* < + > * -> -;") "A F-F B" ""
+              Expect.equal (derived "#derivations 1\n#ignore F\n#axiom F + F\n* < + > * -> -;") "F+F" "only ignored neighbors"
+          }
+
+          test "right context: branch order matters (no backtracking)" {
+              let src = "#derivations 1\n#axiom S [X] [G]\nS > [G] -> Y;"
+              Expect.equal (derived src) "S[X][G]" "the formal [ matches the first branch only"
+          }
+
           test "context rules are tried first" {
               Expect.equal (derived "#derivations 1\n#axiom C A A\nA -> B;\nC < A -> D;") "C D B" ""
           }
@@ -216,7 +226,22 @@ let stochastic =
 
           test "negative weight" {
               let d = runtimeError "#derivations 1\n#axiom A\nA : weight -1 -> B weight 1 -> C;"
-              Expect.equal d.Code Codes.NegativeWeight ""
+              Expect.equal d.Code Codes.InvalidWeight ""
+          }
+
+          test "subnormal weights: a zero weight never fires" {
+              for seed in 0..20 do
+                  Expect.equal (derived $"#derivations 1\n#seed %d{seed}\n#axiom A\nA : weight 5e-324 -> B weight 0 -> C;") "B" ""
+          }
+
+          test "huge weights don't overflow" {
+              let s = derived "#derivations 1\n#axiom A A A A A A A A\nA : weight 1e308 -> B weight 1e308 -> C;"
+              Expect.isTrue (s.Contains "B" && s.Contains "C") s
+          }
+
+          test "infinite weight" {
+              let d = runtimeError "#derivations 1\n#axiom A\nA : weight exp(1000) -> B;"
+              Expect.equal d.Code Codes.InvalidWeight ""
           }
 
           test "no positive weight" {

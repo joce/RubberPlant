@@ -86,8 +86,7 @@ let private collectModules (file: File) : Dictionary<string, Pos option> =
     modules
 
 /// Names a module name could be confused with: anything that looks like an identifier.
-let private isIdentLike (name: string) =
-    System.Char.IsLetter name[0] || name[0] = '_'
+let private isIdentLike (name: string) = Unicode.startsName name
 
 // Checking --------------------------------------------------------------------
 
@@ -144,7 +143,11 @@ let rec private resolve (ctx: Context) (defines: Map<string, float>) (paramSlots
                     pos
                     $"`%s{name}` takes %d{arity} argument%s{plural}, got %d{cargs.Length}"
 
-            CCall(f, cargs)
+                // Constant expressions are evaluated right away: don't call
+                // the function with the wrong number of arguments.
+                CNum 0.0
+            else
+                CCall(f, cargs)
         | None ->
             if paramSlots.ContainsKey name || defines.ContainsKey name || ctx.Modules.ContainsKey name then
                 ctx.Error Codes.UnknownFunction pos $"`%s{name}` is not a function"
@@ -291,6 +294,9 @@ let private lintUnreachable (ctx: Context) (rules: CRule list) =
                 if alwaysFires r then
                     firing[key] <- r
 
+/// Seeds are integers that a float represents exactly: |seed| <= 2^53 - 1.
+let maxSeed = 9007199254740991.0
+
 let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) : Settings =
     let get key =
         values.TryFind key |> Option.map fst
@@ -318,16 +324,24 @@ let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) 
 
     let seed =
         match get Seed with
-        | Some v when isInteger v && abs v < 9.0e15 -> int64 v
+        | Some v when isInteger v && abs v <= maxSeed -> int64 v
         | Some v ->
-            invalid Seed $"`#seed` must be an integer, got %s{formatNumber v}"
+            invalid Seed $"`#seed` must be an integer between -%s{formatNumber maxSeed} and %s{formatNumber maxSeed}, got %s{formatNumber v}"
             0L
         | None -> defaultSettings.Seed
+
+    let width =
+        match get Width with
+        | Some v when v >= 0.0 && System.Double.IsFinite v -> v
+        | Some v ->
+            invalid Width $"`#width` must be a finite, non-negative number, got %s{formatNumber v}"
+            defaultSettings.Width
+        | None -> defaultSettings.Width
 
     { Derivations = derivations
       Angle = get Angle |> Option.defaultValue defaultSettings.Angle
       Step = get Step |> Option.defaultValue defaultSettings.Step
-      Width = get Width |> Option.defaultValue defaultSettings.Width
+      Width = width
       Taper = taper
       Seed = seed }
 

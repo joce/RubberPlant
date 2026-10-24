@@ -14,6 +14,14 @@ let draw (src: string) : Geometry * Diagnostic list =
     | Ok o -> o.Geometry, o.Warnings
     | Error ds -> failtestf "failed:\n%s" (formatDiags ds)
 
+let drawError (src: string) : Diagnostic =
+    let m, _ = compileOk src
+
+    match Pipeline.run m with
+    | Ok o -> failtestf "expected an error, got %A" o.Geometry
+    | Error [ d ] -> d
+    | Error ds -> failtestf "expected one error, got:\n%s" (formatDiags ds)
+
 let v x y z = Vec3.create x y z
 
 let close (a: Vec3) (b: Vec3) =
@@ -50,7 +58,7 @@ let frameStaysOrthonormal (rotations: Rotation list) =
         | Roll a -> a
 
     let finite =
-        rotations |> List.forall (fun r -> System.Double.IsFinite(angle r) && abs (angle r) < 1e6)
+        rotations |> List.forall (fun r -> System.Double.IsFinite(angle r))
 
     let apply t r =
         match r with
@@ -239,6 +247,43 @@ let tests =
               Expect.equal (List.length g) 63 "segments"
               Expect.equal (List.length points) 64 "distinct points: the curve never revisits a point"
               Expect.equal (extent (fun (x, _, _) -> x), extent (fun (_, y, _) -> y), extent (fun (_, _, z) -> z)) (4, 4, 4) ""
+          }
+
+          test "non-finite turtle parameter" {
+              Expect.equal (drawError "#axiom +(log(0))F").Code Codes.InvalidGeometry ""
+          }
+
+          test "position overflow" {
+              Expect.equal (drawError "#axiom F(1e308) F(1e308)").Code Codes.InvalidGeometry ""
+          }
+
+          test "negative width" {
+              Expect.equal (drawError "#axiom !(-1) F").Code Codes.InvalidGeometry ""
+          }
+
+          test "huge angles keep the frame orthonormal" {
+              Expect.floatClose Accuracy.high (Builtins.cosDeg 1e20) (Builtins.cosDeg (1e20 % 360.0)) ""
+
+              let g, _ = draw "#angle 1e20\n#axiom +F"
+
+              match segments g with
+              | [ (p0, p1) ] ->
+                  let d = p1 - p0
+                  Expect.floatClose Accuracy.high (dot d d) 1.0 "unit step"
+              | s -> failtestf "unexpected %A" s
+          }
+
+          test "huge color index saturates" {
+              let g, _ = draw "#axiom '(1e20) F"
+
+              match g with
+              | [ Segment(_, _, _, c) ] -> Expect.equal c System.Int32.MaxValue ""
+              | _ -> failtest "one segment expected"
+          }
+
+          test "extra-parameter warnings: per name and arity" {
+              let _, warnings = draw "#axiom F(1,2) F(1,2,3) |(1) |(1)"
+              Expect.equal (warnings |> List.map _.Code) (List.replicate 3 Codes.ExtraTurtleParameters) ""
           }
 
           test "unbalanced polygon warnings" {

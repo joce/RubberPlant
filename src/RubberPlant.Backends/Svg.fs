@@ -49,31 +49,48 @@ let private points (g: Geometry) =
         | Segment(p0, p1, _, _) -> [ p0; p1 ]
         | Polygon(vs, _) -> vs)
 
+/// Renders geometry as SVG. The geometry must be finite (the turtle
+/// guarantees it), and `options.Size` must exceed twice the margin.
 let render (options: Options) (geometry: Geometry) : string =
+    if not (options.Size > 2.0 * options.Margin) || options.Margin < 0.0 then
+        invalidArg (nameof options) $"Size (%g{options.Size}) must be greater than twice the margin (%g{options.Margin})"
+
     let pts = points geometry |> Array.ofSeq
 
-    let finite =
-        pts
-        |> Array.filter (fun p -> Double.IsFinite p.X && Double.IsFinite p.Y)
-
     let minX, maxX, minY, maxY =
-        if finite.Length = 0 then
+        if pts.Length = 0 then
             0.0, 0.0, 0.0, 0.0
         else
-            (finite |> Array.minBy _.X).X,
-            (finite |> Array.maxBy _.X).X,
-            (finite |> Array.minBy _.Y).Y,
-            (finite |> Array.maxBy _.Y).Y
+            (pts |> Array.minBy _.X).X,
+            (pts |> Array.maxBy _.X).X,
+            (pts |> Array.minBy _.Y).Y,
+            (pts |> Array.maxBy _.Y).Y
+
+    // Strokes are centered on the segments and widths are in pixels, so
+    // reserve half the widest stroke on each side (round caps included).
+    let maxStroke =
+        geometry
+        |> List.fold
+            (fun acc p ->
+                match p with
+                | Segment(_, _, w, _) -> max acc w
+                | Polygon _ -> acc)
+            0.0
+
+    let pad =
+        let wanted = options.Margin + maxStroke / 2.0
+        // Keep a positive drawable area even for strokes wider than the canvas.
+        if options.Size - 2.0 * wanted > 0.0 then wanted else options.Margin
 
     let w, h = maxX - minX, maxY - minY
-    let inner = options.Size - 2.0 * options.Margin
+    let inner = options.Size - 2.0 * pad
     let extent = max w h
     let scale = if extent > 0.0 then inner / extent else 1.0
-    let width = w * scale + 2.0 * options.Margin
-    let height = h * scale + 2.0 * options.Margin
+    let width = w * scale + 2.0 * pad
+    let height = h * scale + 2.0 * pad
 
     let px (p: Vec3) =
-        options.Margin + (p.X - minX) * scale, options.Margin + (maxY - p.Y) * scale
+        pad + (p.X - minX) * scale, pad + (maxY - p.Y) * scale
 
     let sb = StringBuilder()
     let line (s: string) = sb.Append(s).Append('\n') |> ignore

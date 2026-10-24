@@ -21,11 +21,11 @@ let run (model: Model) : Result<Output, Diagnostic list> =
     Derivation.derive model
     |> Result.bind (fun derived ->
         Derivation.interpret model derived
-        |> Result.map (fun drawing ->
-            let geometry, warnings = Turtle.interpret model.Settings drawing
-
-            { Model = model
-              Derived = derived
-              Drawing = drawing
-              Geometry = geometry
-              Warnings = warnings }))
+        |> Result.bind (fun drawing ->
+            Turtle.interpret model.Settings drawing
+            |> Result.map (fun (geometry, warnings) ->
+                { Model = model
+                  Derived = derived
+                  Drawing = drawing
+                  Geometry = geometry
+                  Warnings = warnings })))

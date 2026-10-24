@@ -146,18 +146,29 @@ let private choose (body: Body) (binds: float[]) (rng: Rng) : struct (Successor 
                 |> List.map (fun b ->
                     let w = eval b.Weight
 
-                    if w < 0.0 then
+                    if w < 0.0 || System.Double.IsInfinity w then
                         raise (
-                            Eval.EvalError(Codes.NegativeWeight, $"negative weight %s{formatNumber w}")
+                            Eval.EvalError(
+                                Codes.InvalidWeight,
+                                $"invalid weight %s{formatNumber w}: weights are finite and non-negative"
+                            )
                         )
 
                     w, b.Successor)
 
-            let total = weighted |> List.sumBy fst
+            let maxWeight = weighted |> List.map fst |> List.max
 
-            if total <= 0.0 || System.Double.IsInfinity total then
+            if maxWeight <= 0.0 then
                 raise (Eval.EvalError(Codes.NoPositiveWeight, "no eligible branch has a positive weight"))
 
+            // Scale by the largest weight so the sum can't overflow and tiny
+            // (subnormal) weights still compare correctly. Zero weights never fire.
+            let positive =
+                weighted
+                |> List.filter (fun (w, _) -> w > 0.0)
+                |> List.map (fun (w, succ) -> w / maxWeight, succ)
+
+            let total = positive |> List.sumBy fst
             let struct (u, rng) = Rng.next rng
             let target = u * total
 
@@ -167,7 +178,7 @@ let private choose (body: Body) (binds: float[]) (rng: Rng) : struct (Successor 
                 | (w, succ) :: rest -> if target < acc + w then succ else pick (acc + w) rest
                 | [] -> failwith "unreachable"
 
-            struct (Some(pick 0.0 weighted), rng)
+            struct (Some(pick 0.0 positive), rng)
 
 let private emit (out: ResizeArray<Sym>) (succ: Successor) (binds: float[]) =
     for t in succ do

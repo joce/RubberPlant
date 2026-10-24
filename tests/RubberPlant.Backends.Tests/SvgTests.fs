@@ -55,14 +55,32 @@ let tests =
                     golden name ]
 
           test "fits the drawing to the canvas, +Y up" {
+              // Width-1 strokes: padding is the margin plus half a pixel.
               let svg = Svg.render options [ seg (0.0, 0.0) (0.0, 2.0); seg (0.0, 2.0) (1.0, 2.0) ]
-              Expect.stringContains svg """width="70" height="120" """ "aspect ratio kept"
-              Expect.stringContains svg """d="M10 110 L10 10 L60 10" """ "connected segments share a subpath"
+              Expect.stringContains svg """width="70.5" height="120" """ "aspect ratio kept"
+              Expect.stringContains svg """d="M10.5 109.5 L10.5 10.5 L60 10.5" """ "connected segments share a subpath"
           }
 
           test "disconnected segments start a new subpath" {
               let svg = Svg.render options [ seg (0.0, 0.0) (0.0, 1.0); seg (1.0, 0.0) (1.0, 1.0) ]
-              Expect.stringContains svg """d="M10 110 L10 10 M110 110 L110 10" """ ""
+              Expect.stringContains svg """d="M10.5 109.5 L10.5 10.5 M109.5 109.5 L109.5 10.5" """ ""
+          }
+
+          test "wide strokes fit in the viewport" {
+              let wide = Segment(Vec3.create 0.0 0.0 0.0, Vec3.create 0.0 1.0 0.0, 100.0, 0)
+              let svg = Svg.render Svg.defaultOptions [ wide ]
+              // Half the stroke (50) plus the margin (10) on each side.
+              Expect.stringContains svg """width="120" height="800" """ ""
+              Expect.stringContains svg """d="M60 740 L60 60" """ ""
+          }
+
+          test "size must exceed twice the margin" {
+              for size in [ 1.0; 20.0 ] do
+                  Expect.throwsT<System.ArgumentException>
+                      (fun () -> Svg.render { options with Size = size } [ seg (0.0, 0.0) (0.0, 1.0) ] |> ignore)
+                      $"size %g{size}"
+
+              Svg.render { options with Size = 21.0 } [ seg (0.0, 0.0) (0.0, 1.0) ] |> ignore
           }
 
           test "style changes start a new path" {
@@ -79,7 +97,7 @@ let tests =
           test "polygons are filled" {
               let tri = [ Vec3.create 0.0 0.0 0.0; Vec3.create 1.0 0.0 0.0; Vec3.create 0.0 1.0 0.0 ]
               let svg = Svg.render options [ Polygon(tri, 2) ]
-              Expect.stringContains svg """<polygon points="10,110 110,110 10,10" fill="#6d4c41"/>""" ""
+              Expect.stringContains svg """<polygon points="10,110 110,110 10,10" fill="#6d4c41"/>""" "no strokes: no extra padding"
           }
 
           test "colors wrap around the palette" {

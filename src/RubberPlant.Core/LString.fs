@@ -13,9 +13,6 @@ type Sym =
 
 type LString = Sym[]
 
-let private isNameChar c =
-    System.Char.IsLetterOrDigit c || c = '_'
-
 let formatNumber (v: float) =
     v.ToString("R", CultureInfo.InvariantCulture)
 
@@ -23,13 +20,19 @@ let formatNumber (v: float) =
 /// by a space only where needed (`F F`), everything else is concatenated.
 let format (s: LString) : string =
     let sb = StringBuilder()
+    // Whether the text so far ends with a name character.
+    let mutable afterName = false
 
     for sym in s do
         match sym with
-        | Push -> sb.Append '[' |> ignore
-        | Pop -> sb.Append ']' |> ignore
+        | Push ->
+            sb.Append '[' |> ignore
+            afterName <- false
+        | Pop ->
+            sb.Append ']' |> ignore
+            afterName <- false
         | Mod(name, args) ->
-            if sb.Length > 0 && isNameChar sb[sb.Length - 1] && isNameChar name[0] then
+            if afterName && Unicode.startsName name then
                 sb.Append ' ' |> ignore
 
             sb.Append name |> ignore
@@ -37,6 +40,8 @@ let format (s: LString) : string =
             if args.Length > 0 then
                 sb.Append('(').Append(args |> Array.map formatNumber |> String.concat ",").Append(')')
                 |> ignore
+
+            afterName <- args.Length = 0 && Unicode.endsName name
 
     sb.ToString()
 

@@ -86,6 +86,11 @@ let tests =
           test "function used as a value" { expectError Codes.NotAValue 2 "#axiom A\nA(x) -> B(sin);" }
           test "unknown function" { expectError Codes.UnknownFunction 2 "#axiom A\nA(x) -> B(foo(x));" }
           test "parameter called as a function" { expectError Codes.UnknownFunction 2 "#axiom A\nA(x) -> B(x(1));" }
+          test "wrong arity in a constant expression doesn't crash" {
+              expectError Codes.WrongArity 2 "#axiom A\n#angle sin()"
+              expectError Codes.WrongArity 1 "#axiom F(atan2(1))"
+          }
+
           test "wrong arity" { expectError Codes.WrongArity 2 "#axiom A\nA(x) -> B(atan2(x));" }
           test "duplicate parameter" { expectError Codes.DuplicateParameter 2 "#axiom A\nA(x, x) -> B;" }
           test "duplicate parameter across contexts" { expectError Codes.DuplicateParameter 2 "#axiom A\nA(x) < B(x) -> C;" }
@@ -117,6 +122,17 @@ let tests =
 
           test "taper must be in [0, 100]" { expectError Codes.InvalidSetting 2 "#axiom A\n#taper 120" }
           test "seed must be an integer" { expectError Codes.InvalidSetting 2 "#axiom A\n#seed 0.5" }
+
+          test "seed range: exactly representable integers" {
+              let m, _ = compileOk "#axiom A\n#seed 9007199254740991"
+              Expect.equal m.Settings.Seed 9007199254740991L ""
+              expectError Codes.InvalidSetting 2 "#axiom A\n#seed 9007199254740993"
+          }
+
+          test "width must be finite and non-negative" {
+              expectError Codes.InvalidSetting 2 "#axiom A\n#width -1"
+              compileOk "#axiom A\n#width 0" |> ignore
+          }
           test "division by zero in a define" { expectError Codes.DivisionByZero 2 "#axiom A\n#define a 1/0" }
           test "NaN in a setting" { expectError Codes.NotANumber 2 "#axiom A\n#angle sqrt(-1)" }
 

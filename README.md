@@ -24,6 +24,7 @@ Tests use [Expecto](https://github.com/haf/expecto) and run as executables:
 ```
 dotnet run --project tests/RubberPlant.Core.Tests
 dotnet run --project tests/RubberPlant.Backends.Tests
+dotnet run --project tests/RubberPlant.Cli.Tests
 ```
 
 The SVG backend has golden-file tests (`tests/RubberPlant.Backends.Tests/golden`).

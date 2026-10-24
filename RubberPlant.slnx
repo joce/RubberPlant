@@ -6,6 +6,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RubberPlant.Backends.Tests/RubberPlant.Backends.Tests.fsproj" />
+    <Project Path="tests/RubberPlant.Cli.Tests/RubberPlant.Cli.Tests.fsproj" />
     <Project Path="tests/RubberPlant.Core.Tests/RubberPlant.Core.Tests.fsproj" />
   </Folder>
 </Solution>

@@ -62,7 +62,7 @@ let sinDeg (a: float) =
     | _ -> Math.Sin(r * rad)
 
 /// Cosine of an angle in degrees, exact at multiples of 90°.
-let cosDeg (a: float) = sinDeg (a + 90.0)
+let cosDeg (a: float) = sinDeg (a % 360.0 + 90.0)
 
 let apply (f: Builtin) (args: float[]) : float =
     match f with

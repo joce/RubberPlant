@@ -87,8 +87,10 @@ let private parseArgs (argv: string list) : Args =
         | "--size" :: v :: rest ->
             let s = parseFloat "--size" v
 
-            if s <= 0.0 then
-                raise (UsageError "--size must be positive")
+            let minSize = 2.0 * Svg.defaultOptions.Margin
+
+            if s <= minSize then
+                raise (UsageError $"--size must be greater than %g{minSize} (twice the margin)")
 
             go rest { acc with Size = Some s }
         | "--drawing" :: rest -> go rest { acc with Drawing = true }
@@ -107,9 +109,14 @@ let private parseArgs (argv: string list) : Args =
 
             go rest { acc with Taper = Some t }
         | "--seed" :: v :: rest ->
+            // Same range as `#seed`: integers a float represents exactly.
             match Int64.TryParse(v, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) with
-            | true, n -> go rest { acc with Seed = Some n }
-            | _ -> raise (UsageError $"--seed expects an integer, got '%s{v}'")
+            | true, n when abs (float n) <= Checker.maxSeed -> go rest { acc with Seed = Some n }
+            | _ ->
+                raise (
+                    UsageError
+                        $"--seed expects an integer between -%.0f{Checker.maxSeed} and %.0f{Checker.maxSeed}, got '%s{v}'"
+                )
         | opt :: [] when opt.StartsWith "-" -> raise (UsageError $"%s{opt} expects a value")
         | opt :: _ when opt.StartsWith "-" -> raise (UsageError $"unknown option '%s{opt}'")
         | input :: rest ->
@@ -192,9 +199,16 @@ let private run (args: Args) : int =
 
                     let svg = Svg.render options output.Geometry
                     let outPath = defaultArg args.Output (Path.ChangeExtension(args.Input, ".svg"))
-                    File.WriteAllText(outPath, svg)
-                    printfn "wrote %s" outPath
-                    0
+
+                    try
+                        File.WriteAllText(outPath, svg)
+                        printfn "wrote %s" outPath
+                        0
+                    with
+                    | :? IOException
+                    | :? UnauthorizedAccessException as e ->
+                        eprintfn "%s: error: can't write the output: %s" outPath e.Message
+                        1
 
 [<EntryPoint>]
 let main argv =

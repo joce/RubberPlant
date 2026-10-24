@@ -103,10 +103,13 @@ module Codes =
     let NotANumber = "RP0202"
 
     [<Literal>]
-    let NegativeWeight = "RP0203"
+    let InvalidWeight = "RP0203"
 
     [<Literal>]
     let NoPositiveWeight = "RP0204"
+
+    [<Literal>]
+    let InvalidGeometry = "RP0205"
 
     // Warnings
     [<Literal>]

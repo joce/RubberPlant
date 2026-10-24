@@ -165,6 +165,16 @@ let tokenization =
           test "symbols" { Expect.equal (axiomText "+-&^\\/|{}!'~$%.@?") "+ - & ^ \\ / | { } ! ' ~ $ % . @ ?" "" }
           test "symbol with parameter" { Expect.equal (axiomText "+(30)!(2)") "+(30) !(2)" "" }
           test "empty axiom" { Expect.equal (axiomText "") "" "" }
+          test "supplementary-plane letters are one name" { Expect.equal (axiomText "𝐀𝐁 F") "𝐀𝐁 F" "" }
+          test "supplementary-plane symbol is one module" { Expect.equal (axiomText "F🌱F") "F 🌱 F" "" }
+          test "trivia before a parameter list (Appendix A is token-based)" {
+              Expect.equal (axiomText "F (1) G (* c *) (2)") "F(1) G(2)" ""
+          }
+          test "supplementary-plane predecessor" {
+              match parseOk "#axiom 𝐀\n𝐀 -> F;" |> rulesOf with
+              | [ Production(h, _, _) ] -> Expect.equal h.Pred.Name "𝐀" ""
+              | r -> failtestf "unexpected %A" r
+          }
           test "minus then arrow" {
               let f = parseOk "- -> +;"
 
@@ -193,6 +203,11 @@ let expressions =
           test "call" { Expect.equal (exprOk "atan2(y, x)") "atan2(y,x)" "" }
           test "call without args" { Expect.equal (exprOk "f()") "f()" "" }
           test "parentheses" { Expect.equal (exprOk "(p*q)^0.5") "((p*q)^0.5)" "" }
+          test "unicode minus in exponents" {
+              Expect.equal (exprOk "1e−3") (exprOk "1e-3") ""
+              Expect.equal (exprOk "1E−3") "0.001" ""
+              Expect.equal (axiomText "F(2.5e−1)") "F(0.25)" ""
+          }
           test "unicode operators" { Expect.equal (exprOk "a ≤ b") "(a<=b)" "" }
           test "unicode minus and caret" { Expect.equal (exprOk "a − b ∧ 2") "(a-(b^2))" "" }
           test "non-associative relations" {
@@ -317,6 +332,15 @@ let lexical =
           test "unicode caret, tilde, apostrophe" {
               Expect.equal (axiomText "∧∼’") "^ ~ '" ""
           }
+          test "comment before a directive (comments are trivia)" {
+              Expect.equal (parseOk "(* note *) #axiom F" |> List.length) 1 ""
+          }
+          test "directive after a multi-line comment" {
+              Expect.equal (parseOk "A -> B; (* one\n two *) #angle 90" |> List.length) 2 ""
+          }
+          test "directive after a nested comment" {
+              Expect.equal (parseOk "(* a (* b *)\n *)   #angle 90\n#axiom F" |> List.length) 2 ""
+          }
           test "byte order mark" { parseOk "\uFEFF#angle 90" |> ignore } ]
 
 let errors =
@@ -366,6 +390,15 @@ let errors =
           }
           test "mixed -> and as" { expectParseError Codes.MixedBranches (1, 17) "A : when x -> B when y as C;" }
           test "else with the wrong arrow" { expectParseError Codes.MixedBranches (1, 17) "A : when x as B else -> C;" }
+          test "weighted branch after an interpretation branch" {
+              expectParseError Codes.MixedBranches (1, 17) "A : when 0 as F weight 1 -> X;"
+          }
+          test "guarded weighted branch after an interpretation branch" {
+              expectParseError Codes.MixedBranches (1, 17) "A : when 0 as F when 1 weight 1 -> X;"
+          }
+          test "directive after a comment, on the same line as a rule" {
+              expectParseError Codes.DirectiveNotAtLineStart (1, 20) "A -> B; (* note *) #angle 90"
+          }
           test "interpretation weights" { expectParseError Codes.MixedBranches (1, 14) "A : weight 1 as B;" }
           test "unterminated comment points at its start" {
               expectParseError Codes.UnterminatedComment (2, 3) "A -> B;\n  (* a (* b *) c"
