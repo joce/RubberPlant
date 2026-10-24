@@ -1,0 +1,9 @@
+(* ABOP Fig 1.10b: Sierpinski gasket *)
+#derivations 6
+#angle 60
+
+#axiom Fr
+Fl -> Fr + Fl + Fr;
+Fr -> Fl - Fr - Fl;
+Fl as F;
+Fr as F;

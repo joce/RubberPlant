@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>rubberplant</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RubberPlant.Core\RubberPlant.Core.fsproj" />
+    <ProjectReference Include="..\RubberPlant.Backends\RubberPlant.Backends.fsproj" />
+  </ItemGroup>
+
+</Project>

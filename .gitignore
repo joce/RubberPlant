@@ -3,3 +3,9 @@ docs/abop/
 docs/lpfgman.pdf
 docs/lpfg/
 *.part
+bin/
+obj/
+*.user
+.vs/
+.idea/
+out/

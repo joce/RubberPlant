@@ -66,7 +66,7 @@ wedge     -> [ ^F ] [ { & & & & -f+f | -f+f } ];
 A file contains two kinds of item, with different termination:
 
 **Directives** (C-preprocessor style, line-based):
-- Start with `#` immediately followed by the directive name (`#angle`, `#define`, …), as the first token on a line (leading whitespace is allowed).
+- Start with `#` immediately followed by the directive name (`#angle`, `#define`, …), as the first token on a line. Leading whitespace and comments are allowed, since they're trivia: `(* note *) #axiom F` is fine, but `A -> B; #angle 90` isn't.
 - End at the **end of the line**. One directive per line; only whitespace and comments may follow it.
 - No `:`, `=` or `;`. The directive name is followed directly by its value.
 - No line continuation (C's `\` is the roll-left symbol here), so a directive must fit on one line.
@@ -88,7 +88,7 @@ Tokenization depends on position, so the lexer has two modes.
 | **expression mode** | inside a module's `( … )`, guards, weights, `#define` values, setting values | numbers, identifiers, operators |
 
 Mode switches:
-- module mode → expression mode: `(` directly after a module, `when`, `weight`, the value of a setting directive or of `#define` (after its name)
+- module mode → expression mode: `(` after a module name (trivia may come between: `F (1)` is `F(1)`), `when`, `weight`, the value of a setting directive or of `#define` (after its name)
 - expression mode → module mode: the matching `)` of a module's parameter list, or the `->` / `as` / `weight` that ends a guard or weight
 
 The same characters mean different things per mode. `+ - & ^ / | < > !` are turtle symbols in module mode and operators in expression mode (ABOP §1.10.3 notes this ambiguity too).
@@ -266,7 +266,7 @@ What the grammar enforces:
 - Interpretation rules have no weights. (Random appearance would be redrawn independently every time the string is drawn. Revisit later if needed.)
 
 Checked at evaluation time, not by the grammar:
-- Weights are non-negative numbers, and at least one is positive when evaluated.
+- Weights are finite, non-negative numbers, and at least one is positive when evaluated.
 
 Examples:
 
@@ -348,8 +348,9 @@ Atom     = Number
 - Every value is a 64-bit float.
 - Relational and logical operators return `1` (true) or `0` (false). Any non-zero value is true (ABOP §1.10.1).
 - Division by zero, or a NaN result, is a runtime error that reports the production and module involved.
+- Infinite results are allowed in expressions (`log(0)` is −∞). They're rejected where a finite value is required: weights (§4.4), widths and other turtle parameters (§5.2).
 
-**Built-in functions (v0.1):** `sin cos tan asin acos atan atan2 sqrt exp log abs floor ceil round min max`. Trigonometry is in **degrees**, to match the turtle.
+**Built-in functions (v0.1):** `sin cos tan asin acos atan atan2 sqrt exp log abs floor ceil round min max`. Trigonometry is in **degrees**, to match the turtle. `atan2(y, x)`, `min(a, b)` and `max(a, b)` take two arguments; the others take one. `round` rounds halves away from zero: `round(2.5)` is 3, `round(-2.5)` is −3.
 
 ### 4.2 Names and scope
 
@@ -377,7 +378,7 @@ One derivation step rewrites every module of the current string **in parallel** 
 3. **Branches.** For the first rule in that order that *fires*:
    - **Simple form:** always fires.
    - **Guarded:** the first `when` branch whose guard is true fires. Otherwise `else` fires if present.
-   - **Weighted:** the eligible branches are those whose guard is true, or that have no guard. If there are any, pick one at random with probability proportional to its weight (weights are normalized and don't need to sum to 1). Otherwise `else` fires if present.
+   - **Weighted:** the eligible branches are those whose guard is true, or that have no guard. If there are any, pick one at random with probability proportional to its weight (weights are normalized and don't need to sum to 1; a zero weight never fires). Otherwise `else` fires if present.
    - If nothing fires (every guard is false and there is no `else`), **fall through** to the next matching rule.
 4. **No rule fires:** *m* is copied unchanged (identity production).
 5. Evaluate the successor's parameter expressions with the bound values, and substitute the result for *m*.
@@ -394,7 +395,7 @@ Randomness comes from an explicit seed (`#seed` directive or CLI). The same seed
 
 **Ignore list.** Modules listed in `ignore` don't exist during context matching (ABOP §1.8, `#ignore`). Brackets can't be ignored.
 
-**Wildcard.** `*` as a context element matches any single module (ABOP Fig 1.31).
+**Wildcard.** `*` as a context element matches any single module that isn't ignored (ABOP Fig 1.31). There must be one: `*` never matches nothing, and never a bracket.
 
 **Left context** (ABOP §1.8, Fig 1.29). Match the formal left context right-to-left, walking left from *m*:
 - Skip ignored modules.
@@ -404,7 +405,7 @@ Randomness comes from an explicit seed (`#seed` directive or CLI). The same seed
 
 **Right context.** Match the formal right context left-to-right, walking right from *m*:
 - Skip ignored modules.
-- A formal `[` matches an actual `[`; the match continues inside that branch, and a formal `]` returns to the parent axis.
+- A formal `[` matches the next actual `[` (after ignored modules); the match continues inside that branch, and a formal `]` returns to the parent axis. Branch order matters: if that branch doesn't match, later sibling branches aren't tried.
 - When the formal string expects a module but the actual string has a `[` that the formal doesn't mention, skip the whole branch.
 - On an unmatched actual `]` (end of the current branch), matching fails.
 
@@ -472,9 +473,9 @@ Interpretation rules:
 | `#derivations` | number of derivation steps *n* | `0` |
 | `#angle` | default angle increment δ, degrees | `90` |
 | `#step` | default step length *d* | `1` |
-| `#width` | initial line width | `1` |
+| `#width` | initial line width; finite and non-negative | `1` |
 | `#taper` | width decrement applied by each bare `!`, as a **percentage**: the width is multiplied by (1 − taper/100). Must be in [0, 100]. | `30` |
-| `#seed` | random seed | `0` |
+| `#seed` | random seed: an integer with \|seed\| ≤ 2<sup>53</sup> − 1 (exact as a float) | `0` |
 
 A CLI flag overrides the file value.
 
@@ -493,11 +494,17 @@ The turtle state is:
 
 **Initial state:** P = (0,0,0), H = (0,1,0) (facing up, ABOP Fig 1.5), L = (−1,0,0), U = (0,0,1). Looking down −U onto the XY plane, this gives ABOP's 2D behavior: `+` turns counter-clockwise.
 
-Rotations multiply the frame from the right, [H L U]′ = [H L U] · R. R<sub>U</sub>, R<sub>L</sub>, R<sub>H</sub> are as in ABOP §1.5.
+Rotations use ABOP's matrices R<sub>U</sub>, R<sub>L</sub>, R<sub>H</sub> (§1.5) with **H, L, U as the rows** of the frame: [H; L; U]′ = R · [H; L; U]. (Read with H, L, U as columns, ABOP's printed equation would turn `+` the wrong way.) Concretely, for an angle *a*:
+
+| Rotation | Effect |
+|---|---|
+| R<sub>U</sub>(*a*), turn left | H′ = H cos *a* + L sin *a*; L′ = L cos *a* − H sin *a* |
+| R<sub>L</sub>(*a*), pitch down | H′ = H cos *a* − U sin *a*; U′ = U cos *a* + H sin *a* |
+| R<sub>H</sub>(*a*), roll left | L′ = L cos *a* − U sin *a*; U′ = U cos *a* + L sin *a* |
 
 ### 5.2 Symbols (Chapter 1)
 
-When a turtle symbol has parameters, the first parameter overrides the default (ABOP §1.10.3). Extra parameters are ignored, with a warning.
+When a turtle symbol has parameters, the first parameter overrides the default (ABOP §1.10.3). Extra parameters are ignored, with one warning per module name and parameter count. The value a symbol consumes, whether its parameter or the setting it defaults to, must be finite, and so must the turtle's position; otherwise it's a runtime error, so backends only ever receive finite geometry. Unused parameters (the extra ones, or any parameter of `|`, `{`, `}`) are ignored, even if they aren't finite. The initial width (from `#width` or a command-line override) must be finite and non-negative.
 
 | Symbol | Default | With parameter `(a)` | Effect |
 |---|---|---|---|
@@ -514,8 +521,8 @@ When a turtle symbol has parameters, the first parameter overrides the default (
 | `]` | — | — | Pop the state. No line drawn |
 | `{` | — | — | Start a polygon; the current P is its first vertex |
 | `}` | — | — | Close and emit a filled polygon |
-| `!` | width × (1 − taper/100) | width := *a* | Change line width (ABOP Fig 1.25, Appendix B; parametric form from Ch 2). Bare `!` compounds: with `#taper 30`, `! !` gives width × 0.49. ABOP has no increment symbol; grow width with `!(w)` |
-| `'` | color + 1 | color := *a* | Next color index (ABOP Fig 1.25) |
+| `!` | width × (1 − taper/100) | width := *a* (*a* ≥ 0) | Change line width (ABOP Fig 1.25, Appendix B; parametric form from Ch 2). Bare `!` compounds: with `#taper 30`, `! !` gives width × 0.49. ABOP has no increment symbol; grow width with `!(w)` |
+| `'` | color + 1 | color := *a*, truncated toward zero | Next color index (ABOP Fig 1.25). The index is a 32-bit signed integer: `'(a)` truncates, then saturates to [−2<sup>31</sup>, 2<sup>31</sup> − 1]; bare `'` stops at 2<sup>31</sup> − 1. How indices map to colors is up to the backend (SVG: a fixed palette that wraps around) |
 
 Every other module is **ignored** by the turtle. That's what makes node-rewriting symbols like `L`, `R`, `X` and `A` work (ABOP §1.4.2).
 
@@ -529,6 +536,7 @@ Between `{` and `}`:
 - `[` and `]` inside a polygon save and restore the turtle state, but not the vertex list. One polygon is collected per `{`.
 - At `}`, the vertex list becomes a filled polygon in the current color.
 - Nested `{` starts a new polygon (a stack of polygons).
+- `{` and `}` are turtle modules, not structural brackets, so they can be unbalanced. A `}` with no open polygon is ignored, and polygons still open at the end of the string are dropped. Each kind of imbalance gives one warning per drawing, however many times it occurs.
 
 ### 5.4 Output
 
@@ -536,7 +544,7 @@ The turtle produces backend-neutral **geometry**:
 - `Segment(p0, p1, width, color)`
 - `Polygon(vertices, color)`
 
-Later chapters add more primitives: capsules and generalized cylinders, surfaces. Backends (SVG, OBJ, glTF, …) consume this geometry. Scale and framing are backend concerns; SVG fits the drawing to the viewport, which replaces ABOP's "decrease *d* between images".
+Later chapters add more primitives: capsules and generalized cylinders, surfaces. Backends (SVG, OBJ, glTF, …) consume this geometry. Scale and framing are backend concerns; SVG fits the drawing to the viewport, which replaces ABOP's "decrease *d* between images". SVG line widths are in pixels, so it reserves half the widest line around the drawing; if the image is too small for that, rendering fails rather than clipping.
 
 ---
 
@@ -800,11 +808,13 @@ These can't be expressed in a context-free grammar. They're checked after parsin
 - Defines are only used after they're defined (source order), and each name is defined once.
 - A function call names a built-in function with the right number of arguments.
 - Each setting directive appears at most once.
+- There is exactly one `#axiom` (it may be empty).
 
 **At evaluation time (runtime errors):**
-- Weights are non-negative, and at least one eligible weight is positive.
+- Weights are finite and non-negative, and at least one eligible weight is positive.
+- Turtle parameters are finite, `!(w)` has *w* ≥ 0, and the turtle's position stays finite.
 - No division by zero and no NaN results.
-- `#taper` is in [0, 100]; `#derivations` is a non-negative integer.
+- `#taper` is in [0, 100]; `#derivations` is a non-negative integer; `#width` is finite and non-negative; `#seed` is an integer with |seed| ≤ 2<sup>53</sup> − 1.
 
 ### A.4 Parsing notes
 
