@@ -1,7 +1,13 @@
 # RubberPlant
 
+[![CI](https://github.com/joce/RubberPlant/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/joce/RubberPlant/actions/workflows/ci.yml)
+[![Version 0.1](https://img.shields.io/badge/version-0.1-blue)](docs/roadmap.md)
+
 An L-system modeling tool, following *The Algorithmic Beauty of Plants* (ABOP).
 The language is specified in [`docs/language.md`](docs/language.md).
+
+Version 0.1 implements all of ABOP Chapter 1. See [`docs/roadmap.md`](docs/roadmap.md)
+for what comes next.
 
 ## Build and run
 
@@ -45,7 +51,7 @@ src/RubberPlant.Backends   output backends (SVG)
 src/RubberPlant.Cli        command-line tool; all I/O lives here
 tests/                     Expecto test projects
 examples/                  ABOP figures written in RubberPlant
-docs/                      language spec; reference material (see docs/README.md)
+docs/                      language spec, roadmap; reference material (see docs/README.md)
 ```
 
 The pipeline:
