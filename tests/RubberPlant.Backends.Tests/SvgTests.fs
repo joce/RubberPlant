@@ -13,6 +13,12 @@ let private goldenDir = Path.Combine(__SOURCE_DIRECTORY__, "golden")
 /// Set RUBBERPLANT_UPDATE_GOLDEN=1 to rewrite the golden files.
 let private update = Environment.GetEnvironmentVariable "RUBBERPLANT_UPDATE_GOLDEN" = "1"
 
+let private exampleNames =
+    Directory.GetFiles(examples, "*.rp")
+    |> Array.map Path.GetFileNameWithoutExtension
+    |> Array.sort
+    |> Array.toList
+
 let private normalize (s: string) = s.Replace("\r\n", "\n")
 
 let private ok (r: Result<string, string>) =
@@ -35,8 +41,10 @@ let private golden (name: string) =
         let actual = renderExample name
         let path = Path.Combine(goldenDir, name + ".svg")
 
-        if update || not (File.Exists path) then
+        if update then
             File.WriteAllText(path, actual)
+        elif not (File.Exists path) then
+            failtestf "golden/%s.svg is missing (set RUBBERPLANT_UPDATE_GOLDEN=1 to create it, then review it)" name
         else
             let expected = normalize (File.ReadAllText path)
 
@@ -59,8 +67,18 @@ let tests =
         "Svg"
         [ testList
               "golden"
-              [ for name in [ "koch-island"; "dragon"; "fig1-24a"; "fig1-26-plant"; "fig1-31a"; "fig1-37b"; "stochastic" ] ->
-                    golden name ]
+              [ for name in exampleNames do
+                    yield golden name
+
+                yield
+                  test "every golden has an example" {
+                    let orphans =
+                        Directory.GetFiles(goldenDir, "*.svg")
+                        |> Array.map Path.GetFileNameWithoutExtension
+                        |> Array.filter (fun g -> not (List.contains g exampleNames))
+
+                    Expect.isEmpty orphans "golden files without an examples/*.rp"
+                } ]
 
           test "fits the drawing to the canvas, +Y up" {
               // Width-1 strokes: padding is the margin plus half a pixel.
