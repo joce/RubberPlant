@@ -1,9 +1,8 @@
 (* ABOP Fig 1.31a (Hogeweg and Hesper). The book's 0 and 1 become a and b. *)
-#derivations 30
-#angle 22.5
-#ignore + - F
+settings { derivations = 30; angle = 22.5; }
+ignore: + - F;
 
-#axiom F b F b F b
+axiom: F b F b F b;
 a < a > a -> a;
 a < a > b -> b[+F b F b];
 a < b > a -> b;

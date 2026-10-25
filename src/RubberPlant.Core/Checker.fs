@@ -80,8 +80,8 @@ let private collectModules (file: File) : Dictionary<string, Pos option> =
             for s in successors r do
                 for m in actualModules s do
                     add m.Name m.Pos
-        | Setting _
-        | Define _ -> ()
+        | Settings _
+        | Let _ -> ()
 
     modules
 
@@ -92,7 +92,7 @@ let private isIdentLike (name: string) = Unicode.startsName name
 
 type private Context =
     { Modules: Dictionary<string, Pos option>
-      /// All defines in the file, with their position (for "used before definition").
+      /// All `let`s in the file, with their position (for "used before definition").
       AllDefines: Dictionary<string, Pos>
       Diags: ResizeArray<Diagnostic> }
 
@@ -102,7 +102,7 @@ type private Context =
     member c.Warn code pos msg =
         c.Diags.Add(Diagnostic.warning code (Some pos) msg)
 
-/// Resolves an expression. `defines` holds the defines seen so far (source
+/// Resolves an expression. `defines` holds the `let`s seen so far (source
 /// order); `paramSlots` maps formal parameter names to slots.
 let rec private resolve (ctx: Context) (defines: Map<string, float>) (paramSlots: Map<string, int>) (e: Expr) : CExpr =
     let recur = resolve ctx defines paramSlots
@@ -119,7 +119,7 @@ let rec private resolve (ctx: Context) (defines: Map<string, float>) (paramSlots
         | None, None ->
             if ctx.AllDefines.ContainsKey name then
                 ctx.Error
-                    Codes.DefineUsedBeforeDefinition
+                    Codes.LetUsedBeforeDefinition
                     pos
                     $"`%s{name}` is used before its definition (line %d{ctx.AllDefines[name].Line})"
             elif ctx.Modules.ContainsKey name then
@@ -156,7 +156,7 @@ let rec private resolve (ctx: Context) (defines: Map<string, float>) (paramSlots
 
             CNum 0.0
 
-/// Evaluates a constant expression (directive values).
+/// Evaluates a constant expression (prelude values).
 let private evalConst (ctx: Context) (pos: Pos) (what: string) (e: CExpr) : float option =
     try
         Some(Eval.eval [||] e)
@@ -193,7 +193,7 @@ let private compileHead (ctx: Context) (h: Head) =
                         ctx.Error
                             Codes.NamespaceClash
                             pos
-                            $"`%s{name}` is used as a define (line %d{ctx.AllDefines[name].Line}) and as a parameter (line %d{pos.Line})"
+                            $"`%s{name}` is used as a `let` (line %d{ctx.AllDefines[name].Line}) and as a parameter (line %d{pos.Line})"
                     elif Builtins.isBuiltin name then
                         ctx.Error
                             Codes.NamespaceClash
@@ -294,9 +294,6 @@ let private lintUnreachable (ctx: Context) (rules: CRule list) =
                 if alwaysFires r then
                     firing[key] <- r
 
-/// Seeds are integers that a float represents exactly: |seed| <= 2^53 - 1.
-let maxSeed = 9007199254740991.0
-
 let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) : Settings =
     let get key =
         values.TryFind key |> Option.map fst
@@ -310,7 +307,7 @@ let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) 
         match get Derivations with
         | Some v when v >= 0.0 && isInteger v && v <= float System.Int32.MaxValue -> int v
         | Some v ->
-            invalid Derivations $"`#derivations` must be a non-negative integer, got %s{formatNumber v}"
+            invalid Derivations $"`derivations` must be a non-negative integer, got %s{formatNumber v}"
             0
         | None -> defaultSettings.Derivations
 
@@ -318,23 +315,15 @@ let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) 
         match get Taper with
         | Some v when v >= 0.0 && v <= 100.0 -> v
         | Some v ->
-            invalid Taper $"`#taper` is a percentage and must be between 0 and 100, got %s{formatNumber v}"
+            invalid Taper $"`taper` is a percentage and must be between 0 and 100, got %s{formatNumber v}"
             defaultSettings.Taper
         | None -> defaultSettings.Taper
-
-    let seed =
-        match get Seed with
-        | Some v when isInteger v && abs v <= maxSeed -> int64 v
-        | Some v ->
-            invalid Seed $"`#seed` must be an integer between -%s{formatNumber maxSeed} and %s{formatNumber maxSeed}, got %s{formatNumber v}"
-            0L
-        | None -> defaultSettings.Seed
 
     let width =
         match get Width with
         | Some v when v >= 0.0 && System.Double.IsFinite v -> v
         | Some v ->
-            invalid Width $"`#width` must be a finite, non-negative number, got %s{formatNumber v}"
+            invalid Width $"`width` must be a finite, non-negative number, got %s{formatNumber v}"
             defaultSettings.Width
         | None -> defaultSettings.Width
 
@@ -343,7 +332,8 @@ let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) 
       Step = get Step |> Option.defaultValue defaultSettings.Step
       Width = width
       Taper = taper
-      Seed = seed }
+      // The seed is a run parameter, set by the host (§4.7).
+      Seed = defaultSettings.Seed }
 
 /// Checks a parsed file and compiles it into a model. On success, also
 /// returns the warnings.
@@ -357,13 +347,13 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
           AllDefines = allDefines
           Diags = diags }
 
-    // Defines: unique, and not clashing with modules or built-ins.
+    // `let`s: unique, and not clashing with modules or built-ins.
     for item in file do
         match item with
-        | Define(name, _, pos) ->
+        | Let(name, _, pos) ->
             match allDefines.TryGetValue name with
             | true, first ->
-                ctx.Error Codes.DuplicateDefine pos $"`%s{name}` is already defined (line %d{first.Line})"
+                ctx.Error Codes.DuplicateLet pos $"`%s{name}` is already defined (line %d{first.Line})"
             | _ -> allDefines[name] <- pos
 
             match modules.TryGetValue name with
@@ -371,10 +361,10 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
                 ctx.Error
                     Codes.NamespaceClash
                     pos
-                    $"`%s{name}` is used as a module (%s{lineOf mp}) and as a define (line %d{pos.Line})"
+                    $"`%s{name}` is used as a module (%s{lineOf mp}) and as a `let` (line %d{pos.Line})"
             | _ ->
                 if Builtins.isBuiltin name then
-                    ctx.Error Codes.NamespaceClash pos $"`%s{name}` is a built-in function and can't be a define"
+                    ctx.Error Codes.NamespaceClash pos $"`%s{name}` is a built-in function and can't be a `let`"
         | _ -> ()
 
     // Modules named like built-in functions.
@@ -384,52 +374,84 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             ctx.Error Codes.NamespaceClash pos $"`%s{kv.Key}` is a built-in function and can't be used as a module"
         | _ -> ()
 
-    // Everything else, in source order: defines are only visible after their definition.
+    // Everything else, in source order: `let`s are only visible after their definition.
     let mutable defines = Map.empty<string, float>
     let mutable settings = Map.empty<SettingKey, float * Pos>
+    let mutable settingsBlock: Pos option = None
+    let mutable ignoreList: Pos option = None
     let mutable axiom: (LString * Pos) option = None
+    let mutable firstRule: Pos option = None
     let ignored = HashSet<string>()
     let productions = ResizeArray<CRule>()
     let interpretations = ResizeArray<CRule>()
 
     for item in file do
-        match item with
-        | Setting(key, e, pos) ->
-            let what = $"`#%s{SettingKey.name key}`"
+        match firstRule, item with
+        | Some r, (Settings(_, p) | Let(_, _, p) | Ignore(_, p) | Axiom(_, p)) ->
+            ctx.Error
+                Codes.DeclarationAfterRules
+                p
+                $"declaration after rules: `settings`, `let`, `ignore:` and `axiom:` must come before the first rule (line %d{r.Line})"
+        | _ -> ()
 
-            match settings.TryFind key with
-            | Some(_, first) ->
-                ctx.Error Codes.DuplicateSetting pos $"%s{what} is already set (line %d{first.Line})"
+        match item with
+        | Settings(entries, pos) ->
+            match settingsBlock with
+            | Some first -> ctx.Error Codes.DuplicateSettings pos $"there is already a `settings` block (line %d{first.Line})"
             | None ->
-                match resolve ctx defines Map.empty e |> evalConst ctx pos what with
-                | Some v -> settings <- settings.Add(key, (v, pos))
-                | None -> ()
-        | Define(name, e, pos) ->
+                settingsBlock <- Some pos
+
+                for key, e, pos in entries do
+                    let what = $"`%s{SettingKey.name key}`"
+
+                    match settings.TryFind key with
+                    | Some(_, first) ->
+                        ctx.Error Codes.DuplicateSetting pos $"%s{what} is already set (line %d{first.Line})"
+                    | None ->
+                        match resolve ctx defines Map.empty e |> evalConst ctx pos what with
+                        | Some v -> settings <- settings.Add(key, (v, pos))
+                        | None -> ()
+        | Let(name, e, pos) ->
             if not (defines.ContainsKey name) then
                 let v =
                     resolve ctx defines Map.empty e
-                    |> evalConst ctx pos $"`#define %s{name}`"
+                    |> evalConst ctx pos $"`let %s{name}`"
 
                 // On error, still define the name so it doesn't cascade into "unknown name" errors.
                 defines <- defines.Add(name, defaultArg v 0.0)
-        | Ignore(names, _) ->
-            for n, _ in names do
-                ignored.Add n |> ignore
+        | Ignore(names, pos) ->
+            match ignoreList with
+            | Some first -> ctx.Error Codes.DuplicateIgnore pos $"there is already an `ignore:` list (line %d{first.Line})"
+            | None ->
+                ignoreList <- Some pos
+
+                for n, _ in names do
+                    ignored.Add n |> ignore
         | Axiom(a, pos) ->
             match axiom with
             | Some(_, first) -> ctx.Error Codes.DuplicateAxiom pos $"the axiom is already set (line %d{first.Line})"
             | None ->
-                let syms =
-                    compileActual ctx defines Map.empty a
-                    |> List.map (function
-                        | TPush -> Push
-                        | TPop -> Pop
-                        | TMod(name, args) ->
-                            Mod(name, args |> Array.map (fun e -> evalConst ctx pos "`#axiom`" e |> Option.defaultValue 0.0)))
-                    |> Array.ofList
+                // Walk the AST directly (not compileActual) so an evaluation error
+                // points at the failing module, not at `axiom`: axioms can span lines.
+                let rec evalAxiom (s: ActualString) : Sym list =
+                    s
+                    |> List.collect (function
+                        | Module m ->
+                            let arg e =
+                                resolve ctx defines Map.empty e
+                                |> evalConst ctx m.Pos "`axiom:`"
+                                |> Option.defaultValue 0.0
+
+                            [ Mod(m.Name, m.Args |> List.map arg |> Array.ofList) ]
+                        | Branch b -> Push :: evalAxiom b @ [ Pop ])
+
+                let syms = evalAxiom a |> Array.ofList
 
                 axiom <- Some(syms, pos)
         | RuleItem r ->
+            if firstRule.IsNone then
+                firstRule <- Some(Rule.pos r)
+
             let compiled = compileRule ctx defines r
 
             match r with
@@ -439,7 +461,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
     let checkedSettings = checkSettings ctx settings
 
     if axiom.IsNone then
-        diags.Add(Diagnostic.error Codes.MissingAxiom None "missing `#axiom`")
+        diags.Add(Diagnostic.error Codes.MissingAxiom None "missing `axiom:`")
 
     lintUnreachable ctx (List.ofSeq productions)
     lintUnreachable ctx (List.ofSeq interpretations)

@@ -1,0 +1,3 @@
+# <example> <seed>: run parameters (§4.7) for examples that need a non-default seed.
+# Read by SvgTests.fs and scripts/check-goldens.sh. Everything else uses seed 0.
+stochastic 1
