@@ -15,8 +15,7 @@ dotnet run --project src/RubberPlant.Cli -- check examples/fig1-31a.rp
 ```
 
 Run `rubberplant --help` for all options. Settings given on the command line
-(`-n`, `--angle`, …) override the file's values. The random seed isn't part of
-the file: set it with `--seed` (default 0).
+(`-n`, `--angle`, `--seed`, …) override the file's values.
 
 ## Tests
 
@@ -29,9 +28,8 @@ dotnet run --project tests/RubberPlant.Cli.Tests
 ```
 
 Every `examples/*.rp` has a golden SVG in `tests/RubberPlant.Backends.Tests/golden`
-(a missing golden is a test failure). `golden/seeds.txt` lists the examples that
-need a non-default seed. After an intended rendering change, regenerate the
-goldens with `RUBBERPLANT_UPDATE_GOLDEN=1` and review the diff.
+(a missing golden is a test failure). After an intended rendering change,
+regenerate the goldens with `RUBBERPLANT_UPDATE_GOLDEN=1` and review the diff.
 
 `scripts/check-goldens.sh` renders every example through the CLI and compares it
 byte for byte with its golden; CI runs it, plus all tests, on Linux and Windows

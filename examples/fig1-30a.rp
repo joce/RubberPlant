@@ -1,8 +1,9 @@
 (* ABOP Fig 1.30a: acropetal signal propagation *)
-settings { derivations = 6; angle = 22.5; }
-ignore: + -;
+#derivations 6
+#angle 22.5
+#ignore + -
 
-axiom: Fb[+Fa]Fa[-Fa]Fa[+Fa]Fa;
+#axiom Fb[+Fa]Fa[-Fa]Fa[+Fa]Fa
 Fb < Fa -> Fb;
 Fa as F;
 Fb as F;

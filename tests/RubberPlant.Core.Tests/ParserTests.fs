@@ -5,27 +5,26 @@ open RubberPlant
 open RubberPlant.Ast
 open RubberPlant.Tests.TestUtil
 
-let axiomText src = parseOk $"axiom: %s{src};" |> axiomOf |> showActual
+let axiomText src = parseOk $"#axiom %s{src}\n" |> axiomOf |> showActual
 
 /// Every complete example in docs/language.md must parse.
 let specExamples =
     [ "Koch island (§1)",
       """
 (* Quadratic Koch island *)
-settings {
-  derivations = 3;
-  angle = 90;
-}
+#derivations 3
+#angle 90
 
-axiom: F-F-F-F;
+#axiom F-F-F-F
 F -> F-F+F+F F-F-F+F;          (* book: F-F+F+FF-F-F+F *)
 """
 
       "Fig 1.26 plant with flowers (§1)",
       """
-settings { derivations = 5; angle = 18; }
+#derivations 5
+#angle 18
 
-axiom: plant;
+#axiom plant
 plant     -> internode + [ plant + flower ] - - //
              [ - - leaf ] internode [ + + leaf ] -
              [ plant flower ] + + plant flower;
@@ -71,7 +70,7 @@ leaf(s) :
 
       "dragon curve (§4.6)",
       """
-axiom: Fl;
+#axiom Fl
 Fl -> Fl + Fr +;
 Fr -> - Fl - Fr;
 Fl as F;
@@ -93,8 +92,8 @@ B as F;
 
       "L-system 1.7 (§6)",
       """
-settings { derivations = 4; }
-axiom: B(2)A(4,4);
+#derivations 4
+#axiom B(2)A(4,4)
 A(x,y) :
     when y <= 3 -> A(x*2, x+y)
     else        -> B(x) A(x/y, 0);
@@ -105,9 +104,10 @@ B(x) :
 
       "Fig 1.30a (§6)",
       """
-settings { derivations = 6; angle = 22.5; }
-ignore: + -;
-axiom: Fb[+Fa]Fa[-Fa]Fa[+Fa]Fa;
+#derivations 6
+#angle 22.5
+#ignore + -
+#axiom Fb[+Fa]Fa[-Fa]Fa[+Fa]Fa
 Fb < Fa -> Fb;
 Fa as F;
 Fb as F;
@@ -115,9 +115,10 @@ Fb as F;
 
       "Fig 1.31a (§6)",
       """
-settings { derivations = 30; angle = 22.5; }
-ignore: + - F;
-axiom: F b F b F b;
+#derivations 30
+#angle 22.5
+#ignore + - F
+#axiom F b F b F b
 a < a > a -> a;
 a < a > b -> b[+F b F b];
 a < b > a -> b;
@@ -132,12 +133,13 @@ b < b > b -> a;
 
       "Fig 1.37b (§6)",
       """
-settings { derivations = 10; angle = 86; }
-let c = 1;
-let p = 0.3;
-let q = c - p;
-let h = (p*q)^0.5;
-axiom: F(1,0);
+#derivations 10
+#angle 86
+#define c 1
+#define p 0.3
+#define q c - p
+#define h (p*q)^0.5
+#axiom F(1,0)
 F(x, 0) -> F(x*p,2) + F(x*h,1) - - F(x*h,1) + F(x*q,0);   (* literal pattern for t = 0 *)
 F(x, t) -> F(x, t-1);
 """ ]
@@ -162,14 +164,14 @@ let tokenization =
           test "unicode letters" { Expect.equal (axiomText "été F") "été F" "" }
           test "symbols" { Expect.equal (axiomText "+-&^\\/|{}!'~$%.@?") "+ - & ^ \\ / | { } ! ' ~ $ % . @ ?" "" }
           test "symbol with parameter" { Expect.equal (axiomText "+(30)!(2)") "+(30) !(2)" "" }
-          test "empty axiom is legal" { Expect.equal (axiomText "") "" "" }
+          test "empty axiom" { Expect.equal (axiomText "") "" "" }
           test "supplementary-plane letters are one name" { Expect.equal (axiomText "𝐀𝐁 F") "𝐀𝐁 F" "" }
           test "supplementary-plane symbol is one module" { Expect.equal (axiomText "F🌱F") "F 🌱 F" "" }
           test "trivia before a parameter list (Appendix A is token-based)" {
               Expect.equal (axiomText "F (1) G (* c *) (2)") "F(1) G(2)" ""
           }
           test "supplementary-plane predecessor" {
-              match parseOk "axiom: 𝐀;\n𝐀 -> F;" |> rulesOf with
+              match parseOk "#axiom 𝐀\n𝐀 -> F;" |> rulesOf with
               | [ Production(h, _, _) ] -> Expect.equal h.Pred.Name "𝐀" ""
               | r -> failtestf "unexpected %A" r
           }
@@ -273,85 +275,32 @@ let structure =
               | r -> failtestf "unexpected %A" r
           }
           test "rule positions" {
-              let rules = parseOk "settings { angle = 3; }\n\n  A -> B;\nC -> D;" |> rulesOf
+              let rules = parseOk "#angle 3\n\n  A -> B;\nC -> D;" |> rulesOf
               Expect.equal (rules |> List.map Rule.pos) [ { Line = 3; Column = 3 }; { Line = 4; Column = 1 } ] ""
           }
-          test "seed is an ordinary name" { parseOk "axiom: seed;\nseed -> F(seed);" |> ignore } ]
-
-let prelude =
-    testList
-        "prelude (§3.2)"
-        [ test "settings, with a position per entry" {
-              match parseOk "settings { derivations = 5; angle = 360/7;\n  step = 2; width = 3; taper = 10; }" with
-              | [ Settings(entries, p) ] ->
-                  Expect.equal p { Line = 1; Column = 1 } "block"
-                  Expect.equal (entries |> List.map (fun (k, _, _) -> k)) SettingKey.all ""
-
-                  Expect.equal
-                      (entries |> List.map (fun (_, _, p) -> p.Line, p.Column))
-                      [ 1, 12; 1, 29; 2, 3; 2, 13; 2, 24 ]
-                      "entry positions"
-
-                  let _, angle, _ = entries[1]
-                  Expect.equal (showExpr angle) "(360/7)" ""
-              | r -> failtestf "unexpected %A" r
+          test "directive names are not keywords" {
+              parseOk "#axiom axiom angle\naxiom -> step seed;" |> ignore
           }
-          test "empty settings block" {
-              match parseOk "settings { }" with
-              | [ Settings([], _) ] -> ()
-              | r -> failtestf "unexpected %A" r
+          test "settings" {
+              let f = parseOk "#derivations 5\n#angle 360/7\n#step 2\n#width 3\n#taper 10\n#seed 42\n"
+
+              let keys =
+                  f
+                  |> List.choose (function
+                      | Setting(k, _, _) -> Some k
+                      | _ -> None)
+
+              Expect.equal keys SettingKey.all ""
           }
-          test "let" {
-              match parseOk "let h = (p*q)^0.5;" with
-              | [ Let("h", e, _) ] -> Expect.equal (showExpr e) "((p*q)^0.5)" ""
+          test "define" {
+              match parseOk "#define h (p*q)^0.5" with
+              | [ Define("h", e, _) ] -> Expect.equal (showExpr e) "((p*q)^0.5)" ""
               | r -> failtestf "unexpected %A" r
           }
           test "ignore" {
-              match parseOk "ignore: + - F seg;" with
+              match parseOk "#ignore + - F seg" with
               | [ Ignore(names, _) ] -> Expect.equal (names |> List.map fst) [ "+"; "-"; "F"; "seg" ] ""
               | r -> failtestf "unexpected %A" r
-          }
-          test "trivia before the colon" { Expect.equal (parseOk "axiom : F;" |> axiomOf |> showActual) "F" "" }
-          test "braces in an axiom are turtle symbols" {
-              Expect.equal (axiomText "{f+f}") "{ f + f }" ""
-          }
-          test "interleaved prelude items" {
-              let f =
-                  parseOk
-                      "let a = 1; settings { angle = a; } let b = 2; ignore: F; let c = a + b; axiom: F(c); F -> F;"
-
-              let kinds =
-                  f
-                  |> List.map (function
-                      | Settings _ -> "settings"
-                      | Let(n, _, _) -> n
-                      | Ignore _ -> "ignore"
-                      | Axiom _ -> "axiom"
-                      | RuleItem _ -> "rule")
-
-              Expect.equal kinds [ "a"; "settings"; "b"; "ignore"; "c"; "axiom"; "rule" ] ""
-          }
-          test "statements spread over lines" {
-              match parseOk "let\n  a\n  =\n  1\n  +\n  2\n;\nignore:\n  +\n  -\n;\nsettings\n{\n angle\n =\n 3\n ;\n}\naxiom:\nF\n;" with
-              | [ Let("a", e, _); Ignore(names, _); Settings([ (Angle, _, p) ], _); Axiom(a, _) ] ->
-                  Expect.equal (showExpr e) "(1+2)" ""
-                  Expect.equal (names |> List.map fst) [ "+"; "-" ] ""
-                  Expect.equal p { Line = 14; Column = 2 } "angle"
-                  Expect.equal (showActual a) "F" ""
-              | r -> failtestf "unexpected %A" r
-          }
-          test "several statements on one line" {
-              Expect.equal (parseOk "settings { angle = 3; } let a = 1; ignore: F; axiom: F; F -> F; G -> G;" |> List.length) 6 ""
-          }
-          test "comments between any tokens" {
-              let src =
-                  "let (* a *) a (* b *) = (* c *) 1 (* d *) ; (* e *) axiom (* f *) : (* g *) F (* h *) ;"
-                  + " settings (* i *) { (* j *) angle (* k *) = (* l *) 3 (* m *) ; (* n *) }"
-
-              Expect.equal (parseOk src |> List.length) 3 ""
-          }
-          test "a prelude statement after a rule parses (the checker rejects it)" {
-              Expect.equal (parseOk "A -> B; axiom: A;" |> List.length) 2 ""
           } ]
 
 let lexical =
@@ -361,15 +310,20 @@ let lexical =
           test "comment inside a successor" {
               Expect.equal (parseOk "A -> B (* x *) C;" |> rulesOf |> List.length) 1 ""
           }
-          test "multi-line comment inside a let" {
-              match parseOk "let a = 1 + (* one\n two *) 2;\nA -> B;" with
-              | [ Let("a", e, _); RuleItem _ ] -> Expect.equal (showExpr e) "(1+2)" ""
+          test "multi-line comment doesn't end a directive" {
+              match parseOk "#define a 1 + (* one\n two *) 2\nA -> B;" with
+              | [ Define("a", e, _); RuleItem _ ] -> Expect.equal (showExpr e) "(1+2)" ""
+              | r -> failtestf "unexpected %A" r
+          }
+          test "directive ends at newline" {
+              match parseOk "#define q c - p\n#define r q" with
+              | [ Define("q", e, _); Define("r", _, _) ] -> Expect.equal (showExpr e) "(c-p)" ""
               | r -> failtestf "unexpected %A" r
           }
           test "CRLF line endings" {
-              Expect.equal (parseOk "settings { angle = 90; }\r\naxiom: F;\r\nF -> F F;\r\n" |> List.length) 3 ""
+              Expect.equal (parseOk "#angle 90\r\n#axiom F\r\nF -> F F;\r\n" |> List.length) 3 ""
           }
-          test "leading whitespace" { parseOk "   settings { angle = 90; }" |> ignore }
+          test "leading whitespace before a directive" { parseOk "   #angle 90" |> ignore }
           test "unicode arrow and minus" {
               match parseOk "F → F−F;" |> rulesOf with
               | [ Production(_, ProdSimple s, _) ] -> Expect.equal (showActual s) "F - F" ""
@@ -378,22 +332,16 @@ let lexical =
           test "unicode caret, tilde, apostrophe" {
               Expect.equal (axiomText "∧∼’") "^ ~ '" ""
           }
-          test "comment before a prelude statement" {
-              Expect.equal (parseOk "(* note *) axiom: F;" |> List.length) 1 ""
+          test "comment before a directive (comments are trivia)" {
+              Expect.equal (parseOk "(* note *) #axiom F" |> List.length) 1 ""
           }
-          test "statement after a multi-line comment" {
-              Expect.equal (parseOk "(* one\n two *) settings { angle = 90; } axiom: F;" |> List.length) 2 ""
+          test "directive after a multi-line comment" {
+              Expect.equal (parseOk "A -> B; (* one\n two *) #angle 90" |> List.length) 2 ""
           }
-          test "statement after a nested comment" {
-              Expect.equal (parseOk "(* a (* b *)\n *)   settings { angle = 90; }\naxiom: F;" |> List.length) 2 ""
+          test "directive after a nested comment" {
+              Expect.equal (parseOk "(* a (* b *)\n *)   #angle 90\n#axiom F" |> List.length) 2 ""
           }
-          test "byte order mark" { parseOk "﻿settings { angle = 90; }" |> ignore } ]
-
-/// Every reserved word (§2.6, A.1), none of which can be used as a name.
-let reservedWords =
-    [ "settings"; "let"; "ignore"; "axiom"; "include"; "module" ] // declaration keywords
-    @ [ "as"; "when"; "else"; "weight" ] // rule keywords
-    @ (SettingKey.all |> List.map SettingKey.name)
+          test "byte order mark" { parseOk "\uFEFF#angle 90" |> ignore } ]
 
 let errors =
     testList
@@ -407,125 +355,33 @@ let errors =
           test "missing ; before a branch rule" {
               expectParseError Codes.MissingSemicolon (2, 6) "A -> B\nC(x) : when x -> D;"
           }
-          test "missing ; before a prelude keyword" {
-              expectParseError Codes.MissingSemicolon (2, 1) "A -> B\nlet a = 3;"
-          }
-          test "missing ; before any prelude statement or interpretation rule" {
-              expectParseError Codes.MissingSemicolon (2, 1) "A -> B\nsettings { angle = 3; }"
-              expectParseError Codes.MissingSemicolon (2, 1) "A -> B\naxiom: F;"
-              expectParseError Codes.MissingSemicolon (2, 1) "A -> B\nignore: F;"
-              expectParseError Codes.MissingSemicolon (2, 3) "A -> B\nC as F;"
-          }
-          test "misplaced keyword in a module string" {
-              expectParseError Codes.MisplacedKeyword (1, 8) "A -> B let;"
-              expectParseError Codes.MisplacedKeyword (1, 6) "A -> settings;"
-              expectParseError Codes.MisplacedKeyword (1, 8) "A -> B axiom;"
-              expectParseError Codes.MisplacedKeyword (1, 10) "axiom: A ignore;"
-              expectParseError Codes.MisplacedKeyword (1, 8) "A -> B when x -> C;"
-              expectParseError Codes.MisplacedKeyword (1, 8) "A -> B weight 1 -> C;"
-              expectParseError Codes.MisplacedKeyword (1, 8) "A -> B else -> C;"
-              expectParseError Codes.MisplacedKeyword (1, 27) "A : when 1 -> B else -> C else -> D;"
-              let d = parseErr "A -> B let;"
-              Expect.stringContains d.Message "keyword `let` can't appear in a module string" ""
-          }
-          test "misplaced keyword in an expression" {
-              expectParseError Codes.MisplacedKeyword (1, 11) "let a = 1 let;"
-              expectParseError Codes.MisplacedKeyword (1, 11) "let a = 1 when;"
-              expectParseError Codes.MisplacedKeyword (1, 11) "let a = 1 as F;"
-              expectParseError Codes.MisplacedKeyword (1, 22) "settings { angle = 3 axiom; }"
+          test "missing ; before a directive" {
+              expectParseError Codes.MissingSemicolon (2, 1) "A -> B\n#angle 3"
           }
           test "missing ; at end of file" { expectParseError Codes.MissingSemicolon (1, 7) "A -> B" }
-          test "missing ; after let" {
-              expectParseError Codes.MissingSemicolon (2, 1) "let a = 1\naxiom: F;"
-              expectParseError Codes.MissingSemicolon (2, 1) "let a = 1\nF -> F;"
-              expectParseError Codes.MissingSemicolon (1, 10) "let a = 1"
-          }
-          test "missing ; after ignore:" {
-              expectParseError Codes.MissingSemicolon (2, 1) "ignore: F\naxiom: F;"
-          }
-          test "missing ; after axiom:" {
-              expectParseError Codes.MissingSemicolon (2, 3) "axiom: F\nF -> F F;"
-              expectParseError Codes.MissingSemicolon (2, 1) "axiom: F\nlet a = 1;"
-          }
-          test "missing ; after a settings entry" {
-              expectParseError Codes.MissingSemicolon (1, 22) "settings { angle = 3 step = 1; }"
-              expectParseError Codes.MissingSemicolon (1, 22) "settings { angle = 3 }"
-          }
-          test "missing }" {
-              expectParseError Codes.MissingBrace (2, 1) "settings { angle = 3;\naxiom: F;"
-              expectParseError Codes.MissingBrace (2, 1) "settings { angle = 3;\nF -> F;"
-              expectParseError Codes.MissingBrace (1, 22) "settings { angle = 3;"
-          }
-          test "settings needs {" { expectParseError Codes.Syntax (1, 10) "settings angle = 3;" }
-          test "unknown setting" { expectParseError Codes.UnknownSetting (1, 12) "settings { foo = 1; }" }
-          test "seed isn't a setting" {
-              let d = parseErr "settings { seed = 1; }"
-              Expect.equal (d.Code, d.Pos) (Codes.UnknownSetting, Some { Line = 1; Column = 12 }) ""
-              Expect.stringContains d.Message "--seed" "points at the CLI"
-          }
-          test "empty ignore:" {
-              expectParseError Codes.EmptyIgnore (1, 1) "ignore: ;"
-              expectParseError Codes.EmptyIgnore (1, 1) "ignore:;"
-          }
-          test ": at the start of a statement" { expectParseError Codes.Syntax (1, 1) ": F;" }
-          test "axiom without :" { expectParseError Codes.Syntax (1, 7) "axiom F;" }
-          test "ignore without :" { expectParseError Codes.Syntax (1, 8) "ignore F;" }
-          test "let without =" { expectParseError Codes.Syntax (1, 7) "let x 3;" }
-          test "settings entry without =" { expectParseError Codes.Syntax (1, 18) "settings { angle 3; }" }
-          test "let with : suggests =" { expectParseError Codes.WrongSeparator (1, 6) "let x: 3;" }
-          test "settings entry with : suggests =" {
-              expectParseError Codes.WrongSeparator (1, 17) "settings { angle: 3; }"
-          }
-          test "axiom with = suggests :" { expectParseError Codes.WrongSeparator (1, 7) "axiom = F;" }
-          test "ignore with = suggests :" { expectParseError Codes.WrongSeparator (1, 8) "ignore = F;" }
           test "= suggests ==" { expectParseError Codes.UseCOperator (1, 15) "A(t) : when t = 0 -> B;" }
           test "& suggests &&" { expectParseError Codes.UseCOperator (1, 15) "A(t) : when t & 1 -> B;" }
           test "| suggests ||" { expectParseError Codes.UseCOperator (1, 15) "A(t) : when t | 1 -> B;" }
-          test "# at the start of the file" { expectParseError Codes.ReservedChar (1, 1) "#angle 3" }
-          test "# at the start of a line" { expectParseError Codes.ReservedChar (2, 1) "axiom: F;\n#derivations 3" }
           test "# inside a rule" { expectParseError Codes.ReservedChar (1, 8) "A -> B #C;" }
-          test "# inside an axiom" { expectParseError Codes.ReservedChar (1, 10) "axiom: F #;" }
-          test "# inside an expression" { expectParseError Codes.ReservedChar (1, 11) "let a = 1 # 2;" }
-          test "# inside a settings block" { expectParseError Codes.ReservedChar (1, 12) "settings { # }" }
+          test "# inside a directive value" { expectParseError Codes.ReservedChar (1, 10) "#axiom F #" }
           test "backtick" { expectParseError Codes.ReservedChar (1, 6) "A -> `B;" }
           test "book left quote" { expectParseError Codes.ReservedChar (1, 6) "A -> ‘B;" }
           test "= in a module string" { expectParseError Codes.ReservedChar (1, 7) "A -> B=C;" }
           test "* in a successor" { expectParseError Codes.ReservedChar (1, 6) "A -> *;" }
-          test "reserved words can't be module names" {
-              for w in reservedWords do
-                  expectParseError Codes.ReservedName (1, 1) $"%s{w} -> B;"
+          test "unknown directive" { expectParseError Codes.UnknownDirective (1, 1) "#foo 3" }
+          test "reserved directive #include" { expectParseError Codes.ReservedDirective (1, 1) "#include x" }
+          test "reserved directive #module" { expectParseError Codes.ReservedDirective (1, 1) "#module A" }
+          test "directive after a rule on the same line" {
+              expectParseError Codes.DirectiveNotAtLineStart (1, 9) "A -> B; #angle 3"
           }
-          test "reserved words can't be let names" {
-              for w in reservedWords do
-                  expectParseError Codes.ReservedName (1, 5) $"let %s{w} = 1;"
-          }
-          test "reserved words can't be parameter names" {
-              for w in reservedWords do
-                  expectParseError Codes.ReservedName (1, 3) $"A(%s{w}) -> B;"
-          }
-          test "keyword in a context" {
-              expectParseError Codes.ReservedName (1, 5) "A > when -> B;"
-              expectParseError Codes.ReservedName (1, 5) "A < let -> B;"
-          }
-          test "setting name in a successor or an axiom" {
-              expectParseError Codes.ReservedName (1, 8) "A -> B angle;"
-              expectParseError Codes.ReservedName (1, 8) "axiom: step;"
-          }
-          test "setting name in an expression: settings aren't values" {
-              expectParseError Codes.ReservedName (1, 31) "settings { angle = 10; step = angle; }"
-              expectParseError Codes.ReservedName (1, 11) "A(x) -> B(angle);"
-          }
-          test "include and module are reserved everywhere" {
-              expectParseError Codes.ReservedName (1, 1) "include x;"
-              expectParseError Codes.ReservedName (1, 1) "module A;"
-              expectParseError Codes.ReservedName (1, 6) "A -> include;"
-              expectParseError Codes.ReservedName (1, 9) "let a = module;"
-              expectParseError Codes.ReservedName (1, 9) "ignore: module;"
+          test "trailing junk after a directive" { expectParseError Codes.Syntax (1, 11) "#angle 90 deg" }
+          test "directive can't continue on the next line" {
+              expectParseError Codes.Syntax (1, 12) "#axiom F(1,\n2)"
           }
           test "number in module mode" { expectParseError Codes.NumberInModuleMode (1, 8) "A -> F 2;" }
-          test "number in axiom" { expectParseError Codes.NumberInModuleMode (1, 8) "axiom: 0 1;" }
+          test "number in axiom" { expectParseError Codes.NumberInModuleMode (1, 8) "#axiom 0 1" }
           test "bracket in left context" { expectParseError Codes.BracketNotAllowed (1, 1) "[A] < B -> C;" }
-          test "bracket in ignore" { expectParseError Codes.BracketNotAllowed (1, 11) "ignore: + [;" }
+          test "bracket in ignore" { expectParseError Codes.BracketNotAllowed (1, 11) "#ignore + [" }
           test "else after an unguarded weight" {
               expectParseError Codes.ElseAfterUnguardedWeight (1, 40) "A : when x weight 1 -> B weight 1 -> C else -> D;"
           }
@@ -540,13 +396,16 @@ let errors =
           test "guarded weighted branch after an interpretation branch" {
               expectParseError Codes.MixedBranches (1, 17) "A : when 0 as F when 1 weight 1 -> X;"
           }
+          test "directive after a comment, on the same line as a rule" {
+              expectParseError Codes.DirectiveNotAtLineStart (1, 20) "A -> B; (* note *) #angle 90"
+          }
           test "interpretation weights" { expectParseError Codes.MixedBranches (1, 14) "A : weight 1 as B;" }
           test "unterminated comment points at its start" {
               expectParseError Codes.UnterminatedComment (2, 3) "A -> B;\n  (* a (* b *) c"
           }
           test "lone _ as a module" { expectParseError Codes.ReservedName (1, 6) "A -> _;" }
           test "lone _ in an expression" { expectParseError Codes.ReservedName (1, 8) "A -> B(_);" }
-          test "lone _ as a let name" { expectParseError Codes.ReservedName (1, 5) "let _ = 1;" }
+          test "keyword as a module name" { expectParseError Codes.Syntax (1, 1) "when -> B;" }
           test "predecessor is a single module" { expectParseError Codes.Syntax (1, 5) "A B -> C;" }
           test "* can't be a predecessor" { expectParseError Codes.Syntax (1, 3) "* -> C;" }
           test "unclosed [" { expectParseError Codes.Syntax (1, 9) "A -> [ B;" }
@@ -557,4 +416,4 @@ let errors =
 
 [<Tests>]
 let tests =
-    testList "Parser" [ specExampleTests; tokenization; expressions; structure; prelude; lexical; errors ]
+    testList "Parser" [ specExampleTests; tokenization; expressions; structure; lexical; errors ]

@@ -93,7 +93,7 @@ type Rule =
     | Production of Head * ProdBody * pos: Pos
     | Interpretation of Head * InterpBody * pos: Pos
 
-// Prelude and file --------------------------------------------------------
+// Directives and file -----------------------------------------------------
 
 type SettingKey =
     | Derivations
@@ -101,13 +101,11 @@ type SettingKey =
     | Step
     | Width
     | Taper
-
-/// One `key = expr;` entry of a `settings` block, at the key's position.
-type SettingEntry = SettingKey * Expr * Pos
+    | Seed
 
 type Item =
-    | Settings of SettingEntry list * pos: Pos
-    | Let of name: string * Expr * pos: Pos
+    | Setting of SettingKey * Expr * pos: Pos
+    | Define of name: string * Expr * pos: Pos
     | Ignore of (string * Pos) list * pos: Pos
     | Axiom of ActualString * pos: Pos
     | RuleItem of Rule
@@ -122,10 +120,9 @@ module SettingKey =
         | Step -> "step"
         | Width -> "width"
         | Taper -> "taper"
+        | Seed -> "seed"
 
-    let all = [ Derivations; Angle; Step; Width; Taper ]
-
-    let tryParse (s: string) = all |> List.tryFind (fun k -> name k = s)
+    let all = [ Derivations; Angle; Step; Width; Taper; Seed ]
 
 module Rule =
     let head =
