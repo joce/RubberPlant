@@ -13,14 +13,20 @@ trap 'rm -rf "$out"' EXIT
 
 dotnet build src/RubberPlant.Cli -c Release --nologo -v q
 
+# golden/seeds.txt: `<example> <seed>` lines (run parameters, §4.7); others use seed 0.
+seed_of() { tr -d '\r' < "$golden/seeds.txt" | awk -v n="$1" '$1 !~ /^#/ && $1 == n { print $2 }'; }
+
 status=0
 for f in examples/*.rp; do
   name=$(basename "$f" .rp)
+  args=()
+  seed=$(seed_of "$name")
+  [ -n "$seed" ] && args+=(--seed "$seed")
 
   if [ ! -f "$golden/$name.svg" ]; then
     echo "MISSING golden: $golden/$name.svg"; status=1; continue
   fi
-  dotnet run --no-build -c Release --project src/RubberPlant.Cli -- render "$f" -o "$out/$name.svg" > /dev/null
+  dotnet run --no-build -c Release --project src/RubberPlant.Cli -- render "$f" "${args[@]}" -o "$out/$name.svg" > /dev/null
   # Exact bytes: no newline normalization (goldens are LF via .gitattributes).
   if cmp -s "$out/$name.svg" "$golden/$name.svg"; then
     echo "ok       $name"
