@@ -37,6 +37,12 @@ jobs:
       - name: Examples match the goldens
         run: bash scripts/check-goldens.sh
 
-      # The tests must never write or change a golden.
+      # The tests must never write, add or change a golden (untracked and
+      # staged files included).
       - name: Goldens untouched
-        run: git diff --exit-code -- tests/RubberPlant.Backends.Tests/golden
+        run: |
+          changes=$(git status --porcelain --untracked-files=all -- tests/RubberPlant.Backends.Tests/golden)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            exit 1
+          fi

@@ -21,11 +21,13 @@ for f in examples/*.rp; do
     echo "MISSING golden: $golden/$name.svg"; status=1; continue
   fi
   dotnet run --no-build -c Release --project src/RubberPlant.Cli -- render "$f" -o "$out/$name.svg" > /dev/null
-  if cmp -s <(tr -d '\r' < "$out/$name.svg") <(tr -d '\r' < "$golden/$name.svg"); then
+  # Exact bytes: no newline normalization (goldens are LF via .gitattributes).
+  if cmp -s "$out/$name.svg" "$golden/$name.svg"; then
     echo "ok       $name"
   else
     echo "DIFFERS  $name"; status=1
-    diff <(tr -d '\r' < "$golden/$name.svg") <(tr -d '\r' < "$out/$name.svg") | head -c 2000 || true
+    cmp "$golden/$name.svg" "$out/$name.svg" || true
+    diff "$golden/$name.svg" "$out/$name.svg" | head -c 2000 || true
   fi
 done
 
