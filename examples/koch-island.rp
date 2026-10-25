@@ -1,5 +1,6 @@
 (* ABOP Fig 1.6: quadratic Koch island *)
-settings { derivations = 3; angle = 90; }
+#derivations 3
+#angle 90
 
-axiom: F-F-F-F;
+#axiom F-F-F-F
 F -> F-F+F+F F-F-F+F;

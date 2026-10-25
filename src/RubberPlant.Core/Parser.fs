@@ -1,8 +1,9 @@
 /// Parser for the RubberPlant language, following `docs/language.md`, Appendix A.
 ///
 /// The parser has no separate lexer: FParsec combinators tokenize and parse
-/// in one pass. Each token parser skips the trivia that follows it. Newlines
-/// are trivia everywhere (A.4).
+/// in one pass. Each token parser skips the trivia that follows it. Trivia
+/// depends on one bit of state: inside a directive, newlines end the
+/// directive, so they aren't skipped.
 module RubberPlant.Parser
 
 open System
@@ -10,7 +11,14 @@ open System.Globalization
 open FParsec
 open RubberPlant.Ast
 
-type private P<'a> = Parser<'a, unit>
+type State =
+    { InDirective: bool
+      /// Line on which the last token ended (0 before the first token). A
+      /// directive must be the first token on its line (§2.2); comments are
+      /// trivia, so they don't count.
+      LastTokenLine: int64 }
+
+type private P<'a> = Parser<'a, State>
 
 // Errors ------------------------------------------------------------------
 
@@ -43,26 +51,6 @@ let private isDigit c = c >= '0' && c <= '9'
 
 let private ruleKeywords = set [ "as"; "when"; "else"; "weight" ]
 
-/// Keywords that start a prelude statement.
-let private declKeywords = set [ "settings"; "let"; "ignore"; "axiom" ]
-
-/// Keywords end a module string or an expression (§2.2, §2.5).
-let private keywords = ruleKeywords + declKeywords
-
-let private settingNames = SettingKey.all |> List.map SettingKey.name |> set
-
-/// Why a name that isn't a keyword can't be used at all (§2.6), if it can't.
-let private reservedReason (n: string) =
-    if n = "include" || n = "module" then
-        Some $"`%s{n}` is reserved and not supported yet"
-    elif settingNames.Contains n then
-        Some $"`%s{n}` is a setting name: it can only be a key in the `settings` block, and settings aren't values"
-    else
-        None
-
-let private keywordAsName (n: string) =
-    $"`%s{n}` is a keyword and can't be used as a name"
-
 /// Book characters accepted as aliases (§2.7). Multi-character aliases
 /// (`→`, `≤`, `≥`, `≠`) are handled where those tokens are parsed.
 let private normalize c =
@@ -94,7 +82,7 @@ let private isModReserved c =
     | '≠' -> true
     | _ -> false
 
-let private isTriviaStart (s: CharStream<unit>) =
+let private isTriviaStart (s: CharStream<State>) =
     match s.Peek() with
     | ' '
     | '\t'
@@ -105,7 +93,7 @@ let private isTriviaStart (s: CharStream<unit>) =
 
 /// Length of the name-start character at offset `i` (0 if none). Letters
 /// are Unicode scalars, so a supplementary-plane letter has length 2.
-let private nameStartAt (s: CharStream<unit>) (i: int) =
+let private nameStartAt (s: CharStream<State>) (i: int) =
     let c = s.Peek i
 
     if c = '_' then
@@ -114,11 +102,11 @@ let private nameStartAt (s: CharStream<unit>) (i: int) =
         let struct (len, letter) = Unicode.scalarAt c (s.Peek(i + 1))
         if letter then len else 0
 
-let private nameCharAt (s: CharStream<unit>) (i: int) =
+let private nameCharAt (s: CharStream<State>) (i: int) =
     if isDigit (s.Peek i) then 1 else nameStartAt s i
 
 /// Length of the name starting at the current position (0 if none).
-let private nameLength (s: CharStream<unit>) =
+let private nameLength (s: CharStream<State>) =
     let first = nameStartAt s 0
 
     if first = 0 then
@@ -133,18 +121,23 @@ let private nameLength (s: CharStream<unit>) =
 
         i
 
-let private peekName (s: CharStream<unit>) = s.PeekString(nameLength s)
+let private peekName (s: CharStream<State>) = s.PeekString(nameLength s)
 
-let private isArrowAt (s: CharStream<unit>) =
+let private isArrowAt (s: CharStream<State>) =
     let c = s.Peek()
     c = '→' || ((c = '-' || c = '−') && s.Peek 1 = '>')
 
+/// True if no token precedes the current position on its line.
+let private atLineStart (s: CharStream<State>) = s.Line > s.UserState.LastTokenLine
+
 /// Describes the token at the current position, for error messages.
-let private describeHere (s: CharStream<unit>) =
+let private describeHere (s: CharStream<State>) =
     if s.IsEndOfStream then
         "end of file"
     else
         match s.Peek() with
+        | '\n'
+        | '\r' -> "end of line"
         | _ when nameLength s > 0 -> $"`%s{peekName s}`"
         | _ when isArrowAt s -> "`->`"
         | c -> $"`%c{c}`"
@@ -152,7 +145,7 @@ let private describeHere (s: CharStream<unit>) =
 // Trivia ----------------------------------------------------------------------
 
 /// Skips a nested `(* … *)` comment. Precondition: at `(*`.
-let private skipComment (s: CharStream<unit>) : Reply<unit> =
+let private skipComment (s: CharStream<State>) : Reply<unit> =
     let start = toPos s.Position
     s.Skip 2
     let mutable depth = 1
@@ -167,9 +160,10 @@ let private skipComment (s: CharStream<unit>) : Reply<unit> =
     else
         fatalAt start Codes.UnterminatedComment "unterminated comment"
 
-/// Skips spaces, tabs, newlines and comments.
+/// Skips spaces, tabs and comments; newlines too, unless inside a directive.
 let private skipTrivia: P<unit> =
     fun s ->
+        let inDirective = s.UserState.InDirective
         let mutable result = Reply(())
         let mutable go = true
 
@@ -177,8 +171,8 @@ let private skipTrivia: P<unit> =
             match s.Peek() with
             | ' '
             | '\t' -> s.Skip()
-            | '\n' -> s.SkipNewline() |> ignore
-            | '\r' when s.Peek 1 = '\n' -> s.SkipNewline() |> ignore
+            | '\n' when not inDirective -> s.SkipNewline() |> ignore
+            | '\r' when not inDirective && s.Peek 1 = '\n' -> s.SkipNewline() |> ignore
             | '(' when s.Peek 1 = '*' ->
                 let r = skipComment s
 
@@ -189,8 +183,13 @@ let private skipTrivia: P<unit> =
 
         result
 
-/// Skips the trivia after a token.
-let private ws: P<unit> = skipTrivia
+/// Skips the trivia after a token, recording the line the token ended on.
+let private ws: P<unit> =
+    fun s ->
+        if s.UserState.LastTokenLine <> s.Line then
+            s.UserState <- { s.UserState with LastTokenLine = s.Line }
+
+        skipTrivia s
 
 /// A one-character punctuation token.
 let private punct (c: char) : P<unit> =
@@ -220,58 +219,12 @@ let private arrow: P<unit> =
         else
             Reply(Error, expected "`->`")
 
-// Keyword diagnostics -----------------------------------------------------------
-
-/// True if the name at the current position is followed by `=` or `:`.
-let private nameThenSeparator (s: CharStream<unit>) =
-    let mutable start = s.State
-    s.Skip(nameLength s)
-    let r = skipTrivia s
-    let hit = r.Status = Ok && (s.Peek() = '=' || s.Peek() = ':')
-    s.BacktrackTo(&start)
-    hit
-
-/// True if a prelude statement starts here (`settings {`, `let x =`,
-/// `axiom:`, `ignore:`), so a `;` before it is probably missing.
-let private statementAhead (s: CharStream<unit>) =
-    let mutable start = s.State
-    let k = peekName s
-
-    let hit =
-        match k with
-        | "let" ->
-            s.Skip k.Length
-            skipTrivia s |> ignore
-            nameLength s > 0 && nameThenSeparator s
-        | "settings" ->
-            s.Skip k.Length
-            (skipTrivia s).Status = Ok && s.Peek() = '{'
-        | "axiom"
-        | "ignore" -> nameThenSeparator s
-        | _ -> false
-
-    s.BacktrackTo(&start)
-    hit
-
-/// A keyword that can't appear where it is (`inWhat`: "a module string" or
-/// "an expression").
-let private misplacedKeyword (k: string) (inWhat: string) =
-    let hint =
-        match k with
-        | "when"
-        | "weight"
-        | "else" -> "; `when`, `weight` and `else` start a branch, after the rule's `:`"
-        | "as" -> "; `as` starts an interpretation rule's successor"
-        | _ -> $"; `%s{k}` starts a statement"
-
-    $"keyword `%s{k}` can't appear in %s{inWhat}%s{hint}"
-
 // Module-mode diagnostics -------------------------------------------------------
 
 /// Fails with the most helpful message for whatever stopped a module string.
 /// `expecting` describes what should have come next (e.g. "`;`").
-/// `ruleEnd`: the module string ends a statement, so a following rule head
-/// or prelude keyword means a `;` is probably missing.
+/// `ruleEnd`: the module string ends a rule, so a following rule head or
+/// directive means a `;` is probably missing.
 let private moduleStop (expecting: string) (ruleEnd: bool) : P<'a> =
     fun s ->
         let p = toPos s.Position
@@ -282,17 +235,16 @@ let private moduleStop (expecting: string) (ruleEnd: bool) : P<'a> =
 
         if s.IsEndOfStream then
             if ruleEnd then
-                fail Codes.MissingSemicolon "missing `;` at the end of the file"
+                fail Codes.MissingSemicolon "missing `;` at the end of the rule"
             else
                 fail Codes.Syntax $"unexpected end of file; expected %s{expecting}"
-        // `as` is the next interpretation rule's arrow; other keywords mean
-        // a missing `;` only if a whole statement follows.
-        elif ruleEnd && keywords.Contains name && name <> "as" && not (statementAhead s) then
-            fail Codes.MisplacedKeyword (misplacedKeyword name "a module string")
-        elif ruleEnd && (isArrowAt s || c = ':' || c = '<' || c = '>' || keywords.Contains name) then
+        elif ruleEnd && (isArrowAt s || c = ':' || c = '<' || c = '>' || ruleKeywords.Contains name) then
             fail Codes.MissingSemicolon $"missing `;`? unexpected %s{describeHere s}"
         elif c = '#' then
-            fail Codes.ReservedChar "`#` has no meaning; it's reserved"
+            if ruleEnd && atLineStart s && nameStartAt s 1 > 0 then
+                fail Codes.MissingSemicolon "missing `;` before this directive?"
+            else
+                fail Codes.ReservedChar "`#` is reserved here"
         elif isDigit c then
             fail
                 Codes.NumberInModuleMode
@@ -312,17 +264,6 @@ let private moduleStop (expecting: string) (ruleEnd: bool) : P<'a> =
         else
             fail Codes.Syntax $"unexpected %s{describeHere s}; expected %s{expecting}"
 
-/// Like `moduleStop` where a module name is expected: a keyword there is
-/// being used as a name.
-let private moduleExpected (expecting: string) : P<'a> =
-    fun s ->
-        let n = peekName s
-
-        if keywords.Contains n then
-            fatal Codes.ReservedName (keywordAsName n) s
-        else
-            moduleStop expecting false s
-
 // Expressions -----------------------------------------------------------------
 
 let private number: P<float> =
@@ -331,33 +272,23 @@ let private number: P<float> =
     |>> fun t -> Double.Parse(t.Replace('−', '-'), NumberStyles.Float, CultureInfo.InvariantCulture)
     <?> "number"
 
-type private IdentRole =
-    /// A name read in an expression: a keyword ends the expression.
-    | Use
-    /// A name being defined by `let`: a keyword is an error.
-    | Bind
-    /// A parameter pattern: like `Bind`, and a lone `_` is returned as is.
-    | Param
-
-/// An identifier: a name that isn't reserved or the lone wildcard `_`.
-let private identOrWild (role: IdentRole) (what: string) : P<string * Pos> =
+/// An identifier: a name that isn't a rule keyword or the lone wildcard `_`.
+/// With `allowWild`, a lone `_` is returned as is.
+let private identOrWild (allowWild: bool) (what: string) : P<string * Pos> =
     fun s ->
         let p = toPos s.Position
         let n = peekName s
 
-        if n = "" || (role = Use && keywords.Contains n) then
+        if n = "" || ruleKeywords.Contains n then
             Reply(Error, expected what)
-        elif keywords.Contains n then
-            fatalAt p Codes.ReservedName (keywordAsName n)
-        elif (reservedReason n).IsSome then
-            fatalAt p Codes.ReservedName (reservedReason n).Value
-        elif n = "_" && role <> Param then
+        elif n = "_" && not allowWild then
             fatalAt p Codes.ReservedName "`_` is the wildcard; it can only be used as a parameter pattern"
         else
             s.Skip n.Length
             let r = ws s
             if r.Status = Ok then Reply((n, p)) else Reply(r.Status, r.Error)
 
+let private ident what = identOrWild false what
 
 /// An operator token: one of `ops` (first match wins), not followed by any
 /// character in `notBefore`.
@@ -399,7 +330,7 @@ let private noReservedOperator: P<unit> =
         | '#' -> fatalAt p Codes.ReservedChar "`#` is reserved here"
         | _ -> Reply(())
 
-let private expr, private exprRef = createParserForwardedToRef<Expr, unit> ()
+let private expr, private exprRef = createParserForwardedToRef<Expr, State> ()
 
 let private foldLeft (first: Expr) (rest: (BinOp * Expr) list) =
     List.fold (fun acc (o, e) -> Binary(o, acc, e)) first rest
@@ -409,14 +340,14 @@ let private atom: P<Expr> =
 
     choice
         [ number .>> ws |>> Num
-          identOrWild Use "name" .>>. opt args
+          ident "name" .>>. opt args
           |>> (fun ((n, p), a) ->
               match a with
               | None -> Ident(n, p)
               | Some a -> Call(n, a, p))
           punct '(' >>. expr .>> punct ')' ]
 
-let private unary, private unaryRef = createParserForwardedToRef<Expr, unit> ()
+let private unary, private unaryRef = createParserForwardedToRef<Expr, State> ()
 
 let private pow =
     atom .>>. opt (powOp >>. unary)
@@ -437,7 +368,7 @@ let private rel =
         | None -> a
         | Some(o, b) -> Binary(o, a, b)
 
-let private notExpr, private notRef = createParserForwardedToRef<Expr, unit> ()
+let private notExpr, private notRef = createParserForwardedToRef<Expr, State> ()
 notRef.Value <- (notOp >>. notExpr |>> Not) <|> rel
 
 let private andExpr =
@@ -463,10 +394,8 @@ let private moduleName: P<string * Pos> =
         if len > 0 then
             let n = s.PeekString len
 
-            if keywords.Contains n then
+            if ruleKeywords.Contains n then
                 Reply(Error, expected "module")
-            elif (reservedReason n).IsSome then
-                fatalAt p Codes.ReservedName (reservedReason n).Value
             elif n = "_" then
                 fatalAt p Codes.ReservedName "`_` is the wildcard; it can only be used as a parameter pattern"
             else
@@ -520,7 +449,7 @@ let private bracketed (inner: P<'a>) : P<'a> =
                 moduleStop $"`]` to close the `[` at line %d{p.Line}, column %d{p.Column}" false s
 
 let private actualString, private actualStringRef =
-    createParserForwardedToRef<ActualString, unit> ()
+    createParserForwardedToRef<ActualString, State> ()
 
 actualStringRef.Value <-
     many (
@@ -530,7 +459,7 @@ actualStringRef.Value <-
 
 let private pattern: P<Pattern> =
     choice
-        [ identOrWild Param "parameter"
+        [ identOrWild true "parameter"
           |>> (fun (n, p) -> if n = "_" then PWild else PVar(n, p))
           opt minus .>>. (number .>> ws)
           |>> fun (neg, v) -> PNum(if neg.IsSome then -v else v) ]
@@ -550,7 +479,7 @@ let private leftElem: P<LeftElem> =
             ((punct '*' >>% LAny) <|> (formalModule |>> LModule)) s
 
 let private rightContext, private rightContextRef =
-    createParserForwardedToRef<RightElem list, unit> ()
+    createParserForwardedToRef<RightElem list, State> ()
 
 let private rightElem: P<RightElem> =
     choice
@@ -568,7 +497,7 @@ let private head: P<Head> =
 
         if first.Status <> Ok then
             if first.Status = Error then
-                moduleExpected "a rule or a prelude statement" s
+                moduleStop "a rule or a directive" false s
             else
                 Reply(first.Status, first.Error)
         else
@@ -583,7 +512,7 @@ let private head: P<Head> =
                     if r.Status = Ok then
                         Result.Ok(elems, r.Result)
                     elif r.Status = Error then
-                        Result.Error(moduleExpected "the predecessor after `<`" s)
+                        Result.Error(moduleStop "the predecessor after `<`" false s)
                     else
                         Result.Error(Reply(r.Status, r.Error))
                 else
@@ -609,7 +538,7 @@ let private head: P<Head> =
                     if r.Status = Ok then
                         Reply({ Left = left; Pred = pred; Right = r.Result })
                     elif r.Status = Error then
-                        moduleExpected "a right context after `>`" s
+                        moduleStop "a right context after `>`" false s
                     else
                         Reply(r.Status, r.Error)
                 else
@@ -781,111 +710,23 @@ let private ruleBody (h: Head) (rulePos: Pos) : P<Rule> =
 let private rule: P<Rule> =
     getPos .>>. head >>= fun (p, h) -> ruleBody h p
 
-// Prelude ---------------------------------------------------------------------
+// Directives --------------------------------------------------------------------
 
-/// The keyword that starts a prelude statement. If what follows can only
-/// continue a rule head, the keyword is being used as a module name.
-let private preludeKeyword (k: string) : P<Pos> =
+let private setInDirective b =
+    updateUserState (fun (st: State) -> { st with InDirective = b })
+
+/// The end of a directive: only trivia may remain on the line.
+let private endOfDirective (moduleMode: bool) : P<unit> =
     fun s ->
-        let p = toPos s.Position
-        s.Skip k.Length
-        let r = ws s
-
-        if r.Status <> Ok then
-            Reply(r.Status, r.Error)
-        elif isArrowAt s || s.Peek() = '<' || s.Peek() = '>' || s.Peek() = '(' then
-            fatalAt p Codes.ReservedName (keywordAsName k)
+        if s.IsEndOfStream then
+            Reply(())
+        elif s.Peek() = '\n' || (s.Peek() = '\r' && s.Peek 1 = '\n') then
+            s.SkipNewline() |> ignore
+            Reply(())
+        elif moduleMode then
+            moduleStop "the end of the line (a directive ends at the end of its line)" false s
         else
-            Reply(p)
-
-/// The `:` that starts a module string (`axiom:`, `ignore:`).
-let private colonAfter (k: string) : P<unit> =
-    fun s ->
-        if s.Peek() = ':' then
-            s.Skip()
-            ws s
-        elif s.Peek() = '=' then
-            fatal Codes.WrongSeparator "use `:` here: `:` introduces a module string, `=` an expression" s
-        else
-            fatal Codes.Syntax $"unexpected %s{describeHere s}; expected `:` after `%s{k}`" s
-
-/// The `=` that starts an expression (`let`, settings entries).
-let private equalsAfter (what: string) : P<unit> =
-    fun s ->
-        if s.Peek() = '=' then
-            s.Skip()
-            ws s
-        elif s.Peek() = ':' then
-            fatal Codes.WrongSeparator "use `=` here: `=` introduces an expression, `:` a module string" s
-        else
-            fatal Codes.Syntax $"unexpected %s{describeHere s}; expected `=` after %s{what}" s
-
-/// The `;` after an expression. A name, `->`, `}` or the end of the file
-/// can't continue an expression, so a `;` is probably missing.
-let private exprSemicolon: P<unit> =
-    fun s ->
-        let name = peekName s
-
-        if s.Peek() = ';' then
-            s.Skip()
-            ws s
-        elif keywords.Contains name && not (statementAhead s) then
-            fatal Codes.MisplacedKeyword (misplacedKeyword name "an expression") s
-        elif s.IsEndOfStream || s.Peek() = '}' || isArrowAt s || nameLength s > 0 then
-            fatal Codes.MissingSemicolon $"missing `;`? unexpected %s{describeHere s}" s
-        else
-            fatal Codes.Syntax $"unexpected %s{describeHere s}; expected `;`" s
-
-let private letStatement: P<Item> =
-    preludeKeyword "let"
-    >>= fun p ->
-        identOrWild Bind "a constant name"
-        >>= fun (n, _) -> equalsAfter $"`%s{n}`" >>. expr .>> exprSemicolon |>> fun e -> Let(n, e, p)
-
-/// One `key = expr;` entry. Fails without consuming input at anything but
-/// a setting name.
-let private settingEntry: P<SettingEntry> =
-    fun s ->
-        let p = toPos s.Position
-        let name = peekName s
-
-        match SettingKey.tryParse name with
-        | Some key ->
-            s.Skip name.Length
-            (ws >>. equalsAfter $"`%s{name}`" >>. expr .>> exprSemicolon |>> fun e -> (key, e, p)) s
-        | None -> Reply(Error, NoErrorMessages)
-
-/// The `}` that ends a settings block, with a helpful error for whatever
-/// stopped the entries instead.
-let private closeBrace (blockPos: Pos) : P<unit> =
-    fun s ->
-        let p = toPos s.Position
-        let name = peekName s
-
-        if s.Peek() = '}' then
-            s.Skip()
-            ws s
-        elif name = "seed" && nameThenSeparator s then
-            fatalAt
-                p
-                Codes.UnknownSetting
-                "`seed` isn't a setting: the random seed is a run parameter (`--seed` on the command line)"
-        elif name <> "" && not (keywords.Contains name) && nameThenSeparator s then
-            let known = SettingKey.all |> List.map (fun k -> $"`%s{SettingKey.name k}`") |> String.concat ", "
-            fatalAt p Codes.UnknownSetting $"unknown setting `%s{name}`; the settings are %s{known}"
-        elif s.Peek() = '#' then
-            fatalAt p Codes.ReservedChar "`#` has no meaning; it's reserved"
-        elif s.IsEndOfStream || name <> "" || isArrowAt s then
-            fatalAt
-                p
-                Codes.MissingBrace
-                $"missing `}}`? unexpected %s{describeHere s} in the `settings` block at line %d{blockPos.Line}"
-        else
-            fatalAt p Codes.Syntax $"unexpected %s{describeHere s}; expected a setting or `}}`"
-
-let private settingsBlock: P<Item> =
-    preludeKeyword "settings"
-    >>= fun p -> punct '{' >>. many settingEntry .>> closeBrace p |>> fun entries -> Settings(entries, p)
+            fatal Codes.Syntax $"unexpected %s{describeHere s}; a directive ends at the end of its line" s
 
 let private ignoreName: P<string * Pos> =
     fun s ->
@@ -894,31 +735,51 @@ let private ignoreName: P<string * Pos> =
         else
             moduleNameTok s
 
-let private ignoreStatement: P<Item> =
-    preludeKeyword "ignore"
-    >>= fun p ->
-        colonAfter "ignore" >>. many ignoreName .>> semicolon
-        >>= fun names _ ->
-            if names.IsEmpty then
-                fatalAt p Codes.EmptyIgnore "`ignore:` needs at least one module; leave it out if nothing is ignored"
-            else
-                Reply(Ignore(names, p))
+let private directive: P<Item> =
+    fun s ->
+        let p = toPos s.Position
 
-let private axiomStatement: P<Item> =
-    preludeKeyword "axiom"
-    >>= fun p -> colonAfter "axiom" >>. actualString .>> semicolon |>> fun a -> Axiom(a, p)
+        if not (atLineStart s) then
+            fatalAt p Codes.DirectiveNotAtLineStart "a directive must be the first thing on its line"
+        else
+            s.Skip() // '#'
+            let name = peekName s
+
+            if name = "" then
+                fatalAt p Codes.Syntax "expected a directive name right after `#`"
+            else
+                s.Skip name.Length
+
+                let setting key =
+                    expr .>> endOfDirective false |>> fun e -> Setting(key, e, p)
+
+                let body: P<Item> =
+                    match name with
+                    | "derivations" -> setting Derivations
+                    | "angle" -> setting Angle
+                    | "step" -> setting Step
+                    | "width" -> setting Width
+                    | "taper" -> setting Taper
+                    | "seed" -> setting Seed
+                    | "define" ->
+                        ident "constant name" .>>. expr .>> endOfDirective false
+                        |>> fun ((n, _), e) -> Define(n, e, p)
+                    | "ignore" ->
+                        many ignoreName .>> endOfDirective true
+                        |>> fun names -> Ignore(names, p)
+                    | "axiom" -> actualString .>> endOfDirective true |>> fun a -> Axiom(a, p)
+                    | "include"
+                    | "module" ->
+                        fun _ -> fatalAt p Codes.ReservedDirective $"`#%s{name}` is reserved and not supported yet"
+                    | _ -> fun _ -> fatalAt p Codes.UnknownDirective $"unknown directive `#%s{name}`"
+
+                (setInDirective true >>. ws >>. body .>> setInDirective false .>> skipTrivia) s
 
 // File ------------------------------------------------------------------------
 
-/// A prelude statement or a rule. Their order is checked later (A.3).
 let private item: P<Item> =
     fun s ->
-        match peekName s with
-        | "settings" -> settingsBlock s
-        | "let" -> letStatement s
-        | "ignore" -> ignoreStatement s
-        | "axiom" -> axiomStatement s
-        | _ -> (rule |>> RuleItem) s
+        if s.Peek() = '#' then directive s else (rule |>> RuleItem) s
 
 let private file: P<File> = skipTrivia >>. manyTill item eof
 
@@ -989,12 +850,16 @@ let parse (source: string) : Result<File, Diagnostic list> =
         else
             source
 
-    match runParserOnString file () "" source with
+    let state = { InDirective = false; LastTokenLine = 0L }
+
+    match runParserOnString file state "" source with
     | Success(result, _, _) -> Result.Ok result
     | Failure(_, err, _) -> Result.Error [ toDiagnostic source err ]
 
 /// Parses a single expression (for tests and tools).
 let parseExpr (source: string) : Result<Expr, Diagnostic list> =
-    match runParserOnString (skipTrivia >>. expr .>> eof) () "" source with
+    let state = { InDirective = false; LastTokenLine = 0L }
+
+    match runParserOnString (skipTrivia >>. expr .>> eof) state "" source with
     | Success(result, _, _) -> Result.Ok result
     | Failure(_, err, _) -> Result.Error [ toDiagnostic source err ]

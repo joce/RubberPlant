@@ -8,7 +8,7 @@ open RubberPlant.Cli
 let private withTempDir (f: string -> unit) =
     let dir = Path.Combine(Path.GetTempPath(), "rubberplant-cli-" + Path.GetRandomFileName())
     Directory.CreateDirectory dir |> ignore
-    File.WriteAllText(Path.Combine(dir, "koch.rp"), "settings { derivations = 1; }\naxiom: F-F-F-F;\nF -> F-F+F+F F-F-F+F;\n")
+    File.WriteAllText(Path.Combine(dir, "koch.rp"), "#derivations 1\n#axiom F-F-F-F\nF -> F-F+F+F F-F-F+F;\n")
 
     try
         f dir
@@ -60,7 +60,7 @@ let tests =
                   Expect.equal (run [ "render"; input; "--size"; "22"; "-o"; Path.Combine(dir, "x.svg") ]) 0 "size 22")
           }
 
-          test "--seed range: integers a float represents exactly" {
+          test "--seed range matches #seed" {
               withTempDir (fun dir ->
                   let input = Path.Combine(dir, "koch.rp")
                   Expect.equal (run [ "check"; input; "--seed"; "9007199254740991" ]) 0 "largest exact integer"
@@ -77,7 +77,7 @@ let tests =
           test "strokes too wide for the image are an error" {
               withTempDir (fun dir ->
                   let input = Path.Combine(dir, "wide.rp")
-                  File.WriteAllText(input, "settings { width = 800; }\naxiom: F;\n")
+                  File.WriteAllText(input, "#width 800\n#axiom F\n")
                   let out = Path.Combine(dir, "wide.svg")
                   Expect.equal (run [ "render"; input; "-o"; out ]) 1 "exit code"
                   Expect.isFalse (File.Exists out) "nothing written")
