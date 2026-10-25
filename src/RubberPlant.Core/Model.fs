@@ -67,7 +67,11 @@ type Settings =
       Step: float
       Width: float
       Taper: float
+      /// Not a file setting: a run parameter supplied by the host (§4.7).
       Seed: int64 }
+
+/// Seeds are integers that a float represents exactly: |seed| <= 2^53 - 1.
+let maxSeed = 9007199254740991.0
 
 let defaultSettings =
     { Derivations = 0

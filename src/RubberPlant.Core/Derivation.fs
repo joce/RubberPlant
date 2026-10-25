@@ -268,7 +268,7 @@ let deriveSteps (model: Model) : Result<LString list, Diagnostic list> =
     with RewriteError d ->
         Error [ d ]
 
-/// The derived string after `#derivations` steps.
+/// The derived string after `derivations` steps.
 let derive (model: Model) : Result<LString, Diagnostic list> =
     deriveSteps model |> Result.map List.last
 

@@ -1,7 +1,6 @@
 (* ABOP Fig 1.24e *)
-#derivations 7
-#angle 25.7
+settings { derivations = 7; angle = 25.7; }
 
-#axiom X
+axiom: X;
 X -> F[+X][-X]F X;
 F -> F F;

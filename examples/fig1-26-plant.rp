@@ -1,8 +1,7 @@
 (* ABOP Fig 1.26: plant with flowers. The book's undefined ‘ symbol is omitted. *)
-#derivations 5
-#angle 18
+settings { derivations = 5; angle = 18; }
 
-#axiom plant
+axiom: plant;
 plant     -> internode + [ plant + flower ] - - //
              [ - - leaf ] internode [ + + leaf ] -
              [ plant flower ] + + plant flower;

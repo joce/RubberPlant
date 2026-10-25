@@ -34,14 +34,7 @@ module Codes =
     [<Literal>]
     let UseCOperator = "RP0005"
 
-    [<Literal>]
-    let UnknownDirective = "RP0006"
-
-    [<Literal>]
-    let ReservedDirective = "RP0007"
-
-    [<Literal>]
-    let DirectiveNotAtLineStart = "RP0008"
+    // RP0006-RP0008 retired (directives).
 
     [<Literal>]
     let ElseAfterUnguardedWeight = "RP0009"
@@ -58,6 +51,23 @@ module Codes =
     [<Literal>]
     let ReservedName = "RP0013"
 
+    [<Literal>]
+    let UnknownSetting = "RP0014"
+
+    /// `:` where `=` is needed, or the reverse.
+    [<Literal>]
+    let WrongSeparator = "RP0015"
+
+    [<Literal>]
+    let MissingBrace = "RP0016"
+
+    [<Literal>]
+    let EmptyIgnore = "RP0017"
+
+    /// A keyword where it has no meaning, e.g. `let` inside a successor.
+    [<Literal>]
+    let MisplacedKeyword = "RP0018"
+
     // Static checks (checker)
     [<Literal>]
     let NamespaceClash = "RP0101"
@@ -69,10 +79,10 @@ module Codes =
     let UnknownName = "RP0103"
 
     [<Literal>]
-    let DefineUsedBeforeDefinition = "RP0104"
+    let LetUsedBeforeDefinition = "RP0104"
 
     [<Literal>]
-    let DuplicateDefine = "RP0105"
+    let DuplicateLet = "RP0105"
 
     [<Literal>]
     let UnknownFunction = "RP0106"
@@ -94,6 +104,15 @@ module Codes =
 
     [<Literal>]
     let InvalidSetting = "RP0112"
+
+    [<Literal>]
+    let DeclarationAfterRules = "RP0113"
+
+    [<Literal>]
+    let DuplicateSettings = "RP0114"
+
+    [<Literal>]
+    let DuplicateIgnore = "RP0115"
 
     // Evaluation (derivation, interpretation)
     [<Literal>]

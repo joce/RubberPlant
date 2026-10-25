@@ -87,58 +87,58 @@ let tests =
     testList
         "Turtle"
         [ test "square: F-F-F-F" {
-              let g, _ = draw "#axiom F-F-F-F"
+              let g, _ = draw "axiom: F-F-F-F;"
               expectPath g [ v 0 0 0; v 0 1 0; v 1 1 0; v 1 0 0; v 0 0 0 ]
           }
 
           test "+ turns counter-clockwise" {
-              let g, _ = draw "#axiom +F"
+              let g, _ = draw "axiom: +F;"
               expectPath g [ v 0 0 0; v -1 0 0 ]
           }
 
           test "parameters override step and angle" {
-              let g, _ = draw "#axiom F(2) +(90) F(3)"
+              let g, _ = draw "axiom: F(2) +(90) F(3);"
               expectPath g [ v 0 0 0; v 0 2 0; v -3 2 0 ]
           }
 
           test "settings: step and angle" {
-              let g, _ = draw "#step 2\n#angle 45\n#axiom + + F"
+              let g, _ = draw "settings { step = 2; angle = 45; }\naxiom: + + F;"
               expectPath g [ v 0 0 0; v -2 0 0 ]
           }
 
           test "f moves without drawing" {
-              let g, _ = draw "#axiom f F"
+              let g, _ = draw "axiom: f F;"
               expectPath g [ v 0 1 0; v 0 2 0 ]
           }
 
           test "| turns around" {
-              let g, _ = draw "#axiom F | F"
+              let g, _ = draw "axiom: F | F;"
               expectPath g [ v 0 0 0; v 0 1 0; v 0 0 0 ]
           }
 
           test "& pitches down, toward -U" {
-              let g, _ = draw "#axiom &F"
+              let g, _ = draw "axiom: &F;"
               expectPath g [ v 0 0 0; v 0 0 -1 ]
           }
 
           test "^ pitches up" {
-              let g, _ = draw "#axiom ^F"
+              let g, _ = draw "axiom: ^F;"
               expectPath g [ v 0 0 0; v 0 0 1 ]
           }
 
           test "\\ rolls left: L goes toward -U" {
               // After rolling left 90°, L = -U0 = (0,0,-1); turning left then heads there.
-              let g, _ = draw "#axiom \\ + F"
+              let g, _ = draw "axiom: \\ + F;"
               expectPath g [ v 0 0 0; v 0 0 -1 ]
           }
 
           test "/ rolls right" {
-              let g, _ = draw "#axiom / + F"
+              let g, _ = draw "axiom: / + F;"
               expectPath g [ v 0 0 0; v 0 0 1 ]
           }
 
           test "brackets save and restore the state" {
-              let g, _ = draw "#axiom F[+F]F"
+              let g, _ = draw "axiom: F[+F]F;"
 
               match segments g with
               | [ (_, a); (b0, b); (c0, c) ] ->
@@ -149,12 +149,12 @@ let tests =
           }
 
           test "other modules are ignored" {
-              let g, _ = draw "#axiom X F Y(1) Z"
+              let g, _ = draw "axiom: X F Y(1) Z;"
               Expect.equal (List.length g) 1 ""
           }
 
           test "! tapers width; !(w) sets it" {
-              let g, _ = draw "#width 10\n#axiom F ! F ! ! F !(3) F"
+              let g, _ = draw "settings { width = 10; }\naxiom: F ! F ! ! F !(3) F;"
 
               let widths =
                   g
@@ -165,8 +165,8 @@ let tests =
               Expect.sequenceEqual (widths |> List.map (fun w -> System.Math.Round(w, 9))) [ 10.0; 7.0; 3.43; 3.0 ] ""
           }
 
-          test "#taper changes the decrement" {
-              let g, _ = draw "#taper 50\n#axiom ! F"
+          test "taper changes the decrement" {
+              let g, _ = draw "settings { taper = 50; }\naxiom: ! F;"
 
               match g with
               | [ Segment(_, _, w, _) ] -> Expect.equal w 0.5 ""
@@ -174,7 +174,7 @@ let tests =
           }
 
           test "' increments the color; '(c) sets it" {
-              let g, _ = draw "#axiom F ' F '(5) F"
+              let g, _ = draw "axiom: F ' F '(5) F;"
 
               let colors =
                   g
@@ -186,7 +186,7 @@ let tests =
           }
 
           test "polygon from f moves" {
-              let g, _ = draw "#axiom {f+f+f}"
+              let g, _ = draw "axiom: {f+f+f};"
 
               match g with
               | [ Polygon(vs, 0) ] ->
@@ -196,7 +196,7 @@ let tests =
           }
 
           test "F inside a polygon draws and adds a vertex" {
-              let g, _ = draw "#axiom {F+F}"
+              let g, _ = draw "axiom: {F+F};"
 
               match g with
               | [ Segment _; Segment _; Polygon(vs, _) ] -> Expect.equal (List.length vs) 3 ""
@@ -204,7 +204,7 @@ let tests =
           }
 
           test "brackets inside a polygon keep the vertex list" {
-              let g, _ = draw "#axiom {f[+f]f}"
+              let g, _ = draw "axiom: {f[+f]f};"
 
               match g with
               | [ Polygon(vs, _) ] -> Expect.equal (List.length vs) 4 ""
@@ -212,7 +212,7 @@ let tests =
           }
 
           test "nested polygons" {
-              let g, _ = draw "#axiom {f{f+f}f}"
+              let g, _ = draw "axiom: {f{f+f}f};"
 
               match g with
               | [ Polygon(inner, _); Polygon(outer, _) ] ->
@@ -222,7 +222,7 @@ let tests =
           }
 
           test "extra parameters: one warning per module shape" {
-              let _, warnings = draw "#axiom F(1,2) F(1,2) F(3,4)"
+              let _, warnings = draw "axiom: F(1,2) F(1,2) F(3,4);"
 
               match warnings with
               | [ w ] -> Expect.equal w.Code Codes.ExtraTurtleParameters ""
@@ -250,31 +250,31 @@ let tests =
           }
 
           test "non-finite turtle parameter" {
-              Expect.equal (drawError "#axiom +(log(0))F").Code Codes.InvalidGeometry ""
+              Expect.equal (drawError "axiom: +(log(0))F;").Code Codes.InvalidGeometry ""
           }
 
           test "position overflow" {
-              Expect.equal (drawError "#axiom F(1e308) F(1e308)").Code Codes.InvalidGeometry ""
+              Expect.equal (drawError "axiom: F(1e308) F(1e308);").Code Codes.InvalidGeometry ""
           }
 
           test "negative width" {
-              Expect.equal (drawError "#axiom !(-1) F").Code Codes.InvalidGeometry ""
+              Expect.equal (drawError "axiom: !(-1) F;").Code Codes.InvalidGeometry ""
           }
 
           test "non-finite default is checked when consumed" {
               // The pop would hide the NaN frame; the consumed angle must still be finite.
-              Expect.equal (drawError "#angle exp(1000)\n#axiom [+]F").Code Codes.InvalidGeometry ""
-              Expect.equal (drawError "#step exp(1000)\n#axiom F").Code Codes.InvalidGeometry ""
+              Expect.equal (drawError "settings { angle = exp(1000); }\naxiom: [+]F;").Code Codes.InvalidGeometry ""
+              Expect.equal (drawError "settings { step = exp(1000); }\naxiom: F;").Code Codes.InvalidGeometry ""
           }
 
           test "unused parameters may be non-finite" {
-              let g, warnings = draw "#axiom |(log(0)) F(1, log(0))"
+              let g, warnings = draw "axiom: |(log(0)) F(1, log(0));"
               Expect.equal (List.length g) 1 ""
               Expect.equal (warnings |> List.map _.Code) [ Codes.ExtraTurtleParameters; Codes.ExtraTurtleParameters ] ""
           }
 
           test "initial width from an override is checked" {
-              let m, _ = compileOk "#axiom F"
+              let m, _ = compileOk "axiom: F;"
               let m = { m with Settings = { m.Settings with Width = -1.0 } }
 
               match Pipeline.run m with
@@ -285,7 +285,7 @@ let tests =
           test "huge angles keep the frame orthonormal" {
               Expect.floatClose Accuracy.high (Builtins.cosDeg 1e20) (Builtins.cosDeg (1e20 % 360.0)) ""
 
-              let g, _ = draw "#angle 1e20\n#axiom +F"
+              let g, _ = draw "settings { angle = 1e20; }\naxiom: +F;"
 
               match segments g with
               | [ (p0, p1) ] ->
@@ -302,18 +302,18 @@ let tests =
                       | Segment(_, _, _, c) -> c
                       | _ -> failtest "segments only")
 
-              Expect.equal (colors "#axiom '(1e20) F '(2147483648) F '(-1e20) F") [ System.Int32.MaxValue; System.Int32.MaxValue; System.Int32.MinValue ] "saturation"
-              Expect.equal (colors "#axiom '(-1.7) F '(2.9) F") [ -1; 2 ] "truncation toward zero"
-              Expect.equal (colors "#axiom '(2147483647) ' F") [ System.Int32.MaxValue ] "bare ' saturates at the top"
+              Expect.equal (colors "axiom: '(1e20) F '(2147483648) F '(-1e20) F;") [ System.Int32.MaxValue; System.Int32.MaxValue; System.Int32.MinValue ] "saturation"
+              Expect.equal (colors "axiom: '(-1.7) F '(2.9) F;") [ -1; 2 ] "truncation toward zero"
+              Expect.equal (colors "axiom: '(2147483647) ' F;") [ System.Int32.MaxValue ] "bare ' saturates at the top"
           }
 
           test "extra-parameter warnings: per name and arity" {
-              let _, warnings = draw "#axiom F(1,2) F(1,2,3) |(1) |(1)"
+              let _, warnings = draw "axiom: F(1,2) F(1,2,3) |(1) |(1);"
               Expect.equal (warnings |> List.map _.Code) (List.replicate 3 Codes.ExtraTurtleParameters) ""
           }
 
           test "unbalanced polygon warnings" {
-              let _, warnings = draw "#axiom } {f"
+              let _, warnings = draw "axiom: } {f;"
               Expect.equal (warnings |> List.map _.Code) [ Codes.UnbalancedPolygon; Codes.UnbalancedPolygon ] ""
           }
 
