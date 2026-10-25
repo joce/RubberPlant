@@ -1,7 +1,7 @@
 # RubberPlant
 
 [![CI](https://github.com/joce/RubberPlant/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/joce/RubberPlant/actions/workflows/ci.yml)
-[![Version 0.1](https://img.shields.io/badge/version-0.1-blue)](docs/roadmap.md)
+[![Version](https://img.shields.io/github/v/release/joce/RubberPlant?label=version)](https://github.com/joce/RubberPlant/releases/latest)
 
 An L-system modeling tool, following *The Algorithmic Beauty of Plants* (ABOP).
 The language is specified in [`docs/language.md`](docs/language.md).
