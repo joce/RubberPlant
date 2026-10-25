@@ -131,6 +131,13 @@ let tests =
               expectError Codes.LetUsedBeforeDefinition 2 "axiom: A;\nlet a = b;\nlet b = 1;"
           }
 
+          test "axiom sees only earlier lets" {
+              expectError Codes.LetUsedBeforeDefinition 1 "axiom: F(k);\nlet k = 2;"
+
+              let m, _ = compileOk "let k = 2;\naxiom: F(k);"
+              Expect.equal m.Axiom [| LString.Mod("F", [| 2.0 |]) |] "earlier let is visible"
+          }
+
           test "let using itself" { expectError Codes.LetUsedBeforeDefinition 2 "axiom: A;\nlet a = a + 1;" }
 
           test "rule using a later let" {
@@ -200,6 +207,13 @@ let tests =
 
           test "invalid setting points at its entry" {
               expectError Codes.InvalidSetting 3 "axiom: A;\nsettings {\n  taper = 120;\n}"
+          }
+
+          test "axiom evaluation error points at the failing module" {
+              match compileErrors "axiom:\n  F\n  G(1/0);" with
+              | [ d ] when d.Code = Codes.DivisionByZero ->
+                  Expect.equal (d.Pos |> Option.map (fun p -> p.Line, p.Column)) (Some(3, 3)) (formatDiags [ d ])
+              | ds -> failtestf "expected one division by zero, got:\n%s" (formatDiags ds)
           }
 
           test "division by zero in a let" { expectError Codes.DivisionByZero 2 "axiom: A;\nlet a = 1/0;" }

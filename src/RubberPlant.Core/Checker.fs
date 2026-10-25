@@ -431,14 +431,21 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             match axiom with
             | Some(_, first) -> ctx.Error Codes.DuplicateAxiom pos $"the axiom is already set (line %d{first.Line})"
             | None ->
-                let syms =
-                    compileActual ctx defines Map.empty a
-                    |> List.map (function
-                        | TPush -> Push
-                        | TPop -> Pop
-                        | TMod(name, args) ->
-                            Mod(name, args |> Array.map (fun e -> evalConst ctx pos "`axiom:`" e |> Option.defaultValue 0.0)))
-                    |> Array.ofList
+                // Walk the AST directly (not compileActual) so an evaluation error
+                // points at the failing module, not at `axiom`: axioms can span lines.
+                let rec evalAxiom (s: ActualString) : Sym list =
+                    s
+                    |> List.collect (function
+                        | Module m ->
+                            let arg e =
+                                resolve ctx defines Map.empty e
+                                |> evalConst ctx m.Pos "`axiom:`"
+                                |> Option.defaultValue 0.0
+
+                            [ Mod(m.Name, m.Args |> List.map arg |> Array.ofList) ]
+                        | Branch b -> Push :: evalAxiom b @ [ Pop ])
+
+                let syms = evalAxiom a |> Array.ofList
 
                 axiom <- Some(syms, pos)
         | RuleItem r ->

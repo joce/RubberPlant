@@ -378,7 +378,8 @@ Atom     = Number
 ### 4.2 Names and scope
 
 - `let` constants are global numeric constants (not macros). They are evaluated in **source order**, and may reference only **earlier** `let`s. A forward reference is an error ("`b` used before its definition"). Settings aren't values and can't be referenced.
-- Settings values and `let` values are constant expressions: they may use numbers, operators, built-in functions and earlier `let`s.
+- Settings values, `let` values and the axiom's parameters are constant expressions: they may use numbers, operators, built-in functions and earlier `let`s.
+- **Source order everywhere in the prelude.** Every prelude statement sees only the `let`s defined **before** it, the axiom included: `axiom: F(k); let k = 2;` is an error, while `let k = 2; axiom: F(k);` is fine. Rules come after the whole prelude, so they see every `let`. (This matches F#, where a `let` is only visible below its definition.)
 - Formal parameters are bound by the head (left context, strict predecessor, right context). They are visible in guards, weights and successors.
 - Formal parameter names in one head must be distinct (`_` excepted).
 - **One namespace, no shadowing.** A name has exactly one role in the file. These roles are mutually exclusive:
@@ -843,7 +844,7 @@ These can't be expressed in a context-free grammar. They're checked after parsin
 - **Reserved words** (`Reserved`, built-in function names) are never a module name, `let` name or parameter name.
 - **One namespace, no shadowing.** A name has exactly one role: module (or turtle-predefined), `let` constant, formal parameter, built-in function, setting name or keyword (§4.2).
 - Formal parameter names in one head are distinct (`_` excepted).
-- `let` names are unique, and a `let` only uses `let`s defined **earlier** in the source.
+- `let` names are unique. A `let` value, a settings value and the axiom's parameters only use `let`s defined **earlier** in the source (§4.2).
 - A function call names a built-in function with the right number of arguments.
 
 **At evaluation time (runtime errors):**
