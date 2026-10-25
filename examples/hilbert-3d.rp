@@ -1,9 +1,8 @@
 (* ABOP Fig 1.19: three-dimensional Hilbert curve.
    The SVG backend projects it onto the XY plane. *)
-#derivations 2
-#angle 90
+settings { derivations = 2; angle = 90; }
 
-#axiom A
+axiom: A;
 A -> B-F+C F C+F-D&F^D-F+&&C F C+F+B//;
 B -> A&F^C F B^F^D^^-F-D^|F^B|F C^F^A//;
 C -> |D^|F^B-F+C^F^A&&F A&F^C+F+B^F^D//;

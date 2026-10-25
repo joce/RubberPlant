@@ -26,7 +26,7 @@ Options (override the file's settings):
       --step <d>          default step length
       --width <w>         initial line width
       --taper <percent>   width decrease applied by `!`
-      --seed <n>          random seed
+      --seed <n>          random seed (default 0)
 
 Render options:
   -o, --output <file>     output file (default: the input file with .svg)
@@ -101,7 +101,7 @@ let private parseArgs (argv: string list) : Args =
         | "--angle" :: v :: rest -> go rest { acc with Angle = Some(parseFloat "--angle" v) }
         | "--step" :: v :: rest -> go rest { acc with Step = Some(parseFloat "--step" v) }
         | "--width" :: v :: rest ->
-            // Same domain as `#width`; overrides are applied after the checker runs.
+            // Same domain as the `width` setting; overrides are applied after the checker runs.
             let w = parseFloat "--width" v
 
             if w < 0.0 then
@@ -116,14 +116,10 @@ let private parseArgs (argv: string list) : Args =
 
             go rest { acc with Taper = Some t }
         | "--seed" :: v :: rest ->
-            // Same range as `#seed`: integers a float represents exactly.
+            // Integers a float represents exactly (§4.7).
             match Int64.TryParse(v, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) with
-            | true, n when abs (float n) <= Checker.maxSeed -> go rest { acc with Seed = Some n }
-            | _ ->
-                raise (
-                    UsageError
-                        $"--seed expects an integer between -%.0f{Checker.maxSeed} and %.0f{Checker.maxSeed}, got '%s{v}'"
-                )
+            | true, n when abs (float n) <= maxSeed -> go rest { acc with Seed = Some n }
+            | _ -> raise (UsageError $"--seed expects an integer between -%.0f{maxSeed} and %.0f{maxSeed}, got '%s{v}'")
         | opt :: [] when opt.StartsWith "-" -> raise (UsageError $"%s{opt} expects a value")
         | opt :: _ when opt.StartsWith "-" -> raise (UsageError $"unknown option '%s{opt}'")
         | input :: rest ->

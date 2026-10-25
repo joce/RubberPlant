@@ -1,9 +1,9 @@
-(* ABOP Fig 1.27: stochastic plant. Change the seed for a different plant. *)
-#derivations 5
-#angle 25.7
-#seed 1
+(* ABOP Fig 1.27: stochastic plant. The seed is a run parameter, not part of
+   the file: render with `--seed 1` for the plant in the tests' golden image,
+   and change it for a different plant. *)
+settings { derivations = 5; angle = 25.7; }
 
-#axiom F
+axiom: F;
 F :
     weight .33 -> F[+F]F[-F]F
     weight .33 -> F[+F]F

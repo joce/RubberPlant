@@ -1,9 +1,7 @@
 (* ABOP Fig 1.25: three-dimensional bush-like structure *)
-#derivations 7
-#angle 22.5
-#width 6
+settings { derivations = 7; angle = 22.5; width = 6; }
 
-#axiom A
+axiom: A;
 A -> [&F L!A]/////'[&F L!A]///////'[&F L!A];
 F -> S ///// F;
 S -> F L;
