@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: dotnet build -c Release --nologo
+
+      - name: Tests
+        run: |
+          for t in Core Backends Cli; do
+            dotnet run --no-build -c Release --project tests/RubberPlant.$t.Tests
+          done
+
+      # Renders every example with the CLI and compares with the committed
+      # goldens byte for byte. Identical SVG text means identical pixels in any
+      # renderer, and it is stricter than comparing rasterized images.
+      - name: Examples match the goldens
+        run: bash scripts/check-goldens.sh
+
+      # The tests must never write, add or change a golden (untracked and
+      # staged files included).
+      - name: Goldens untouched
+        run: |
+          changes=$(git status --porcelain --untracked-files=all -- tests/RubberPlant.Backends.Tests/golden)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            exit 1
+          fi

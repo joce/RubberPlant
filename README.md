@@ -27,9 +27,13 @@ dotnet run --project tests/RubberPlant.Backends.Tests
 dotnet run --project tests/RubberPlant.Cli.Tests
 ```
 
-The SVG backend has golden-file tests (`tests/RubberPlant.Backends.Tests/golden`).
-After an intended rendering change, regenerate them with
-`RUBBERPLANT_UPDATE_GOLDEN=1` and review the diff.
+Every `examples/*.rp` has a golden SVG in `tests/RubberPlant.Backends.Tests/golden`
+(a missing golden is a test failure). After an intended rendering change,
+regenerate the goldens with `RUBBERPLANT_UPDATE_GOLDEN=1` and review the diff.
+
+`scripts/check-goldens.sh` renders every example through the CLI and compares it
+byte for byte with its golden; CI runs it, plus all tests, on Linux and Windows
+(`.github/workflows/ci.yml`).
 
 ## Layout
 

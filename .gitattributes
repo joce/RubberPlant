@@ -1,3 +1,5 @@
-* text=auto
-*.svg text eol=lf
-*.rp text eol=lf
+# LF everywhere, on every platform, in the repo and in working copies.
+* text=auto eol=lf
+
+*.png binary
+*.pdf binary
