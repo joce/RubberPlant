@@ -211,8 +211,6 @@ So book text can be pasted with minimal editing, the lexer normalizes:
 | `‘` (U+2018) | `` ` `` (reserved; error) |
 | `≤` / `≥` / `≠` | `<=` / `>=` / `!=` |
 
-**(v0.2)** `ε` (U+03B5) and `ϵ` (U+03F5) are read as the keyword `empty` when they make up a whole name, so the book's `S → ε` pastes as is. Inside a longer name they are ordinary letters.
-
 Subscripts can't survive plain text, so book `F`<sub>l</sub> is written as the name `Fl`, plus an interpretation rule if it should draw like `F` (§4.6).
 
 ---
@@ -928,8 +926,7 @@ Unicode normalization, applied before tokenizing (outside comments):
 ```ebnf
 (* "→" ⇒ "->"   "−" (U+2212) ⇒ "-"   "∧" ⇒ "^"   "∼" ⇒ "~"
    "’" (U+2019) ⇒ "'"   "‘" (U+2018) ⇒ "`" (reserved, error)
-   "≤" ⇒ "<="   "≥" ⇒ ">="   "≠" ⇒ "!="
-   a whole name "ε" or "ϵ" ⇒ "empty" *)
+   "≤" ⇒ "<="   "≥" ⇒ ">="   "≠" ⇒ "!=" *)
 ```
 
 ### A.2 Syntactic grammar

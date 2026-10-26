@@ -428,7 +428,7 @@ let book =
     testList
         "book derivation sequences (v0.2)"
         [ test "signal model, ABOP §3.1.2 (d = 4, m = 2, u = 1)" {
-              // The L-system of book p. 67, as printed, with ε pasted from the book.
+              // The L-system of book p. 67, as printed (ε is written `empty`).
               //
               // Book erratum: strings 9 and 10 printed on p. 68 don't follow from these
               // productions. At step 9, p6 erases S(1) and p8 rewrites a(2) (left
@@ -451,7 +451,7 @@ D(i) :
     when i == d -> S(1);
 S(i) :
     when i < u  -> S(i+1)
-    when i == u -> ε;
+    when i == u -> empty;
 S(i) < I : when i == u -> I S(1);
 S(i) < a(j) -> I[L]A;
 A -> K;

@@ -477,7 +477,7 @@ let lexical =
 let reservedWords =
     [ "settings"; "let"; "ignore"; "consider"; "axiom"; "include"; "module" ] // declaration keywords
     @ [ "as"; "when"; "else"; "weight" ] // rule keywords
-    @ [ "empty"; "\u03b5"; "\u03f5" ] // the empty string, and its book spellings
+    @ [ "empty" ] // the empty string
     @ (SettingKey.all |> List.map SettingKey.name)
 
 let errors =
@@ -669,13 +669,9 @@ let v02 =
               "empty"
               [ test "empty successor" { Expect.isEmpty (successorOf "S -> empty;") "" }
                 test "empty as successor" { Expect.isEmpty (successorOf "S as empty;") "" }
-                test "book epsilon" {
-                    Expect.isEmpty (successorOf "S -> \u03b5;") "U+03B5"
-                    Expect.isEmpty (successorOf "S -> \u03f5;") "U+03F5"
-                    Expect.equal (axiomText "\u03b5") "" "axiom"
-                }
-                test "epsilon inside a longer name is a letter" {
-                    Expect.equal (axiomText "\u03b5a a\u03b5") "\u03b5a a\u03b5" ""
+                test "the book's epsilon is an ordinary letter" {
+                    Expect.equal (successorOf "S -> \u03b5;" |> showActual) "\u03b5" "U+03B5 is a module"
+                    Expect.equal (axiomText "\u03f5 \u03b5a") "\u03f5 \u03b5a" "U+03F5"
                 }
                 test "empty in branches" {
                     match parseOk "A : when x -> empty else -> B; C : when y as empty else as empty;" |> rulesOf with
@@ -708,7 +704,7 @@ let v02 =
                     expectParseError Codes.EmptyString (1, 12) "S -> empty B;"
                     expectParseError Codes.EmptyString (1, 12) "S -> empty [ B ];"
                     expectParseError Codes.EmptyString (1, 8) "S -> [ empty ];"
-                    expectParseError Codes.EmptyString (1, 10) "axiom: A \u03b5;"
+                    expectParseError Codes.EmptyString (1, 10) "axiom: A empty;"
                     expectParseError Codes.EmptyString (1, 14) "axiom: empty %;"
                 }
                 test "empty isn't a value" { expectParseError Codes.Syntax (1, 11) "A(x) -> B(empty);" }

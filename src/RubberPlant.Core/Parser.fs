@@ -137,13 +137,7 @@ let private nameLength (s: CharStream<unit>) =
 
         i
 
-/// The name at the current position, with a whole-name `ε` or `ϵ` read as
-/// `empty` (§2.7). Skip `nameLength s` characters to consume it.
-let private peekName (s: CharStream<unit>) =
-    match s.PeekString(nameLength s) with
-    | "ε"
-    | "ϵ" -> Empty
-    | n -> n
+let private peekName (s: CharStream<unit>) = s.PeekString(nameLength s)
 
 let private isArrowAt (s: CharStream<unit>) =
     let c = s.Peek()
@@ -481,7 +475,7 @@ let private moduleName: P<string * Pos> =
         let len = nameLength s
 
         if len > 0 then
-            let n = peekName s
+            let n = s.PeekString len
 
             if keywords.Contains n then
                 Reply(Error, expected "module")
@@ -578,7 +572,7 @@ interpElemsRef.Value <-
 let private moduleString (elems: P<ActualString>) : P<ActualString> =
     fun s ->
         if peekName s = Empty then
-            s.Skip(nameLength s)
+            s.Skip Empty.Length
             let w = ws s
 
             if w.Status <> Ok then
