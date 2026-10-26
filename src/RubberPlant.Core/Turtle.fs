@@ -26,10 +26,10 @@ let initialState (settings: Settings) =
       Width = settings.Width
       Color = 0 }
 
-// Rotations. ABOP §1.5 gives R_U, R_L, R_H; applied with H, L, U as the rows
-// of the frame, they give the behavior the symbol table names: R_U(a) turns
-// H toward L (left), R_L(a) pitches H toward −U (down), R_H(a) rolls L
-// toward −U (left).
+// Rotations. ABOP §1.5 gives R_U, R_L, R_H. R_U and R_L are applied with H, L, U as
+// the rows of the frame: R_U(a) turns H toward L (left), R_L(a) pitches H toward −U
+// (down). R_H follows cpfg, the software that made ABOP's figures, rather than the
+// printed matrix: R_H(a) (roll left) turns L toward +U (language.md §5.1).
 
 /// R_U(a): turn left by a degrees.
 let turn (a: float) (t: State) =
@@ -47,13 +47,14 @@ let pitch (a: float) (t: State) =
         H = c * t.H - s * t.U
         U = c * t.U + s * t.H }
 
-/// R_H(a): roll left by a degrees.
+/// R_H(a): roll left by a degrees. Not ABOP's printed matrix: the roll turns
+/// the way cpfg's does, so L goes toward +U (language.md 5.1, "Roll direction").
 let roll (a: float) (t: State) =
     let c, s = cosDeg a, sinDeg a
 
     { t with
-        L = c * t.L - s * t.U
-        U = c * t.U + s * t.L }
+        L = c * t.L + s * t.U
+        U = c * t.U - s * t.L }
 
 /// The direction opposite to gravity, used by `$` (§5.1).
 let private vertical = Vec3.create 0.0 1.0 0.0
