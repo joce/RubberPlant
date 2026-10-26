@@ -259,9 +259,13 @@ let v02 =
                     let unitT, _ = draw (sideways 0.3 + "axiom: F F F;")
                     let longT, _ = draw "settings { tropism = (7, 0, 0); elasticity = 0.3; }\naxiom: F F F;"
                     let hugeT, _ = draw "settings { tropism = (1e300, 0, 0); elasticity = 0.3; }\naxiom: F F F;"
+                    let tinyT, _ = draw "settings { tropism = (1e-310, 0, 0); elasticity = 0.3; }\naxiom: F F F;"
+                    let smallestT, _ = draw "settings { tropism = (5e-324, 0, 0); elasticity = 0.3; }\naxiom: F F F;"
                     let path g = (segments g |> List.map fst) @ [ snd (List.last (segments g)) ]
                     expectPath longT (path unitT)
                     expectPath hugeT (path unitT)
+                    expectPath tinyT (path unitT) // subnormal: 1/m would overflow
+                    expectPath smallestT (path unitT)
                 }
 
                 test "elasticity 0 disables it" {

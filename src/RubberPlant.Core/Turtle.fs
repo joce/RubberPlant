@@ -120,15 +120,17 @@ exception private TurtleError of string
 
 let private isFinite = Vec3.isFinite
 
-/// T / |T|, scaled first so that huge components don't overflow. Zero for
-/// the zero vector (rejected before use).
+/// T / |T|, scaled first by the largest component so that neither huge nor
+/// tiny (subnormal) components overflow: divide, don't multiply by 1/m,
+/// which is infinite for a subnormal m. Zero for the zero vector (rejected
+/// before use).
 let private normalizeTropism (v: Vec3) =
     let m = max (abs v.X) (max (abs v.Y) (abs v.Z))
 
     if m = 0.0 then
         Vec3.zero
     else
-        let w = (1.0 / m) * v
+        let w = Vec3.create (v.X / m) (v.Y / m) (v.Z / m)
         (1.0 / Vec3.length w) * w
 
 /// Interprets a drawing string. Returns the geometry and any warnings, or an
