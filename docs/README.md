@@ -1,6 +1,8 @@
 # docs
 
 - [`language.md`](language.md): the RubberPlant L-system language specification.
+- [`backends.md`](backends.md): geometry in 3D, mesh construction, and the output backends (SVG, OBJ, glTF).
+- [`roadmap.md`](roadmap.md): milestones.
 - [`fetch_refs.py`](fetch_refs.py): downloads and extracts the reference material.
 
 ## Reference material
@@ -21,3 +23,5 @@ Output (git-ignored):
 | `docs/abop/pages/*.png` | rendered ABOP pages |
 | `docs/lpfgman.pdf` | lpfg manual |
 | `docs/lpfg/lpfgman.md` | lpfg manual text, with page markers |
+
+The source of cpfg and lpfg (the software that made ABOP's figures, and its successor) is public in the [vlab repository](https://github.com/AlgorithmicBotany/vlab), and so is the [cpfg manual](https://algorithmicbotany.org/virtual_laboratory/docs/CPFGmanual.pdf). Use them to check how the original tools behave (`cpfg/interpret.c`, `cpfg/generate.c`, `lpfg/turtle.cpp`, `lpfg/lderive.cpp`). Clone them outside this repository; never commit them.

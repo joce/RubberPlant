@@ -25,12 +25,14 @@ final product". What matters is the milestones and their order.
 
 ## 0.2: 3D output, Chapters 2–3
 
-- Spec first: extend `language.md` for the turtle features of Chapters 2–3.
+- Spec first: extend `language.md` for the turtle features of Chapters 2–3 (specified).
   - `$`: roll the turtle to horizontal (Ch 2).
   - Tropism: bend the heading toward a vector **T** after each step, with an elasticity setting (Ch 2).
   - `%`: cut the remainder of a branch (Ch 3).
-- 3D geometry: capsules (preferred over plain cylinders) or generalized cylinders for segments.
-- Mesh backends: OBJ, then glTF.
+  - `consider:` (Ch 3, Mycelis model III).
+  - `G` and `.` pulled forward from Ch 5 (Capsella, Mycelis).
+- 3D geometry: segments are cylinders, as in ABOP's software ([`backends.md`](backends.md)).
+- Mesh backends: OBJ, then glTF ([`backends.md`](backends.md)).
 - The Chapter 2–3 figures as examples, with golden outputs.
 
 ## 0.3: Chapters 4–6
