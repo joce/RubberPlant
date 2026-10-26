@@ -9,6 +9,8 @@ open System.Text
 type Sym =
     | Push
     | Pop
+    /// The cut `%` (v0.2): the next derivation step drops the rest of its branch.
+    | Cut
     | Mod of name: string * args: float[]
 
 type LString = Sym[]
@@ -18,6 +20,7 @@ let formatNumber (v: float) =
 
 /// Formats a string so it can be read back as an axiom: names are separated
 /// by a space only where needed (`F F`), everything else is concatenated.
+/// The empty string is `empty`.
 let format (s: LString) : string =
     let sb = StringBuilder()
     // Whether the text so far ends with a name character.
@@ -31,6 +34,9 @@ let format (s: LString) : string =
         | Pop ->
             sb.Append ']' |> ignore
             afterName <- false
+        | Cut ->
+            sb.Append '%' |> ignore
+            afterName <- false
         | Mod(name, args) ->
             if afterName && Unicode.startsName name then
                 sb.Append ' ' |> ignore
@@ -43,7 +49,7 @@ let format (s: LString) : string =
 
             afterName <- args.Length = 0 && Unicode.endsName name
 
-    sb.ToString()
+    if s.Length = 0 then "empty" else sb.ToString()
 
 /// For each bracket, the index of its partner (-1 for modules).
 let matchBrackets (s: LString) : int[] =
@@ -57,6 +63,7 @@ let matchBrackets (s: LString) : int[] =
             let j = stack.Pop()
             partner[i] <- j
             partner[j] <- i
+        | Cut
         | Mod _ -> ()
 
     partner

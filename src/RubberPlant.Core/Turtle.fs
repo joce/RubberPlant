@@ -115,6 +115,7 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
             match sym with
             | Push -> stack.Push t
             | Pop -> if stack.Count > 0 then t <- stack.Pop()
+            | Cut -> () // the cut happens in the next derivation step (language.md "Cutting branches")
             | Mod(name, args) ->
                 match turtleArity.TryFind name with
                 | None -> () // not a turtle symbol: ignored (§5.2)

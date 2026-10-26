@@ -140,6 +140,83 @@ let h = (p*q)^0.5;
 axiom: F(1,0);
 F(x, 0) -> F(x*p,2) + F(x*h,1) - - F(x*h,1) + F(x*q,0);   (* literal pattern for t = 0 *)
 F(x, t) -> F(x, t-1);
+"""
+
+      "Fig 2.6a (§6, v0.2)",
+      """
+settings { derivations = 10; }
+let r1 = 0.9;     (* contraction ratio for the trunk *)
+let r2 = 0.6;     (* contraction ratio for branches *)
+let a0 = 45;      (* branching angle from the trunk *)
+let a2 = 45;      (* branching angle for lateral axes *)
+let d  = 137.5;   (* divergence angle *)
+let wr = 0.707;   (* width decrease rate *)
+axiom: A(1, 10);
+A(l, w) -> !(w) F(l) [ &(a0) B(l*r2, w*wr) ] /(d) A(l*r1, w*wr);
+B(l, w) -> !(w) F(l) [ -(a2) $ C(l*r2, w*wr) ] C(l*r1, w*wr);
+C(l, w) -> !(w) F(l) [ +(a2) $ B(l*r2, w*wr) ] B(l*r1, w*wr);
+"""
+
+      "Fig 2.8a (§6, v0.2)",
+      """
+settings {
+  derivations = 6;
+  tropism = (0, -1, 0);
+  elasticity = 0.22;
+}
+let d1 = 94.74;   (* divergence angle 1 *)
+let d2 = 132.63;  (* divergence angle 2 *)
+let a  = 18.95;   (* branching angle *)
+let lr = 1.109;   (* elongation rate *)
+let vr = 1.732;   (* width increase rate *)
+axiom: !(1) F(200) /(45) A;
+A    -> !(vr) F(50) [ &(a) F(50) A ] /(d1) [ &(a) F(50) A ] /(d2) [ &(a) F(50) A ];
+F(l) -> F(l*lr);
+!(w) -> !(w*vr);
+"""
+
+      "Fig 3.5 Capsella (§6, v0.2)",
+      """
+settings { derivations = 32; angle = 18; }
+axiom: I(9) a(13);
+a(t) :
+    when t > 0  -> [ &(70) L ] /(137.5) I(10) a(t-1)
+    when t == 0 -> [ &(70) L ] /(137.5) I(10) A;
+A -> [ &(18) u(4) F F I(10) I(5) X(5) K K K K ] /(137.5) I(8) A;
+I(t) :
+    when t > 0  -> F I(t-1)
+    when t == 0 -> F;
+u(t) :
+    when t > 0  -> &(9) u(t-1)
+    when t == 0 -> &(9);
+L -> [ { . - F I(7) + F I(7) + F I(7) } ] [ { . + F I(7) - F I(7) - F I(7) } ];
+K -> [ & { . + F I(2) - - F I(2) } ] [ & { . - F I(2) + + F I(2) } ] /(90);
+X(t) :
+    when t > 0  -> X(t-1)
+    when t == 0 -> ^(50) [ [ - G G G G + + [ G G G [ + + G { . ] . ] . ] .
+                   + + G G G G . - - G G G . - - G . } ] %;
+"""
+
+      "L-system 3.3 Mycelis model III (§6, v0.2)",
+      """
+settings { derivations = 40; }   (* the book gives no n for model III *)
+consider: M S T V;
+axiom: I(20) F A(0);
+S < A(t) -> T V K;
+V < A(t) -> T V K;
+A(t) :
+    when t > 0  -> A(t-1)
+    when t == 0 -> M [ +(30) G ] F /(180) A(2);
+S < M -> S;
+S > T -> T;
+T < G -> F A(2);
+V < M -> S;
+T > V -> W;
+W -> V;
+I(t) :
+    when t > 0  -> I(t-1)
+    when t == 0 -> S;
+K as [ '(4) { -(45) f +(90) f +(90) f } ];   (* stand-in flower: a red triangle *)
 """ ]
 
 let specExampleTests =
@@ -162,7 +239,7 @@ let tokenization =
           test "unicode letters" { Expect.equal (axiomText "été F") "été F" "" }
           test "symbols" { Expect.equal (axiomText "+-&^\\/|{}!'~$%.@?") "+ - & ^ \\ / | { } ! ' ~ $ % . @ ?" "" }
           test "symbol with parameter" { Expect.equal (axiomText "+(30)!(2)") "+(30) !(2)" "" }
-          test "empty axiom is legal" { Expect.equal (axiomText "") "" "" }
+          test "empty axiom (v0.2)" { Expect.equal (axiomText "empty") "" "" }
           test "supplementary-plane letters are one name" { Expect.equal (axiomText "𝐀𝐁 F") "𝐀𝐁 F" "" }
           test "supplementary-plane symbol is one module" { Expect.equal (axiomText "F🌱F") "F 🌱 F" "" }
           test "trivia before a parameter list (Appendix A is token-based)" {
@@ -282,18 +359,24 @@ let prelude =
     testList
         "prelude (§3.2)"
         [ test "settings, with a position per entry" {
-              match parseOk "settings { derivations = 5; angle = 360/7;\n  step = 2; width = 3; taper = 10; }" with
+              match
+                  parseOk
+                      "settings { derivations = 5; angle = 360/7;\n  step = 2; width = 3; taper = 10;\n  tropism = (0, -1, 0); elasticity = 0.22; }"
+              with
               | [ Settings(entries, p) ] ->
                   Expect.equal p { Line = 1; Column = 1 } "block"
-                  Expect.equal (entries |> List.map (fun (k, _, _) -> k)) SettingKey.all ""
+                  Expect.equal (entries |> List.map SettingEntry.key) SettingKey.all ""
 
                   Expect.equal
-                      (entries |> List.map (fun (_, _, p) -> p.Line, p.Column))
-                      [ 1, 12; 1, 29; 2, 3; 2, 13; 2, 24 ]
+                      (entries |> List.map (fun e -> (SettingEntry.pos e).Line, (SettingEntry.pos e).Column))
+                      [ 1, 12; 1, 29; 2, 3; 2, 13; 2, 24; 3, 3; 3, 25 ]
                       "entry positions"
 
-                  let _, angle, _ = entries[1]
-                  Expect.equal (showExpr angle) "(360/7)" ""
+                  match entries[1], entries[5] with
+                  | ScalarEntry(Angle, angle, _), VectorEntry(Tropism, x, y, z, _) ->
+                      Expect.equal (showExpr angle) "(360/7)" ""
+                      Expect.equal (List.map showExpr [ x; y; z ]) [ "0"; "(-1)"; "0" ] ""
+                  | e -> failtestf "unexpected %A" e
               | r -> failtestf "unexpected %A" r
           }
           test "empty settings block" {
@@ -326,6 +409,7 @@ let prelude =
                       | Settings _ -> "settings"
                       | Let(n, _, _) -> n
                       | Ignore _ -> "ignore"
+                      | Consider _ -> "consider"
                       | Axiom _ -> "axiom"
                       | RuleItem _ -> "rule")
 
@@ -333,7 +417,7 @@ let prelude =
           }
           test "statements spread over lines" {
               match parseOk "let\n  a\n  =\n  1\n  +\n  2\n;\nignore:\n  +\n  -\n;\nsettings\n{\n angle\n =\n 3\n ;\n}\naxiom:\nF\n;" with
-              | [ Let("a", e, _); Ignore(names, _); Settings([ (Angle, _, p) ], _); Axiom(a, _) ] ->
+              | [ Let("a", e, _); Ignore(names, _); Settings([ ScalarEntry(Angle, _, p) ], _); Axiom(a, _) ] ->
                   Expect.equal (showExpr e) "(1+2)" ""
                   Expect.equal (names |> List.map fst) [ "+"; "-" ] ""
                   Expect.equal p { Line = 14; Column = 2 } "angle"
@@ -391,8 +475,9 @@ let lexical =
 
 /// Every reserved word (§2.6, A.1), none of which can be used as a name.
 let reservedWords =
-    [ "settings"; "let"; "ignore"; "axiom"; "include"; "module" ] // declaration keywords
+    [ "settings"; "let"; "ignore"; "consider"; "axiom"; "include"; "module" ] // declaration keywords
     @ [ "as"; "when"; "else"; "weight" ] // rule keywords
+    @ [ "empty"; "\u03b5"; "\u03f5" ] // the empty string, and its book spellings
     @ (SettingKey.all |> List.map SettingKey.name)
 
 let errors =
@@ -555,6 +640,156 @@ let errors =
           test "branch list needs a branch" { expectParseError Codes.Syntax (1, 5) "A : else -> B;" }
           test "rule needs an arrow" { expectParseError Codes.Syntax (1, 3) "A ;" } ]
 
+let private successorOf (src: string) =
+    match parseOk src |> rulesOf with
+    | [ Production(_, ProdSimple s, _) ]
+    | [ Interpretation(_, InterpSimple s, _) ] -> s
+    | r -> failtestf "unexpected %A" r
+
+let v02 =
+    testList
+        "v0.2 language"
+        [ testList
+              "consider:"
+              [ test "parses" {
+                    match parseOk "consider: M S T V;" with
+                    | [ Consider(names, p) ] ->
+                        Expect.equal (names |> List.map fst) [ "M"; "S"; "T"; "V" ] ""
+                        Expect.equal p { Line = 1; Column = 1 } ""
+                    | r -> failtestf "unexpected %A" r
+                }
+                test "empty" { expectParseError Codes.EmptyConsider (1, 1) "consider: ;" }
+                test "brackets can't be listed" { expectParseError Codes.BracketNotAllowed (1, 13) "consider: A [;" }
+                test "= suggests :" { expectParseError Codes.WrongSeparator (1, 10) "consider = A;" }
+                test "missing ; before consider:" {
+                    expectParseError Codes.MissingSemicolon (2, 1) "axiom: F\nconsider: A;"
+                } ]
+
+          testList
+              "empty"
+              [ test "empty successor" { Expect.isEmpty (successorOf "S -> empty;") "" }
+                test "empty as successor" { Expect.isEmpty (successorOf "S as empty;") "" }
+                test "book epsilon" {
+                    Expect.isEmpty (successorOf "S -> \u03b5;") "U+03B5"
+                    Expect.isEmpty (successorOf "S -> \u03f5;") "U+03F5"
+                    Expect.equal (axiomText "\u03b5") "" "axiom"
+                }
+                test "epsilon inside a longer name is a letter" {
+                    Expect.equal (axiomText "\u03b5a a\u03b5") "\u03b5a a\u03b5" ""
+                }
+                test "empty in branches" {
+                    match parseOk "A : when x -> empty else -> B; C : when y as empty else as empty;" |> rulesOf with
+                    | [ Production(_, ProdGuarded([ g ], Some e), _); Interpretation(_, InterpGuarded([ g2 ], Some e2), _) ] ->
+                        Expect.isEmpty g.Successor ""
+                        Expect.equal (showActual e) "B" ""
+                        Expect.isEmpty g2.Successor ""
+                        Expect.isEmpty e2 ""
+                    | r -> failtestf "unexpected %A" r
+                }
+                test "empty weighted branch" {
+                    match parseOk "A : weight 1 -> empty weight 2 -> A A;" |> rulesOf with
+                    | [ Production(_, ProdWeighted([ a; _ ], None), _) ] -> Expect.isEmpty a.Successor ""
+                    | r -> failtestf "unexpected %A" r
+                }
+                test "an empty branch is still [ ]" { Expect.equal (successorOf "A -> B [ ] C;" |> showActual) "B [] C" "" }
+                test "a missing successor suggests empty" {
+                    expectParseError Codes.EmptyString (1, 6) "S -> ;"
+                    expectParseError Codes.EmptyString (1, 6) "S as ;"
+                    expectParseError Codes.EmptyString (1, 8) "axiom: ;"
+                    expectParseError Codes.EmptyString (1, 7) "axiom:;"
+                    expectParseError Codes.EmptyString (1, 15) "A : when x -> else -> B;"
+                    expectParseError Codes.EmptyString (1, 25) "A : when x -> B else -> ;"
+                    expectParseError Codes.EmptyString (1, 17) "A : weight 1 -> weight 1 -> B;"
+                    expectParseError Codes.EmptyString (1, 5) "S ->"
+                }
+                test "empty must be the whole string" {
+                    expectParseError Codes.EmptyString (1, 8) "S -> A empty B;"
+                    expectParseError Codes.EmptyString (1, 8) "S -> A empty;"
+                    expectParseError Codes.EmptyString (1, 12) "S -> empty B;"
+                    expectParseError Codes.EmptyString (1, 12) "S -> empty [ B ];"
+                    expectParseError Codes.EmptyString (1, 8) "S -> [ empty ];"
+                    expectParseError Codes.EmptyString (1, 10) "axiom: A \u03b5;"
+                    expectParseError Codes.EmptyString (1, 14) "axiom: empty %;"
+                }
+                test "empty isn't a value" { expectParseError Codes.Syntax (1, 11) "A(x) -> B(empty);" }
+                test "empty in a context" { expectParseError Codes.ReservedName (1, 5) "A < empty -> B;" }
+                test "empty in ignore:" { expectParseError Codes.EmptyString (1, 9) "ignore: empty;" } ]
+
+          testList
+              "cut %"
+              [ test "in an axiom" { Expect.equal (axiomText "A[B%C]%") "A [B % C] %" "" }
+                test "in a production successor" {
+                    match successorOf "X -> A [ B % ] %;" with
+                    | [ Module _; Branch [ Module _; Cut ]; Cut ] -> ()
+                    | s -> failtestf "unexpected %A" s
+                }
+                test "in a branch of a production" {
+                    match parseOk "X : when t -> A % else -> % B; Y : weight 1 -> %;" |> rulesOf with
+                    | [ Production(_, ProdGuarded([ g ], Some e), _); Production(_, ProdWeighted([ w ], None), _) ] ->
+                        Expect.equal (showActual g.Successor) "A %" ""
+                        Expect.equal (showActual e) "% B" ""
+                        Expect.equal (showActual w.Successor) "%" ""
+                    | r -> failtestf "unexpected %A" r
+                }
+                test "not in an as successor" {
+                    expectParseError Codes.CutNotAllowed (1, 8) "A as B %;"
+                    expectParseError Codes.CutNotAllowed (1, 8) "A as [ % ];"
+                    expectParseError Codes.CutNotAllowed (1, 15) "A : when x as %;"
+                    expectParseError Codes.CutNotAllowed (1, 25) "A : when x as B else as %;"
+                }
+                test "not in a head" {
+                    expectParseError Codes.CutNotAllowed (1, 1) "% -> B;"
+                    expectParseError Codes.CutNotAllowed (1, 5) "A < % -> B;"
+                    expectParseError Codes.CutNotAllowed (1, 5) "A > % -> B;"
+                    expectParseError Codes.CutNotAllowed (1, 7) "A > [ % ] -> B;"
+                    expectParseError Codes.CutNotAllowed (1, 1) "% < A -> B;"
+                }
+                test "not in ignore: or consider:" {
+                    expectParseError Codes.CutNotAllowed (1, 9) "ignore: %;"
+                    expectParseError Codes.CutNotAllowed (1, 13) "consider: A %;"
+                }
+                test "no parameters" {
+                    expectParseError Codes.CutNotAllowed (1, 7) "A -> %(1);"
+                    expectParseError Codes.CutNotAllowed (1, 10) "axiom: % (1);"
+                }
+                test "% is still the remainder in expressions" {
+                    Expect.equal (successorOf "A(x) -> B(x % 2) %;" |> showActual) "B((x%2)) %" ""
+                } ]
+
+          testList
+              "vector settings"
+              [ test "tropism and elasticity" {
+                    match parseOk "settings { tropism = (a, -1, sin(30)); elasticity = -0.1; }" with
+                    | [ Settings([ VectorEntry(Tropism, x, y, z, _); ScalarEntry(Elasticity, e, _) ], _) ] ->
+                        Expect.equal (List.map showExpr [ x; y; z ]) [ "a"; "(-1)"; "sin(30)" ] ""
+                        Expect.equal (showExpr e) "(-0.1)" ""
+                    | r -> failtestf "unexpected %A" r
+                }
+                test "a scalar in parentheses is still a scalar" {
+                    match parseOk "settings { angle = (1); }" with
+                    | [ Settings([ ScalarEntry(Angle, e, _) ], _) ] -> Expect.equal (showExpr e) "1" ""
+                    | r -> failtestf "unexpected %A" r
+                }
+                test "tropism needs a vector" {
+                    expectParseError Codes.SettingShape (1, 22) "settings { tropism = 1; }"
+                    expectParseError Codes.SettingShape (1, 22) "settings { tropism = (1); }"
+                    expectParseError Codes.SettingShape (1, 22) "settings { tropism = (1, 2); }"
+                    expectParseError Codes.SettingShape (1, 22) "settings { tropism = (1, 2, 3, 4); }"
+                    expectParseError Codes.SettingShape (1, 22) "settings { tropism = -(0, 1, 0); }"
+                }
+                test "other settings take a single value" {
+                    expectParseError Codes.SettingShape (1, 20) "settings { angle = (1, 2, 3); }"
+                    expectParseError Codes.SettingShape (1, 25) "settings { elasticity = (0.1, 0.2); }"
+                }
+                test "vectors aren't expressions" {
+                    expectParseError Codes.Syntax (1, 11) "let t = (0, -1, 0);"
+                    expectParseError Codes.Syntax (1, 33) "settings { tropism = (0, -1, 0) * 2; }"
+                }
+                test "setting names are reserved" {
+                    expectParseError Codes.ReservedName (1, 9) "let a = tropism;"
+                    expectParseError Codes.ReservedName (1, 8) "axiom: elasticity;"
+                } ] ]
+
 [<Tests>]
 let tests =
-    testList "Parser" [ specExampleTests; tokenization; expressions; structure; prelude; lexical; errors ]
+    testList "Parser" [ specExampleTests; tokenization; expressions; structure; prelude; lexical; errors; v02 ]

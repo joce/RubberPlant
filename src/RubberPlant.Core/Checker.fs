@@ -6,6 +6,7 @@ open System.Collections.Generic
 open RubberPlant.Ast
 open RubberPlant.Model
 open RubberPlant.LString
+open RubberPlant.Geometry
 
 /// Names the turtle predefines (§4.2). Symbols like `+` can't be identifiers anyway.
 let turtleNames = [ "F"; "f" ]
@@ -23,6 +24,7 @@ let rec private actualModules (s: ActualString) : ActualModule seq =
             match e with
             | Module m -> yield m
             | Branch b -> yield! actualModules b
+            | ActualElem.Cut -> ()
     }
 
 let rec private rightModules (r: RightElem list) : FormalModule seq =
@@ -70,7 +72,8 @@ let private collectModules (file: File) : Dictionary<string, Pos option> =
         | Axiom(a, _) ->
             for m in actualModules a do
                 add m.Name m.Pos
-        | Ignore(names, _) ->
+        | Ignore(names, _)
+        | Consider(names, _) ->
             for n, p in names do
                 add n p
         | RuleItem r ->
@@ -168,7 +171,8 @@ let rec private compileActual (ctx: Context) defines paramSlots (s: ActualString
     s
     |> List.collect (function
         | Module m -> [ TMod(m.Name, m.Args |> List.map (resolve ctx defines paramSlots) |> Array.ofList) ]
-        | Branch b -> TPush :: compileActual ctx defines paramSlots b @ [ TPop ])
+        | Branch b -> TPush :: compileActual ctx defines paramSlots b @ [ TPop ]
+        | ActualElem.Cut -> [ TCut ])
 
 /// Compiles a rule head, assigning parameter slots left to right.
 let private compileHead (ctx: Context) (h: Head) =
@@ -294,7 +298,11 @@ let private lintUnreachable (ctx: Context) (rules: CRule list) =
                 if alwaysFires r then
                     firing[key] <- r
 
-let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) : Settings =
+let private checkSettings
+    (ctx: Context)
+    (values: Map<ScalarKey, float * Pos>)
+    (vectors: Map<VectorKey, Vec3 * Pos>)
+    : Settings =
     let get key =
         values.TryFind key |> Option.map fst
 
@@ -302,6 +310,29 @@ let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) 
 
     let invalid key msg =
         ctx.Error Codes.InvalidSetting (snd values[key]) msg
+
+    let elasticity =
+        match get Elasticity with
+        | Some v when System.Double.IsFinite v -> v
+        | Some v ->
+            invalid Elasticity $"`elasticity` must be a finite number, got %s{formatNumber v}"
+            defaultSettings.Elasticity
+        | None -> defaultSettings.Elasticity
+
+    let tropism =
+        match vectors.TryFind Tropism with
+        | Some(v, pos) ->
+            let text = $"(%s{formatNumber v.X}, %s{formatNumber v.Y}, %s{formatNumber v.Z})"
+
+            if not (System.Double.IsFinite v.X && System.Double.IsFinite v.Y && System.Double.IsFinite v.Z) then
+                ctx.Error Codes.InvalidSetting pos $"the components of `tropism` must be finite, got %s{text}"
+                defaultSettings.Tropism
+            elif v = Vec3.zero then
+                ctx.Error Codes.InvalidSetting pos "`tropism` gives a direction, so it can't be the zero vector"
+                defaultSettings.Tropism
+            else
+                v
+        | None -> defaultSettings.Tropism
 
     let derivations =
         match get Derivations with
@@ -332,6 +363,8 @@ let private checkSettings (ctx: Context) (values: Map<SettingKey, float * Pos>) 
       Step = get Step |> Option.defaultValue defaultSettings.Step
       Width = width
       Taper = taper
+      Tropism = tropism
+      Elasticity = elasticity
       // The seed is a run parameter, set by the host (§4.7).
       Seed = defaultSettings.Seed }
 
@@ -376,22 +409,25 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
 
     // Everything else, in source order: `let`s are only visible after their definition.
     let mutable defines = Map.empty<string, float>
-    let mutable settings = Map.empty<SettingKey, float * Pos>
+    let mutable settingsSeen = Map.empty<SettingKey, Pos>
+    let mutable scalars = Map.empty<ScalarKey, float * Pos>
+    let mutable vectors = Map.empty<VectorKey, Vec3 * Pos>
     let mutable settingsBlock: Pos option = None
     let mutable ignoreList: Pos option = None
+    let mutable considerList: Pos option = None
     let mutable axiom: (LString * Pos) option = None
     let mutable firstRule: Pos option = None
-    let ignored = HashSet<string>()
+    let listed = HashSet<string>()
     let productions = ResizeArray<CRule>()
     let interpretations = ResizeArray<CRule>()
 
     for item in file do
         match firstRule, item with
-        | Some r, (Settings(_, p) | Let(_, _, p) | Ignore(_, p) | Axiom(_, p)) ->
+        | Some r, (Settings(_, p) | Let(_, _, p) | Ignore(_, p) | Consider(_, p) | Axiom(_, p)) ->
             ctx.Error
                 Codes.DeclarationAfterRules
                 p
-                $"declaration after rules: `settings`, `let`, `ignore:` and `axiom:` must come before the first rule (line %d{r.Line})"
+                $"declaration after rules: `settings`, `let`, `ignore:`, `consider:` and `axiom:` must come before the first rule (line %d{r.Line})"
         | _ -> ()
 
         match item with
@@ -401,16 +437,33 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             | None ->
                 settingsBlock <- Some pos
 
-                for key, e, pos in entries do
+                for entry in entries do
+                    let key = SettingEntry.key entry
+                    let pos = SettingEntry.pos entry
                     let what = $"`%s{SettingKey.name key}`"
+                    let value e = resolve ctx defines Map.empty e |> evalConst ctx pos what
 
-                    match settings.TryFind key with
-                    | Some(_, first) ->
+                    match settingsSeen.TryFind key with
+                    | Some first ->
                         ctx.Error Codes.DuplicateSetting pos $"%s{what} is already set (line %d{first.Line})"
                     | None ->
-                        match resolve ctx defines Map.empty e |> evalConst ctx pos what with
-                        | Some v -> settings <- settings.Add(key, (v, pos))
-                        | None -> ()
+                        settingsSeen <- settingsSeen.Add(key, pos)
+
+                        match entry with
+                        | ScalarEntry(k, e, _) ->
+                            match value e with
+                            | Some v -> scalars <- scalars.Add(k, (v, pos))
+                            | None -> ()
+                        | VectorEntry(k, x, y, z, _) ->
+                            // Evaluate every component, so each error is reported. A
+                            // component in error isn't checked further (no cascade into
+                            // "zero vector").
+                            let before = diags.Count
+
+                            match value x, value y, value z with
+                            | Some x, Some y, Some z when diags.Count = before ->
+                                vectors <- vectors.Add(k, (Vec3.create x y z, pos))
+                            | _ -> ()
         | Let(name, e, pos) ->
             if not (defines.ContainsKey name) then
                 let v =
@@ -420,13 +473,33 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
                 // On error, still define the name so it doesn't cascade into "unknown name" errors.
                 defines <- defines.Add(name, defaultArg v 0.0)
         | Ignore(names, pos) ->
-            match ignoreList with
-            | Some first -> ctx.Error Codes.DuplicateIgnore pos $"there is already an `ignore:` list (line %d{first.Line})"
-            | None ->
+            match ignoreList, considerList with
+            | Some first, _ ->
+                ctx.Error Codes.DuplicateIgnore pos $"there is already an `ignore:` list (line %d{first.Line})"
+            | None, Some other ->
+                ctx.Error
+                    Codes.IgnoreAndConsider
+                    pos
+                    $"a file can't have both `ignore:` and `consider:`; there is already a `consider:` list (line %d{other.Line})"
+            | None, None ->
                 ignoreList <- Some pos
 
                 for n, _ in names do
-                    ignored.Add n |> ignore
+                    listed.Add n |> ignore
+        | Consider(names, pos) ->
+            match considerList, ignoreList with
+            | Some first, _ ->
+                ctx.Error Codes.DuplicateConsider pos $"there is already a `consider:` list (line %d{first.Line})"
+            | None, Some other ->
+                ctx.Error
+                    Codes.IgnoreAndConsider
+                    pos
+                    $"a file can't have both `ignore:` and `consider:`; there is already an `ignore:` list (line %d{other.Line})"
+            | None, None ->
+                considerList <- Some pos
+
+                for n, _ in names do
+                    listed.Add n |> ignore
         | Axiom(a, pos) ->
             match axiom with
             | Some(_, first) -> ctx.Error Codes.DuplicateAxiom pos $"the axiom is already set (line %d{first.Line})"
@@ -443,7 +516,8 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
                                 |> Option.defaultValue 0.0
 
                             [ Mod(m.Name, m.Args |> List.map arg |> Array.ofList) ]
-                        | Branch b -> Push :: evalAxiom b @ [ Pop ])
+                        | Branch b -> Push :: evalAxiom b @ [ Pop ]
+                        | ActualElem.Cut -> [ Sym.Cut ])
 
                 let syms = evalAxiom a |> Array.ofList
 
@@ -458,7 +532,13 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             | Production _ -> productions.Add compiled
             | Interpretation _ -> interpretations.Add compiled
 
-    let checkedSettings = checkSettings ctx settings
+    let checkedSettings = checkSettings ctx scalars vectors
+
+    let context =
+        if considerList.IsSome then
+            ConsiderList(Set.ofSeq listed)
+        else
+            IgnoreList(Set.ofSeq listed)
 
     if axiom.IsNone then
         diags.Add(Diagnostic.error Codes.MissingAxiom None "missing `axiom:`")
@@ -473,7 +553,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
     else
         Ok(
             { Settings = checkedSettings
-              Ignore = Set.ofSeq ignored
+              Context = context
               Axiom = fst axiom.Value
               Productions = List.ofSeq productions
               Interpretations = List.ofSeq interpretations },

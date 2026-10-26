@@ -26,7 +26,7 @@ let buildIndex (rules: CRule list) : RuleIndex =
 type private Subject =
     { Str: LString
       Partner: int[]
-      Ignore: Set<string> }
+      Context: ContextFilter }
 
 /// Matches a formal module against an actual one, binding parameters.
 let private matchFormal (f: CFormal) (name: string) (args: float[]) (binds: float[]) =
@@ -56,7 +56,9 @@ let private matchLeft (s: Subject) (left: CLeft list) (i: int) (binds: float[]) 
             match s.Str[j] with
             | Pop -> seek (s.Partner[j] - 1)
             | Push -> seek (j - 1)
-            | Mod(n, _) when s.Ignore.Contains n -> seek (j - 1)
+            | Cut when ContextFilter.skipsCut s.Context -> seek (j - 1)
+            | Mod(n, _) when ContextFilter.skipsModule s.Context n -> seek (j - 1)
+            | Cut
             | Mod _ -> j
 
     let rec go formals j =
@@ -87,7 +89,9 @@ let private matchRight (s: Subject) (right: CRight list) (i: int) (binds: float[
             match s.Str[j] with
             | Push -> seekModule (s.Partner[j] + 1)
             | Pop -> -1
-            | Mod(name, _) when s.Ignore.Contains name -> seekModule (j + 1)
+            | Cut when ContextFilter.skipsCut s.Context -> seekModule (j + 1)
+            | Mod(name, _) when ContextFilter.skipsModule s.Context name -> seekModule (j + 1)
+            | Cut
             | Mod _ -> j
 
     let rec seekBranch j =
@@ -96,7 +100,8 @@ let private matchRight (s: Subject) (right: CRight list) (i: int) (binds: float[
         else
             match s.Str[j] with
             | Push -> j
-            | Mod(name, _) when s.Ignore.Contains name -> seekBranch (j + 1)
+            | Cut when ContextFilter.skipsCut s.Context -> seekBranch (j + 1)
+            | Mod(name, _) when ContextFilter.skipsModule s.Context name -> seekBranch (j + 1)
             | _ -> -1
 
     let rec go formals j =
@@ -185,25 +190,53 @@ let private emit (out: ResizeArray<Sym>) (succ: Successor) (binds: float[]) =
         match t with
         | TPush -> out.Add Push
         | TPop -> out.Add Pop
+        | TCut -> out.Add Cut
         | TMod(name, args) -> out.Add(Mod(name, args |> Array.map (Eval.eval binds)))
 
 /// Raised with a fully formed diagnostic; caught at the API boundary.
 exception private RewriteError of Diagnostic
 
 /// One parallel rewriting pass over `str` (§4.4).
-let private rewrite (index: RuleIndex) (ignore: Set<string>) (what: string) (rng: Rng) (str: LString) =
+/// With `cut`, a `%` drops itself and the rest of its branch, unrewritten
+/// (derivation, "Cutting branches"); otherwise it is copied (interpretation).
+let private rewrite
+    (index: RuleIndex)
+    (context: ContextFilter)
+    (cut: bool)
+    (what: string)
+    (rng: Rng)
+    (str: LString)
+    =
     let subject =
         { Str = str
           Partner = matchBrackets str
-          Ignore = ignore }
+          Context = context }
 
     let out = ResizeArray<Sym>(str.Length * 2)
     let mutable rng = rng
+    let mutable next = 0
 
-    for i in 0 .. str.Length - 1 do
+    while next < str.Length do
+        let i = next
+        next <- i + 1
+
         match str[i] with
         | Push
         | Pop -> out.Add str[i]
+        | Cut when cut ->
+            // Skip to the `]` that closes the branch (kept), or the end of the string.
+            let rec branchEnd j =
+                if j >= str.Length then
+                    j
+                else
+                    match str[j] with
+                    | Pop -> j
+                    | Push -> branchEnd (subject.Partner[j] + 1)
+                    | Cut
+                    | Mod _ -> branchEnd (j + 1)
+
+            next <- branchEnd (i + 1)
+        | Cut -> out.Add Cut
         | Mod(name, args) as m ->
             match index.Rules.TryGetValue(struct (name, args.Length)) with
             | false, _ -> out.Add m
@@ -258,7 +291,7 @@ let deriveSteps (model: Model) : Result<LString list, Diagnostic list> =
     try
         for step in 1 .. model.Settings.Derivations do
             let struct (next, rng') =
-                rewrite index model.Ignore $"rewriting (derivation step %d{step})" rng current
+                rewrite index model.Context true $"rewriting (derivation step %d{step})" rng current
 
             rng <- rng'
             current <- next
@@ -283,7 +316,7 @@ let interpret (model: Model) (derived: LString) : Result<LString, Diagnostic lis
         try
             // Interpretation rules have no weights, so the generator is never used.
             let struct (drawing, _) =
-                rewrite index model.Ignore "interpreting" (Rng.create 0L) derived
+                rewrite index model.Context false "interpreting" (Rng.create 0L) derived
 
             Ok drawing
         with RewriteError d ->
