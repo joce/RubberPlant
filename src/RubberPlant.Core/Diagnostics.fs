@@ -68,6 +68,22 @@ module Codes =
     [<Literal>]
     let MisplacedKeyword = "RP0018"
 
+    /// A missing module string (`S -> ;`: write `empty`), or `empty` that
+    /// isn't the whole string.
+    [<Literal>]
+    let EmptyString = "RP0019"
+
+    /// The cut `%` where the grammar doesn't allow it, or with parameters.
+    [<Literal>]
+    let CutNotAllowed = "RP0020"
+
+    /// A vector where a setting takes a single value, or the reverse.
+    [<Literal>]
+    let SettingShape = "RP0021"
+
+    [<Literal>]
+    let EmptyConsider = "RP0022"
+
     // Static checks (checker)
     [<Literal>]
     let NamespaceClash = "RP0101"
@@ -113,6 +129,12 @@ module Codes =
 
     [<Literal>]
     let DuplicateIgnore = "RP0115"
+
+    [<Literal>]
+    let IgnoreAndConsider = "RP0116"
+
+    [<Literal>]
+    let DuplicateConsider = "RP0117"
 
     // Evaluation (derivation, interpretation)
     [<Literal>]

@@ -296,7 +296,10 @@ New in 0.2:
 - **Book derivation sequences as tests**: ABOP prints some developmental sequences in full, and
   `derive` must reproduce them exactly. These are the signal model of §3.1.2 (*d* = 4, *m* = 2,
   *u* = 1, 10 strings) and the lily-of-the-valley sequence `A`, `I[IK0]A`, … of §3.3.1, written with
-  parametric `K(i)`.
+  parametric `K(i)`. The signal model's strings 9 and 10 as printed on p. 68 are a book erratum:
+  they don't follow from its productions (p8 turns `a(2)` into `I[L]A`, adding a fourth internode).
+  The test keeps the book's productions, matches strings 1–8 as printed, and expects what the
+  productions derive for strings 9 and 10.
 - **Mesh unit tests**: vertex and triangle counts per cylinder, unit normals, outward winding (each
   triangle's normal points away from the axis), zero-length and zero-width segments (no triangles), ear clipping of a
   concave polygon (an L shape), and degenerate polygons.

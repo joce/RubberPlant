@@ -7,12 +7,12 @@
     <Compile Include="Parser.fs" />
     <Compile Include="Builtins.fs" />
     <Compile Include="LString.fs" />
+    <Compile Include="Geometry.fs" />
     <Compile Include="Model.fs" />
     <Compile Include="Eval.fs" />
     <Compile Include="Checker.fs" />
     <Compile Include="Rng.fs" />
     <Compile Include="Derivation.fs" />
-    <Compile Include="Geometry.fs" />
     <Compile Include="Turtle.fs" />
     <Compile Include="Pipeline.fs" />
   </ItemGroup>

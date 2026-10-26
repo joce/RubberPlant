@@ -44,10 +44,14 @@ let private isDigit c = c >= '0' && c <= '9'
 let private ruleKeywords = set [ "as"; "when"; "else"; "weight" ]
 
 /// Keywords that start a prelude statement.
-let private declKeywords = set [ "settings"; "let"; "ignore"; "axiom" ]
+let private declKeywords = set [ "settings"; "let"; "ignore"; "consider"; "axiom" ]
+
+/// The empty module string (v0.2, "empty" in Appendix A.1).
+[<Literal>]
+let private Empty = "empty"
 
 /// Keywords end a module string or an expression (§2.2, §2.5).
-let private keywords = ruleKeywords + declKeywords
+let private keywords = ruleKeywords + declKeywords + set [ Empty ]
 
 let private settingNames = SettingKey.all |> List.map SettingKey.name |> set
 
@@ -247,7 +251,8 @@ let private statementAhead (s: CharStream<unit>) =
             s.Skip k.Length
             (skipTrivia s).Status = Ok && s.Peek() = '{'
         | "axiom"
-        | "ignore" -> nameThenSeparator s
+        | "ignore"
+        | "consider" -> nameThenSeparator s
         | _ -> false
 
     s.BacktrackTo(&start)
@@ -262,6 +267,7 @@ let private misplacedKeyword (k: string) (inWhat: string) =
         | "weight"
         | "else" -> "; `when`, `weight` and `else` start a branch, after the rule's `:`"
         | "as" -> "; `as` starts an interpretation rule's successor"
+        | Empty -> "; `empty` can only be a whole module string, e.g. `S -> empty;`"
         | _ -> $"; `%s{k}` starts a statement"
 
     $"keyword `%s{k}` can't appear in %s{inWhat}%s{hint}"
@@ -285,6 +291,14 @@ let private moduleStop (expecting: string) (ruleEnd: bool) : P<'a> =
                 fail Codes.MissingSemicolon "missing `;` at the end of the file"
             else
                 fail Codes.Syntax $"unexpected end of file; expected %s{expecting}"
+        elif name = Empty then
+            fail
+                Codes.EmptyString
+                "`empty` must be the whole module string (`S -> empty;`); an empty branch is written `[ ]`"
+        elif c = '%' then
+            fail
+                Codes.CutNotAllowed
+                "the cut `%` can only appear in an axiom or a production (`->`) successor"
         // `as` is the next interpretation rule's arrow; other keywords mean
         // a missing `;` only if a whole statement follows.
         elif ruleEnd && keywords.Contains name && name <> "as" && not (statementAhead s) then
@@ -481,6 +495,7 @@ let private moduleName: P<string * Pos> =
             || isDigit c
             || c = '['
             || c = ']'
+            || c = '%'
             || isModReserved (normalize c)
         then
             Reply(Error, expected "module")
@@ -519,14 +534,77 @@ let private bracketed (inner: P<'a>) : P<'a> =
             else
                 moduleStop $"`]` to close the `[` at line %d{p.Line}, column %d{p.Column}" false s
 
-let private actualString, private actualStringRef =
+/// The cut `%` (v0.2). It takes no parameters.
+let private cut: P<ActualElem> =
+    fun s ->
+        if s.Peek() <> '%' then
+            Reply(Error, expected "`%`")
+        else
+            s.Skip()
+            let r = ws s
+
+            if r.Status <> Ok then Reply(r.Status, r.Error)
+            elif s.Peek() = '(' then fatal Codes.CutNotAllowed "the cut `%` takes no parameters" s
+            else Reply(Cut)
+
+/// `{ ActualElem }` (axioms, production successors), or `{ InterpElem }`
+/// (`as` successors) without the cut. May be empty, as inside `[ ]`.
+let private actualElems, private actualElemsRef =
     createParserForwardedToRef<ActualString, unit> ()
 
-actualStringRef.Value <-
+let private interpElems, private interpElemsRef =
+    createParserForwardedToRef<ActualString, unit> ()
+
+actualElemsRef.Value <-
     many (
         (actualModule |>> Module)
-        <|> (bracketed actualString |>> Branch)
+        <|> (bracketed actualElems |>> Branch)
+        <|> cut
     )
+
+interpElemsRef.Value <-
+    many (
+        (actualModule |>> Module)
+        <|> (bracketed interpElems |>> Branch)
+    )
+
+/// A whole module string: `empty`, or at least one element (v0.2).
+let private moduleString (elems: P<ActualString>) : P<ActualString> =
+    fun s ->
+        if peekName s = Empty then
+            s.Skip Empty.Length
+            let w = ws s
+
+            if w.Status <> Ok then
+                Reply(w.Status, w.Error)
+            else
+                let p = toPos s.Position
+                let r = elems s
+
+                if r.Status <> Ok then
+                    r
+                elif not r.Result.IsEmpty then
+                    fatalAt
+                        p
+                        Codes.EmptyString
+                        "`empty` must be the whole module string; remove it, or remove what follows"
+                else
+                    Reply([])
+        else
+            let r = elems s
+            let next = peekName s
+
+            if
+                r.Status = Ok
+                && r.Result.IsEmpty
+                && (s.Peek() = ';' || s.IsEndOfStream || ruleKeywords.Contains next)
+            then
+                fatal Codes.EmptyString "missing module string; the empty string is written `empty`" s
+            else
+                r
+
+let private actualString = moduleString actualElems
+let private interpString = moduleString interpElems
 
 let private pattern: P<Pattern> =
     choice
@@ -631,6 +709,13 @@ type private RawBranch =
 let private arrowOrAs: P<bool> =
     (arrow >>% false) <|> (keyword "as" >>% true)
 
+/// The successor after `->` or `as`: only productions can cut ("%").
+let private successorFor (isAs: bool) =
+    if isAs then interpString else actualString
+
+let private arrowAndSuccessor: P<bool * ActualString> =
+    arrowOrAs >>= fun isAs -> successorFor isAs |>> fun succ -> (isAs, succ)
+
 let private weightTail (pos: Pos) (guard: Expr option) : P<RawBranch> =
     keyword "weight" >>. expr
     .>>. (fun s ->
@@ -647,13 +732,13 @@ let private rawBranch: P<RawBranch> =
         (keyword "when" >>. expr
          >>= fun g ->
              (weightTail p (Some g))
-             <|> (arrowOrAs .>>. actualString |>> fun (isAs, succ) -> BGuard(p, g, isAs, succ))
+             <|> (arrowAndSuccessor |>> fun (isAs, succ) -> BGuard(p, g, isAs, succ))
              <|> (fun s -> moduleStop "`->`, `as` or `weight` after the guard" false s))
         <|> weightTail p None
 
 let private elseBranch: P<Pos * bool * ActualString> =
-    getPos .>> keyword "else" .>>. arrowOrAs .>>. actualString
-    |>> fun ((p, isAs), succ) -> (p, isAs, succ)
+    getPos .>> keyword "else" .>>. arrowAndSuccessor
+    |>> fun (p, (isAs, succ)) -> (p, isAs, succ)
 
 let private branchPos =
     function
@@ -754,7 +839,7 @@ let private ruleBody (h: Head) (rulePos: Pos) : P<Rule> =
         if isArrowAt s then
             (arrow >>. actualString .>> semicolon |>> fun succ -> Production(h, ProdSimple succ, rulePos)) s
         elif peekName s = "as" then
-            (keyword "as" >>. actualString .>> semicolon
+            (keyword "as" >>. interpString .>> semicolon
              |>> fun succ -> Interpretation(h, InterpSimple succ, rulePos))
                 s
         elif s.Peek() = ':' then
@@ -842,7 +927,37 @@ let private letStatement: P<Item> =
         identOrWild Bind "a constant name"
         >>= fun (n, _) -> equalsAfter $"`%s{n}`" >>. expr .>> exprSemicolon |>> fun e -> Let(n, e, p)
 
-/// One `key = expr;` entry. Fails without consuming input at anything but
+/// The value of a scalar setting. A vector there gets a targeted error.
+let private scalarValue (key: string) : P<Expr> =
+    fun s ->
+        let p = toPos s.Position
+        let mutable start = s.State
+        // Looks like `( expr ,`: a vector.
+        let vector = (punct '(' >>. expr >>. punct ',') s
+        let isVector = vector.Status = Ok
+        s.BacktrackTo(&start)
+
+        if isVector then
+            fatalAt p Codes.SettingShape $"`%s{key}` takes a single value, not a vector; only `tropism` is a vector"
+        else
+            expr s
+
+/// The value of a vector setting: `( Expr , Expr , Expr )` (v0.2).
+let private vectorValue (key: string) : P<Expr * Expr * Expr> =
+    fun s ->
+        let p = toPos s.Position
+
+        let shape: P<unit> =
+            fun _ ->
+                fatalAt p Codes.SettingShape $"`%s{key}` takes a vector of three values, e.g. `%s{key} = (0, -1, 0);`"
+
+        let sep (c: char) : P<unit> = punct c <|> shape
+
+        (sep '(' >>. expr .>> sep ',' .>>. expr .>> sep ',' .>>. expr .>> sep ')'
+         |>> fun ((x, y), z) -> (x, y, z))
+            s
+
+/// One `key = value;` entry. Fails without consuming input at anything but
 /// a setting name.
 let private settingEntry: P<SettingEntry> =
     fun s ->
@@ -850,9 +965,18 @@ let private settingEntry: P<SettingEntry> =
         let name = peekName s
 
         match SettingKey.tryParse name with
-        | Some key ->
+        | Some(ScalarKey key) ->
             s.Skip name.Length
-            (ws >>. equalsAfter $"`%s{name}`" >>. expr .>> exprSemicolon |>> fun e -> (key, e, p)) s
+
+            (ws >>. equalsAfter $"`%s{name}`" >>. scalarValue name .>> exprSemicolon
+             |>> fun e -> ScalarEntry(key, e, p))
+                s
+        | Some(VectorKey key) ->
+            s.Skip name.Length
+
+            (ws >>. equalsAfter $"`%s{name}`" >>. vectorValue name .>> exprSemicolon
+             |>> fun (x, y, z) -> VectorEntry(key, x, y, z, p))
+                s
         | None -> Reply(Error, NoErrorMessages)
 
 /// The `}` that ends a settings block, with a helpful error for whatever
@@ -887,22 +1011,38 @@ let private settingsBlock: P<Item> =
     preludeKeyword "settings"
     >>= fun p -> punct '{' >>. many settingEntry .>> closeBrace p |>> fun entries -> Settings(entries, p)
 
-let private ignoreName: P<string * Pos> =
+/// A module name in an `ignore:` or `consider:` list.
+let private listedName (bracketMsg: string) : P<string * Pos> =
     fun s ->
         if s.Peek() = '[' || s.Peek() = ']' then
-            fatal Codes.BracketNotAllowed "brackets can't be ignored" s
+            fatal Codes.BracketNotAllowed bracketMsg s
         else
             moduleNameTok s
 
 let private ignoreStatement: P<Item> =
     preludeKeyword "ignore"
     >>= fun p ->
-        colonAfter "ignore" >>. many ignoreName .>> semicolon
+        colonAfter "ignore" >>. many (listedName "brackets can't be ignored") .>> semicolon
         >>= fun names _ ->
             if names.IsEmpty then
                 fatalAt p Codes.EmptyIgnore "`ignore:` needs at least one module; leave it out if nothing is ignored"
             else
                 Reply(Ignore(names, p))
+
+let private considerStatement: P<Item> =
+    preludeKeyword "consider"
+    >>= fun p ->
+        colonAfter "consider"
+        >>. many (listedName "brackets always exist during context matching; they can't be listed in `consider:`")
+        .>> semicolon
+        >>= fun names _ ->
+            if names.IsEmpty then
+                fatalAt
+                    p
+                    Codes.EmptyConsider
+                    "`consider:` needs at least one module; leave it out to consider every module"
+            else
+                Reply(Consider(names, p))
 
 let private axiomStatement: P<Item> =
     preludeKeyword "axiom"
@@ -917,6 +1057,7 @@ let private item: P<Item> =
         | "settings" -> settingsBlock s
         | "let" -> letStatement s
         | "ignore" -> ignoreStatement s
+        | "consider" -> considerStatement s
         | "axiom" -> axiomStatement s
         | _ -> (rule |>> RuleItem) s
 

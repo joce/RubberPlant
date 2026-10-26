@@ -310,6 +310,184 @@ let format =
               Expect.equal (derived "axiom: F F + f [ - G(1, 2.5) ] H;") "F F+f[-G(1,2.5)]H" ""
           } ]
 
+let cut =
+    testList
+        "cut % (v0.2)"
+        [ test "the spec's example: one step drops the rest of the branch" {
+              let src =
+                  "settings { derivations = 1; }\naxiom: A [ B % C [ D ] E ] F;\nA -> a; B -> b; C -> c; D -> d; E -> e; F -> f;"
+
+              Expect.equal (steps src) [ "A[B%C[D]E]F"; "a[b]f" ] ""
+          }
+
+          test "a produced % survives one step, then cuts" {
+              let src = "settings { derivations = 3; }\naxiom: A;\nA -> B [ C % D ] E;\nC -> X;\nD -> Y;"
+              Expect.equal (steps src) [ "A"; "B[C%D]E"; "B[X]E"; "B[X]E" ] ""
+          }
+
+          test "nested branches" {
+              Expect.equal (derived "settings { derivations = 1; }\naxiom: A [ B [ C % D ] E ] F;") "A[B[C]E]F" ""
+          }
+
+          test "complete branches inside the cut part go with it" {
+              Expect.equal (derived "settings { derivations = 1; }\naxiom: A [ B % C [ D % ] [ E ] G ] F;") "A[B]F" ""
+          }
+
+          test "at the top level, to the end of the string" {
+              Expect.equal (derived "settings { derivations = 1; }\naxiom: A % B [ C ] D;") "A" ""
+          }
+
+          test "the cut part isn't rewritten" {
+              // B(1/0) would be a division by zero if it were rewritten.
+              Expect.equal (derived "settings { derivations = 1; }\naxiom: % A(0);\nA(x) -> B(1/x);") "empty" ""
+          }
+
+          test "in the axiom: nothing is cut with derivations = 0" {
+              Expect.equal (steps "axiom: A [ B % C ] D;") [ "A[B%C]D" ] ""
+          }
+
+          test "in the axiom: cut in the first step" {
+              Expect.equal (steps "settings { derivations = 1; }\naxiom: A [ B % C ] D;") [ "A[B%C]D"; "A[B]D" ] ""
+          }
+
+          test "the cut part draws until the next step: interpretation doesn't cut" {
+              let src = "axiom: A [ % B ] % C;\nB as F;\nC as F;"
+              Expect.equal (drawing src) "A[%F]%F" ""
+          }
+
+          test "only * matches % in a context" {
+              let star = "settings { derivations = 1; }\naxiom: A % B;\nA > * -> X;"
+              Expect.equal (derived star) "X" "A's right neighbor is %"
+              let named = "settings { derivations = 1; }\naxiom: A % B;\nA > B -> X;"
+              Expect.equal (derived named) "A" "% hides B"
+              let left = "axiom: A % B;\n* < B as X;"
+              Expect.equal (drawing left) "A%X" "* to the left of B"
+          }
+
+          test "consider: skips %" {
+              let src = "settings { derivations = 1; }\nconsider: B;\naxiom: A % B;\nA > B -> X;"
+              Expect.equal (derived src) "X" ""
+          }
+
+          test "ignore: doesn't skip %" {
+              // `*` must consume `%`; then `B` matches after the ignored `C`.
+              let star = "settings { derivations = 1; }\nignore: C;\naxiom: A % C B;\nA > * B -> X;"
+              Expect.equal (derived star) "X" "* matched %, then B"
+              let named = "settings { derivations = 1; }\nignore: C;\naxiom: A % C B;\nA > B -> X;"
+              Expect.equal (derived named) "A" "% hides B"
+          } ]
+
+let consider =
+    testList
+        "consider: (v0.2)"
+        [ test "only listed modules exist during context matching" {
+              let src = "settings { derivations = 1; }\nconsider: S;\naxiom: S A B A;\nS < A -> X;"
+              Expect.equal (derived src) "S X B X" "A and B are skipped"
+              let ignoreNothing = "settings { derivations = 1; }\naxiom: S A B A;\nS < A -> X;"
+              Expect.equal (derived ignoreNothing) "S X B A" "without consider:"
+          }
+
+          test "right context" {
+              let src = "settings { derivations = 1; }\nconsider: T;\naxiom: A F F [ G ] T;\nA > T -> X;"
+              Expect.equal (derived src) "X F F[G]T" "skips modules and branches"
+          }
+
+          test "brackets always exist" {
+              let src = "settings { derivations = 1; }\nconsider: S;\naxiom: A [ S ];\nA > S -> X;"
+              Expect.equal (derived src) "A[S]" "S is in a branch, not on A's axis"
+              let branch = "settings { derivations = 1; }\nconsider: S;\naxiom: A B [ C S ];\nA > [ S ] -> X;"
+              Expect.equal (derived branch) "X B[C S]" ""
+          }
+
+          test "* matches only listed modules" {
+              Expect.equal (derived "settings { derivations = 1; }\nconsider: S;\naxiom: B A;\n* < A -> X;") "B A" ""
+              Expect.equal (derived "settings { derivations = 1; }\nconsider: S;\naxiom: S B A;\n* < A -> X;") "S B X" ""
+          }
+
+          test "the strict predecessor isn't affected" {
+              Expect.equal (derived "settings { derivations = 1; }\nconsider: S;\naxiom: A;\nA -> X;") "X" ""
+          }
+
+          test "interpretation rules use it too" {
+              Expect.equal (drawing "consider: S;\naxiom: S B A;\nS < A as F;") "S B F" ""
+          } ]
+
+let emptyString =
+    testList
+        "empty (v0.2)"
+        [ test "erasing a module" {
+              Expect.equal (derived "settings { derivations = 1; }\naxiom: A B [ A ];\nA -> empty;") "B[]" ""
+          }
+
+          test "an empty string formats as empty" {
+              Expect.equal (steps "settings { derivations = 2; }\naxiom: A;\nA -> empty;") [ "A"; "empty"; "empty" ] ""
+              Expect.equal (steps "axiom: empty;") [ "empty" ] ""
+          }
+
+          test "interpretation to empty" { Expect.equal (drawing "axiom: A B;\nA as empty;") "B" "" } ]
+
+/// Developmental sequences that ABOP prints in full (backends.md §9).
+let book =
+    testList
+        "book derivation sequences (v0.2)"
+        [ test "signal model, ABOP §3.1.2 (d = 4, m = 2, u = 1)" {
+              // The L-system of book p. 67, as printed (ε is written `empty`).
+              //
+              // Book erratum: strings 9 and 10 printed on p. 68 don't follow from these
+              // productions. At step 9, p6 erases S(1) and p8 rewrites a(2) (left
+              // context S(1)) into I[L]A, so the string gains a fourth internode. The
+              // book prints `I[L]I[L]I[L]A` and `I[L]I[L]I[L]K`, which would need
+              // p8: S(i) < a(j) -> A. We keep the book's productions: strings 1-8 are
+              // the book's, strings 9-10 are what its productions derive.
+              let src =
+                  """
+settings { derivations = 9; }
+let d = 4;
+let m = 2;
+let u = 1;
+axiom: D(1) a(1);
+a(i) :
+    when i < m  -> a(i+1)
+    when i == m -> I[L]a(1);
+D(i) :
+    when i < d  -> D(i+1)
+    when i == d -> S(1);
+S(i) :
+    when i < u  -> S(i+1)
+    when i == u -> empty;
+S(i) < I : when i == u -> I S(1);
+S(i) < a(j) -> I[L]A;
+A -> K;
+"""
+
+              Expect.equal
+                  (steps src)
+                  [ "D(1)a(1)"
+                    "D(2)a(2)"
+                    "D(3)I[L]a(1)"
+                    "D(4)I[L]a(2)"
+                    "S(1)I[L]I[L]a(1)"
+                    "I S(1)[L]I[L]a(2)"
+                    "I[L]I S(1)[L]I[L]a(1)"
+                    "I[L]I[L]I S(1)[L]a(2)"
+                    "I[L]I[L]I[L]I[L]A" // book: I[L]I[L]I[L]A (erratum)
+                    "I[L]I[L]I[L]I[L]K" ] // book: I[L]I[L]I[L]K (erratum)
+                  ""
+          }
+
+          test "lily-of-the-valley, ABOP §3.3.1 (K_i as K(i))" {
+              let src = "settings { derivations = 4; }\naxiom: A;\nA -> I[I K(0)]A;\nK(i) -> K(i+1);"
+
+              Expect.equal
+                  (steps src)
+                  [ "A"
+                    "I[I K(0)]A"
+                    "I[I K(1)]I[I K(0)]A"
+                    "I[I K(2)]I[I K(1)]I[I K(0)]A"
+                    "I[I K(3)]I[I K(2)]I[I K(1)]I[I K(0)]A" ]
+                  ""
+          } ]
+
 [<Tests>]
 let tests =
-    testList "Derivation" [ d0l; parametric; context; stochastic; runtime; interpretation; format ]
+    testList "Derivation" [ d0l; parametric; context; stochastic; runtime; interpretation; format; cut; consider; emptyString; book ]

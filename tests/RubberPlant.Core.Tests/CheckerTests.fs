@@ -90,7 +90,7 @@ let tests =
                       "let a = 1; settings { angle = a * 10; } let b = 2; ignore: F; let c = a + b; axiom: F(c); F(x) -> F(x);"
 
               Expect.equal m.Settings.Angle 10.0 ""
-              Expect.equal m.Ignore (set [ "F" ]) ""
+              Expect.equal m.Context (IgnoreList(set [ "F" ])) ""
               Expect.equal m.Axiom [| LString.Mod("F", [| 3.0 |]) |] ""
           }
 
@@ -102,7 +102,87 @@ let tests =
           }
 
           test "seed is an ordinary name" { compileOk "axiom: seed(1);\nseed(x) -> F(x);" |> ignore }
-          test "empty axiom is legal" { compileOk "axiom: ;" |> ignore }
+          test "v0.2: empty axiom" {
+              let m, _ = compileOk "axiom: empty;"
+              Expect.isEmpty m.Axiom ""
+          }
+
+          test "v0.2: cut in the axiom" {
+              let m, _ = compileOk "axiom: A [ % ] %;"
+              Expect.equal m.Axiom [| LString.Mod("A", [||]); LString.Push; LString.Cut; LString.Pop; LString.Cut |] ""
+          }
+
+          test "v0.2: tropism and elasticity defaults" {
+              let m, _ = compileOk "axiom: F;"
+              Expect.equal m.Settings.Tropism (Geometry.Vec3.create 0.0 -1.0 0.0) "gravity"
+              Expect.equal m.Settings.Elasticity 0.0 "tropism off"
+          }
+
+          test "v0.2: tropism and elasticity values" {
+              let m, _ =
+                  compileOk "let e = 0.22;\nsettings { tropism = (-0.02, -1 + 0, cos(90)); elasticity = -e; }\naxiom: F;"
+
+              Expect.equal m.Settings.Tropism.X -0.02 ""
+              Expect.equal m.Settings.Tropism.Y -1.0 ""
+              Expect.floatClose Accuracy.veryHigh m.Settings.Tropism.Z 0.0 ""
+              Expect.equal m.Settings.Elasticity -0.22 "negative: bends away from T"
+          }
+
+          test "v0.2: tropism is stored as written, not normalized" {
+              let m, _ = compileOk "settings { tropism = (0, 0, 3); }\naxiom: F;"
+              Expect.equal m.Settings.Tropism (Geometry.Vec3.create 0.0 0.0 3.0) ""
+          }
+
+          test "v0.2: tropism can't be the zero vector" {
+              expectError Codes.InvalidSetting 1 "settings { tropism = (0, 0, 0); }\naxiom: F;"
+              expectError Codes.InvalidSetting 1 "settings { tropism = (0, -0, 0); }\naxiom: F;"
+          }
+
+          test "v0.2: tropism components are finite" {
+              expectError Codes.InvalidSetting 1 "settings { tropism = (0, exp(1000), 0); }\naxiom: F;"
+          }
+
+          test "v0.2: tropism components are constant expressions" {
+              expectCodes [ Codes.DivisionByZero; Codes.UnknownName ] "settings { tropism = (x, 1/0, 0); }\naxiom: F;"
+              expectError Codes.LetUsedBeforeDefinition 1 "settings { tropism = (0, k, 0); }\nlet k = 1;\naxiom: F;"
+          }
+
+          test "v0.2: elasticity is finite" {
+              expectError Codes.InvalidSetting 1 "settings { elasticity = -exp(1000); }\naxiom: F;"
+          }
+
+          test "v0.2: tropism set twice" {
+              expectError Codes.DuplicateSetting 1 "settings { tropism = (0, -1, 0); tropism = (1, 0, 0); }\naxiom: F;"
+          }
+
+          test "v0.2: consider:" {
+              let m, _ = compileOk "consider: M S;\naxiom: A;"
+              Expect.equal m.Context (ConsiderList(set [ "M"; "S" ])) ""
+          }
+
+          test "v0.2: no list means every module is considered" {
+              let m, _ = compileOk "axiom: A;"
+              Expect.equal m.Context (IgnoreList Set.empty) ""
+          }
+
+          test "v0.2: not both ignore: and consider:" {
+              expectError Codes.IgnoreAndConsider 3 "axiom: A;\nignore: F;\nconsider: G;"
+              expectError Codes.IgnoreAndConsider 3 "axiom: A;\nconsider: G;\nignore: F;"
+          }
+
+          test "v0.2: duplicate consider:" {
+              expectError Codes.DuplicateConsider 3 "axiom: A;\nconsider: F;\nconsider: G;"
+          }
+
+          test "v0.2: consider: after rules" {
+              expectError Codes.DeclarationAfterRules 3 "axiom: A;\nA -> B;\nconsider: F;"
+          }
+
+          test "v0.2: consider: names are modules" {
+              expectError Codes.NamespaceClash 1 "let M = 1;\nconsider: M;\naxiom: A;"
+              expectError Codes.NamespaceClash 2 "axiom: A;\nconsider: sin;"
+          }
+
 
           test "missing axiom" { expectCodes [ Codes.MissingAxiom ] "A -> B;" }
           test "duplicate axiom" { expectError Codes.DuplicateAxiom 2 "axiom: A;\naxiom: B;" }

@@ -63,7 +63,8 @@ let rec showActual (s: ActualString) =
                 m.Name
             else
                 $"""%s{m.Name}(%s{m.Args |> List.map showExpr |> String.concat ","})"""
-        | Branch b -> $"[%s{showActual b}]")
+        | Branch b -> $"[%s{showActual b}]"
+        | Cut -> "%")
     |> String.concat " "
 
 let axiomOf (f: File) =

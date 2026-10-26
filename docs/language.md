@@ -118,7 +118,7 @@ Symbol      = any single non-whitespace character that is not a Letter, Digit, "
 - **Symbols** are always **one character** and are self-delimiting: `+ - & ^ \ / | { } ! ' ~ $ . @ ?`, and so on.
 - **Brackets** `[` and `]` are one-character tokens too, but structural: they delimit branches and are never module names (§3.3).
 - **Cut** `%` **(v0.2)** is a one-character structural token as well, like the brackets: it can only appear in an axiom or a production successor, never in an `as` successor, a head, a context or an `ignore:` / `consider:` list, and it takes no parameters (§3.3, §4.4). (In expression mode `%` is still the remainder operator.)
-- **(v0.2)** The keyword `empty` is the empty string (ABOP's `ε`): `S -> empty;` erases `S`. It is the only way to write an empty axiom or successor, and it must be the whole string: `S -> ;` is a syntax error that suggests `empty`, and `S -> A empty B;` is a syntax error. An empty branch `[ ]` is still allowed.
+- **(v0.2)** The keyword `empty` is the empty string (ABOP's `ε`): `S -> empty;` erases `S`. It is the only way to write an empty axiom or successor, and it must be the whole string: `S -> ;` is a syntax error that suggests `empty`, and `S -> A empty B;` is a syntax error. An empty branch `[ ]` is still allowed. `derive` prints an empty string as `empty`, so its output can be read back as an axiom.
 - **Reserved in module mode**: ``( ) , # : < > * = ; ` `` and the arrow `->`. `#` has no meaning anywhere, so it is an error. (cpfg used `#` to increase width; it may get a meaning in rules later.) The backtick `` ` `` (book's `‘`) has no defined meaning (§7), so using it is an error. `:` is also the colon after `axiom` / `ignore` and the start of a branch list. `<` and `>` only matter in predecessors, and `*` only as a context wildcard, but they are reserved everywhere to keep the lexer simple.
 - **Digits** can't start a name, and a bare number is a syntax error in module mode. Numbers only appear inside `( … )`.
 
@@ -210,8 +210,6 @@ So book text can be pasted with minimal editing, the lexer normalizes:
 | `’` (U+2019) | `'` |
 | `‘` (U+2018) | `` ` `` (reserved; error) |
 | `≤` / `≥` / `≠` | `<=` / `>=` / `!=` |
-
-**(v0.2)** `ε` (U+03B5) and `ϵ` (U+03F5) are read as the keyword `empty` when they make up a whole name, so the book's `S → ε` pastes as is. Inside a longer name they are ordinary letters.
 
 Subscripts can't survive plain text, so book `F`<sub>l</sub> is written as the name `Fl`, plus an interpretation rule if it should draw like `F` (§4.6).
 
@@ -928,8 +926,7 @@ Unicode normalization, applied before tokenizing (outside comments):
 ```ebnf
 (* "→" ⇒ "->"   "−" (U+2212) ⇒ "-"   "∧" ⇒ "^"   "∼" ⇒ "~"
    "’" (U+2019) ⇒ "'"   "‘" (U+2018) ⇒ "`" (reserved, error)
-   "≤" ⇒ "<="   "≥" ⇒ ">="   "≠" ⇒ "!="
-   a whole name "ε" or "ϵ" ⇒ "empty" *)
+   "≤" ⇒ "<="   "≥" ⇒ ">="   "≠" ⇒ "!=" *)
 ```
 
 ### A.2 Syntactic grammar

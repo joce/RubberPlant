@@ -32,12 +32,15 @@ type ActualModule =
       Args: Expr list
       Pos: Pos }
 
-/// `ActualElem = ActualModule | "[" ActualString "]"`: brackets are structural,
-/// so a successor is a tree and is always balanced.
+/// `ActualElem = ActualModule | "[" ActualString "]" | "%"`: brackets are
+/// structural, so a successor is a tree and is always balanced. The cut `%`
+/// (v0.2) is structural too; the parser keeps it out of `as` successors.
 type ActualElem =
     | Module of ActualModule
     | Branch of ActualElem list
+    | Cut
 
+/// A module string. The empty list is `empty` (v0.2).
 type ActualString = ActualElem list
 
 type Pattern =
@@ -95,20 +98,34 @@ type Rule =
 
 // Prelude and file --------------------------------------------------------
 
-type SettingKey =
+/// Settings whose value is a single expression.
+type ScalarKey =
     | Derivations
     | Angle
     | Step
     | Width
     | Taper
+    | Elasticity
 
-/// One `key = expr;` entry of a `settings` block, at the key's position.
-type SettingEntry = SettingKey * Expr * Pos
+/// Settings whose value is a vector `(x, y, z)` (v0.2).
+type VectorKey = Tropism
+
+type SettingKey =
+    | ScalarKey of ScalarKey
+    | VectorKey of VectorKey
+
+/// One entry of a `settings` block, at the key's position. The grammar
+/// decides the shape of the value from the key (§3.2).
+type SettingEntry =
+    | ScalarEntry of ScalarKey * Expr * pos: Pos
+    | VectorEntry of VectorKey * x: Expr * y: Expr * z: Expr * pos: Pos
 
 type Item =
     | Settings of SettingEntry list * pos: Pos
     | Let of name: string * Expr * pos: Pos
     | Ignore of (string * Pos) list * pos: Pos
+    /// `consider:` (v0.2)
+    | Consider of (string * Pos) list * pos: Pos
     | Axiom of ActualString * pos: Pos
     | RuleItem of Rule
 
@@ -117,15 +134,35 @@ type File = Item list
 module SettingKey =
     let name =
         function
-        | Derivations -> "derivations"
-        | Angle -> "angle"
-        | Step -> "step"
-        | Width -> "width"
-        | Taper -> "taper"
+        | ScalarKey Derivations -> "derivations"
+        | ScalarKey Angle -> "angle"
+        | ScalarKey Step -> "step"
+        | ScalarKey Width -> "width"
+        | ScalarKey Taper -> "taper"
+        | ScalarKey Elasticity -> "elasticity"
+        | VectorKey Tropism -> "tropism"
 
-    let all = [ Derivations; Angle; Step; Width; Taper ]
+    let all =
+        [ ScalarKey Derivations
+          ScalarKey Angle
+          ScalarKey Step
+          ScalarKey Width
+          ScalarKey Taper
+          VectorKey Tropism
+          ScalarKey Elasticity ]
 
     let tryParse (s: string) = all |> List.tryFind (fun k -> name k = s)
+
+module SettingEntry =
+    let key =
+        function
+        | ScalarEntry(k, _, _) -> ScalarKey k
+        | VectorEntry(k, _, _, _, _) -> VectorKey k
+
+    let pos =
+        function
+        | ScalarEntry(_, _, p)
+        | VectorEntry(_, _, _, _, p) -> p
 
 module Rule =
     let head =

@@ -5,6 +5,7 @@ module RubberPlant.Model
 open RubberPlant.Ast
 open RubberPlant.Builtins
 open RubberPlant.LString
+open RubberPlant.Geometry
 
 /// A resolved expression. Formal parameters are slots into the rule's
 /// binding array; defines are folded to numbers.
@@ -36,6 +37,7 @@ type CRight =
 type CSym =
     | TPush
     | TPop
+    | TCut
     | TMod of name: string * args: CExpr[]
 
 type Successor = CSym[]
@@ -67,6 +69,11 @@ type Settings =
       Step: float
       Width: float
       Taper: float
+      /// Direction of the tropism vector T, as written (§4.7):
+      /// finite and non-zero; the turtle normalizes it.
+      Tropism: Vec3
+      /// Elasticity e; 0 disables tropism.
+      Elasticity: float
       /// Not a file setting: a run parameter supplied by the host (§4.7).
       Seed: int64 }
 
@@ -79,11 +86,36 @@ let defaultSettings =
       Step = 1.0
       Width = 1.0
       Taper = 30.0
+      Tropism = Vec3.create 0.0 -1.0 0.0
+      Elasticity = 0.0
       Seed = 0L }
+
+/// Which modules exist during context matching (§4.5). Brackets always do.
+type ContextFilter =
+    /// `ignore:`: every module except these (no list: every module).
+    | IgnoreList of Set<string>
+    /// `consider:` (v0.2): only these modules. The cut `%` can't be listed, so
+    /// it is skipped.
+    | ConsiderList of Set<string>
+
+module ContextFilter =
+    let none = IgnoreList Set.empty
+
+    /// True if context matching skips the module `name`.
+    let skipsModule (f: ContextFilter) (name: string) =
+        match f with
+        | IgnoreList names -> names.Contains name
+        | ConsiderList names -> not (names.Contains name)
+
+    /// True if context matching skips the cut `%`: it can't be listed.
+    let skipsCut (f: ContextFilter) =
+        match f with
+        | IgnoreList _ -> false
+        | ConsiderList _ -> true
 
 type Model =
     { Settings: Settings
-      Ignore: Set<string>
+      Context: ContextFilter
       Axiom: LString
       Productions: CRule list
       Interpretations: CRule list }

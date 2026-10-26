@@ -136,12 +136,13 @@ let private parseArgs (argv: string list) : Args =
     args
 
 let private applyOverrides (args: Args) (s: Settings) : Settings =
-    { Derivations = defaultArg args.Derivations s.Derivations
-      Angle = defaultArg args.Angle s.Angle
-      Step = defaultArg args.Step s.Step
-      Width = defaultArg args.Width s.Width
-      Taper = defaultArg args.Taper s.Taper
-      Seed = defaultArg args.Seed s.Seed }
+    { s with
+        Derivations = defaultArg args.Derivations s.Derivations
+        Angle = defaultArg args.Angle s.Angle
+        Step = defaultArg args.Step s.Step
+        Width = defaultArg args.Width s.Width
+        Taper = defaultArg args.Taper s.Taper
+        Seed = defaultArg args.Seed s.Seed }
 
 let private report (file: string) (diags: Diagnostic list) =
     for d in diags do
