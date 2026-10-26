@@ -370,8 +370,11 @@ let cut =
           }
 
           test "ignore: doesn't skip %" {
-              let src = "settings { derivations = 1; }\nignore: C;\naxiom: A % C B;\nA > * -> X;"
-              Expect.equal (derived src) "X" "* matched % (not C, which is ignored, nor B)"
+              // `*` must consume `%`; then `B` matches after the ignored `C`.
+              let star = "settings { derivations = 1; }\nignore: C;\naxiom: A % C B;\nA > * B -> X;"
+              Expect.equal (derived star) "X" "* matched %, then B"
+              let named = "settings { derivations = 1; }\nignore: C;\naxiom: A % C B;\nA > B -> X;"
+              Expect.equal (derived named) "A" "% hides B"
           } ]
 
 let consider =
