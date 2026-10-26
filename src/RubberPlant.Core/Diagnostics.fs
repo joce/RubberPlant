@@ -162,6 +162,10 @@ module Codes =
     [<Literal>]
     let UnbalancedPolygon = "RP0303"
 
+    /// `.` with no open polygon.
+    [<Literal>]
+    let VertexOutsidePolygon = "RP0304"
+
 module Diagnostic =
     let error code pos message =
         { Severity = Severity.Error

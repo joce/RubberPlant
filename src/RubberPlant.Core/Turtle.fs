@@ -55,11 +55,55 @@ let roll (a: float) (t: State) =
         L = c * t.L - s * t.U
         U = c * t.U + s * t.L }
 
+/// The direction opposite to gravity, used by `$` (§5.1).
+let private vertical = Vec3.create 0.0 1.0 0.0
+
+/// Below this, a cross product is treated as zero (§5.2, §5.5).
+let private parallelEpsilon = 1e-9
+
+/// `$` (v0.2): roll around H so that L is horizontal and U points up
+/// (ABOP p. 57). Does nothing when H is vertical, like cpfg (§5.2).
+let rollToHorizontal (t: State) =
+    let c = Vec3.cross vertical t.H
+    let len = Vec3.length c
+
+    if len < parallelEpsilon then
+        t
+    else
+        let l = (1.0 / len) * c
+        { t with L = l; U = Vec3.cross t.H l }
+
+/// Rotates `v` around the unit axis `k` by the angle whose sine is `s` and
+/// cosine `c` (Rodrigues' formula).
+let private rotate (k: Vec3) (s: float) (c: float) (v: Vec3) =
+    c * v + s * Vec3.cross k v + ((1.0 - c) * Vec3.dot k v) * k
+
+/// Tropism (v0.2, §5.5): turn the whole frame around H × T by the angle α
+/// with sin α = e · |H × T|, clamped. `tHat` is T normalized.
+let bend (tHat: Vec3) (e: float) (t: State) =
+    let a = Vec3.cross t.H tHat
+    let len = Vec3.length a
+
+    if e = 0.0 || len < parallelEpsilon then
+        t
+    else
+        let s = max -1.0 (min 1.0 (e * len))
+        let c = sqrt (1.0 - s * s)
+        let k = (1.0 / len) * a
+
+        { t with
+            H = rotate k s c t.H
+            L = rotate k s c t.L
+            U = rotate k s c t.U }
+
 /// Symbols the turtle understands, and how many parameters each one uses.
 let private turtleArity =
     Map.ofList
         [ "F", 1
           "f", 1
+          "G", 1
+          ".", 0
+          "$", 0
           "+", 1
           "-", 1
           "&", 1
@@ -74,8 +118,18 @@ let private turtleArity =
 
 exception private TurtleError of string
 
-let private isFinite (v: Vec3) =
-    System.Double.IsFinite v.X && System.Double.IsFinite v.Y && System.Double.IsFinite v.Z
+let private isFinite = Vec3.isFinite
+
+/// T / |T|, scaled first so that huge components don't overflow. Zero for
+/// the zero vector (rejected before use).
+let private normalizeTropism (v: Vec3) =
+    let m = max (abs v.X) (max (abs v.Y) (abs v.Z))
+
+    if m = 0.0 then
+        Vec3.zero
+    else
+        let w = (1.0 / m) * v
+        (1.0 / Vec3.length w) * w
 
 /// Interprets a drawing string. Returns the geometry and any warnings, or an
 /// error if the turtle meets a non-finite value or an invalid width: backends
@@ -89,8 +143,12 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
     let polygons = System.Collections.Generic.Stack<ResizeArray<Vec3>>()
     let mutable t = initialState settings
     let mutable unmatchedClose = false
+    let mutable vertexOutside = false
+    let tHat = normalizeTropism settings.Tropism
 
-    let move (d: float) draw =
+    /// `F`, `f` and `G`: emit the segment (`draw`), record the polygon vertex
+    /// (`vertex`), then bend toward T (§5.5).
+    let move (d: float) draw vertex =
         let p1 = t.P + d * t.H
 
         if not (isFinite p1) then
@@ -99,17 +157,23 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
         if draw then
             out.Add(Segment(t.P, p1, t.Width, t.Color))
 
-        if polygons.Count > 0 then
+        if vertex && polygons.Count > 0 then
             polygons.Peek().Add p1
 
-        t <- { t with P = p1 }
+        t <- bend tHat settings.Elasticity { t with P = p1 }
 
     let run () =
-        // The initial width can come from a CLI override, which the checker never saw.
+        // These can come from CLI overrides, which the checker never saw.
         if not (System.Double.IsFinite settings.Width) || settings.Width < 0.0 then
             raise (
                 TurtleError $"the initial width must be finite and non-negative, got %s{formatNumber settings.Width}"
             )
+
+        if not (isFinite settings.Tropism) || tHat = Vec3.zero then
+            raise (TurtleError "the tropism vector must have finite components and not be the zero vector")
+
+        if not (System.Double.IsFinite settings.Elasticity) then
+            raise (TurtleError $"the elasticity must be finite, got %s{formatNumber settings.Elasticity}")
 
         for sym in drawing do
             match sym with
@@ -145,8 +209,15 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
                         v
 
                     match name with
-                    | "F" -> move (arg "step" settings.Step) true
-                    | "f" -> move (arg "step" settings.Step) false
+                    | "F" -> move (arg "step" settings.Step) true true
+                    | "f" -> move (arg "step" settings.Step) false true
+                    | "G" -> move (arg "step" settings.Step) true false
+                    | "." ->
+                        if polygons.Count > 0 then
+                            polygons.Peek().Add t.P
+                        else
+                            vertexOutside <- true
+                    | "$" -> t <- rollToHorizontal t
                     | "+" -> t <- turn (arg "angle" settings.Angle) t
                     | "-" -> t <- turn -(arg "angle" settings.Angle) t
                     | "&" -> t <- pitch (arg "angle" settings.Angle) t
@@ -179,7 +250,8 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
                                 t.Color + 1
 
                         t <- { t with Color = c }
-                    | "{" -> polygons.Push(ResizeArray [ t.P ])
+                    // An empty polygon (ABOP p. 127); v0.1 also recorded P here (§5.3).
+                    | "{" -> polygons.Push(ResizeArray())
                     | "}" ->
                         if polygons.Count > 0 then
                             out.Add(Polygon(List.ofSeq (polygons.Pop()), t.Color))
@@ -195,6 +267,9 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
 
         if polygons.Count > 0 then
             warnings.Add(Diagnostic.warning Codes.UnbalancedPolygon None "`{` without a matching `}`; polygon dropped")
+
+        if vertexOutside then
+            warnings.Add(Diagnostic.warning Codes.VertexOutsidePolygon None "`.` outside a polygon; ignored")
 
         Ok(List.ofSeq out, List.ofSeq warnings)
     with TurtleError msg ->

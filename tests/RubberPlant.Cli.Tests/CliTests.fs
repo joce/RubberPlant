@@ -83,6 +83,37 @@ let tests =
                   Expect.isFalse (File.Exists out) "nothing written")
           }
 
+          test "--tropism and --elasticity override the settings" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+                  let plain = Path.Combine(dir, "plain.svg")
+                  let bent = Path.Combine(dir, "bent.svg")
+                  let gravity = Path.Combine(dir, "gravity.svg")
+                  Expect.equal (run [ "render"; input; "-o"; plain ]) 0 "plain"
+
+                  Expect.equal
+                      (run [ "render"; input; "--tropism"; "1, 0,0"; "--elasticity"; "0.3"; "-o"; bent ])
+                      0
+                      "bent"
+
+                  Expect.equal (run [ "render"; input; "--tropism"; "-1e-3,0,0"; "-o"; gravity ]) 0 "elasticity stays 0"
+                  Expect.notEqual (File.ReadAllText bent) (File.ReadAllText plain) "tropism bends the drawing"
+                  Expect.equal (File.ReadAllText gravity) (File.ReadAllText plain) "no bend without elasticity")
+          }
+
+          test "--tropism and --elasticity values" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+
+                  for bad in [ "1,0"; "1,0,0,0"; "0,0,0"; "a,0,0"; "1,,0"; "1,0,Infinity" ] do
+                      Expect.equal (run [ "check"; input; "--tropism"; bad ]) 2 bad
+
+                  for bad in [ "x"; "Infinity"; "NaN" ] do
+                      Expect.equal (run [ "check"; input; "--elasticity"; bad ]) 2 bad
+
+                  Expect.equal (run [ "check"; input; "--elasticity"; "-0.5" ]) 0 "negative bends away")
+          }
+
           test "usage errors" {
               Expect.equal (run [ "frobnicate" ]) 2 "unknown command"
               Expect.equal (run [ "render" ]) 2 "missing input"

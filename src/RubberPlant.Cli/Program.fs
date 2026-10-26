@@ -26,6 +26,8 @@ Options (override the file's settings):
       --step <d>          default step length
       --width <w>         initial line width
       --taper <percent>   width decrease applied by `!`
+      --tropism <x,y,z>   tropism vector T (direction only)
+      --elasticity <e>    how strongly segments bend toward T (0: off)
       --seed <n>          random seed (default 0)
 
 Render options:
@@ -49,6 +51,8 @@ type Args =
       Step: float option
       Width: float option
       Taper: float option
+      Tropism: Geometry.Vec3 option
+      Elasticity: float option
       Seed: int64 option }
 
 exception UsageError of string
@@ -78,6 +82,8 @@ let private parseArgs (argv: string list) : Args =
           Step = None
           Width = None
           Taper = None
+          Tropism = None
+          Elasticity = None
           Seed = None }
 
     let rec go args acc =
@@ -115,6 +121,19 @@ let private parseArgs (argv: string list) : Args =
                 raise (UsageError "--taper must be between 0 and 100")
 
             go rest { acc with Taper = Some t }
+        | "--tropism" :: v :: rest ->
+            // Same domain as the `tropism` setting: three finite numbers, not all zero.
+            match v.Split ',' with
+            | [| x; y; z |] ->
+                let parse (c: string) = parseFloat "--tropism" (c.Trim())
+                let t = Geometry.Vec3.create (parse x) (parse y) (parse z)
+
+                if t = Geometry.Vec3.zero then
+                    raise (UsageError "--tropism gives a direction, so it can't be the zero vector")
+
+                go rest { acc with Tropism = Some t }
+            | _ -> raise (UsageError $"--tropism expects three numbers 'x,y,z', got '%s{v}'")
+        | "--elasticity" :: v :: rest -> go rest { acc with Elasticity = Some(parseFloat "--elasticity" v) }
         | "--seed" :: v :: rest ->
             // Integers a float represents exactly (§4.7).
             match Int64.TryParse(v, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) with
@@ -142,6 +161,8 @@ let private applyOverrides (args: Args) (s: Settings) : Settings =
         Step = defaultArg args.Step s.Step
         Width = defaultArg args.Width s.Width
         Taper = defaultArg args.Taper s.Taper
+        Tropism = defaultArg args.Tropism s.Tropism
+        Elasticity = defaultArg args.Elasticity s.Elasticity
         Seed = defaultArg args.Seed s.Seed }
 
 let private report (file: string) (diags: Diagnostic list) =
