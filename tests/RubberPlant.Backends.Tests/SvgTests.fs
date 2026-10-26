@@ -111,6 +111,13 @@ let tests =
               Expect.stringContains svg """d="M10.5 109.5 L10.5 10.5 M109.5 109.5 L109.5 10.5" """ ""
           }
 
+          test "straight line ends, round joins (like the book's figures)" {
+              let svg = Svg.render options [ seg (0.0, 0.0) (0.0, 1.0); seg (0.0, 1.0) (1.0, 1.0) ] |> ok
+              Expect.stringContains svg "stroke-linecap=\"butt\"" "straight ends"
+              Expect.stringContains svg "stroke-linejoin=\"round\"" "round joins"
+              Expect.isFalse (svg.Contains "stroke-linecap=\"round\"") "no round caps"
+          }
+
           test "wide strokes fit in the viewport" {
               let svg = Svg.render Svg.defaultOptions [ wideSeg 100.0 ] |> ok
               // Half the stroke (50) plus the margin (10) on each side.

@@ -100,7 +100,7 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
         match style with
         | Some(width, color) ->
             line
-                $"""<path d="%s{path.ToString()}" fill="none" stroke="%s{colorOf color}" stroke-width="%s{num width}" stroke-linecap="round" stroke-linejoin="round"/>"""
+                $"""<path d="%s{path.ToString()}" fill="none" stroke="%s{colorOf color}" stroke-width="%s{num width}" stroke-linecap="butt" stroke-linejoin="round"/>"""
 
             path.Clear() |> ignore
             style <- None
@@ -142,9 +142,10 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
 
 /// Renders geometry as SVG. The geometry must be finite (the turtle
 /// guarantees it). Strokes are centered on the segments and widths are in
-/// pixels, so half the widest stroke is reserved on each side, round caps
-/// included. Fails if the margins and the widest stroke leave no room to
-/// draw: the drawing is never silently clipped.
+/// pixels, so half the widest stroke is reserved on each side: line ends are
+/// straight, but a stroke still extends sideways, and joins are round. Fails
+/// if the margins and the widest stroke leave no room to draw: the drawing is
+/// never silently clipped.
 let render (options: Options) (geometry: Geometry) : Result<string, string> =
     let maxStroke = maxStrokeWidth geometry
     let pad = options.Margin + maxStroke / 2.0
