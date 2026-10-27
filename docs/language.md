@@ -577,13 +577,15 @@ The turtle state is:
 
 **World coordinates (v0.2).** The world is right-handed with **+Y up**: the turtle starts growing upward, the direction opposite to gravity is **V** = (0, 1, 0) (used by `$`, §5.2), and gravity is (0, −1, 0). This matches ABOP's tropism vectors (Table 2.3 gives gravity as (0, −1, 0)) and glTF's convention, so backends never convert axes. Front views look down −Z, with +X to the right.
 
-Rotations use ABOP's matrices R<sub>U</sub>, R<sub>L</sub>, R<sub>H</sub> (§1.5) with **H, L, U as the rows** of the frame: [H; L; U]′ = R · [H; L; U]. (Read with H, L, U as columns, ABOP's printed equation would turn `+` the wrong way.) Concretely, for an angle *a*:
+Rotations use ABOP's matrices R<sub>U</sub> and R<sub>L</sub> (§1.5) with **H, L, U as the rows** of the frame: [H; L; U]′ = R · [H; L; U]. (Read with H, L, U as columns, ABOP's printed equation would turn `+` the wrong way.) R<sub>H</sub> follows cpfg instead (see below). Concretely, for an angle *a*:
 
 | Rotation | Effect |
 |---|---|
 | R<sub>U</sub>(*a*), turn left | H′ = H cos *a* + L sin *a*; L′ = L cos *a* − H sin *a* |
 | R<sub>L</sub>(*a*), pitch down | H′ = H cos *a* − U sin *a*; U′ = U cos *a* + H sin *a* |
-| R<sub>H</sub>(*a*), roll left | L′ = L cos *a* − U sin *a*; U′ = U cos *a* + L sin *a* |
+| R<sub>H</sub>(*a*), roll left | L′ = L cos *a* + U sin *a*; U′ = U cos *a* − L sin *a* |
+
+**Roll direction (v0.2).** `+`, `-`, `&` and `^` turn the same way as in cpfg, the software that made ABOP's figures. For the roll, ABOP's printed R<sub>H</sub> read the same way would turn the opposite way from cpfg (cpfg's frame starts with U = (0, 0, −1), and its `/` turns L toward that U, so toward −Z). RubberPlant follows cpfg: with the printed matrix, every divergence spiral winds the other way and the 3D trees of Chapter 2 don't match the book (checked against Figs 2.6a and 2.6c, which match line for line with cpfg's roll). So `/` turns L toward −U, and `\` toward +U.
 
 ### 5.2 Symbols
 

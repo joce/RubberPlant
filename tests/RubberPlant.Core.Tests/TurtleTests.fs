@@ -370,15 +370,28 @@ let tests =
               expectPath g [ v 0 0 0; v 0 0 1 ]
           }
 
-          test "\\ rolls left: L goes toward -U" {
-              // After rolling left 90°, L = -U0 = (0,0,-1); turning left then heads there.
+          test "\\ rolls left: L goes toward +U (cpfg's direction)" {
+              // After rolling left 90°, L = U0 = (0,0,1); turning left then heads there.
               let g, _ = draw "axiom: \\ + F;"
+              expectPath g [ v 0 0 0; v 0 0 1 ]
+          }
+
+          test "/ rolls right: L goes toward -U, as cpfg's / does" {
+              // cpfg starts with U = (0,0,-1) and its / turns L toward that U: -Z, as here.
+              let g, _ = draw "axiom: / + F;"
               expectPath g [ v 0 0 0; v 0 0 -1 ]
           }
 
-          test "/ rolls right" {
-              let g, _ = draw "axiom: / + F;"
-              expectPath g [ v 0 0 0; v 0 0 1 ]
+          test "roll direction: a divergence spiral winds like cpfg's (ABOP Fig 2.6)" {
+              // Fig 2.6's trunk: a branch pitched down with &, then /(137.5) before the next.
+              // cpfg puts the second branch on +X (seen from +Z); the book's figure agrees.
+              let g, _ = draw "axiom: [ & F ] / (137.5) [ & F ];"
+
+              match segments g with
+              | [ (_, first); (_, second) ] ->
+                  Expect.isTrue (close first (v 0 0 -1)) $"first branch away from the viewer: %A{first}"
+                  Expect.isGreaterThan second.X 0.5 $"second branch to the right: %A{second}"
+              | s -> failtestf "unexpected %A" s
           }
 
           test "brackets save and restore the state" {
