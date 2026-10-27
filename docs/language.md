@@ -643,7 +643,7 @@ The turtle produces backend-neutral **geometry**:
 - `Segment(p0, p1, width, color)`
 - `Polygon(vertices, color)`
 
-**(v0.2)** In 3D a segment is an **open cylinder** (a tube without end caps) of diameter `width` from p0 to p1, as in ABOP's own software (cpfg's and lpfg's cylinder line style). Mesh backends tessellate it; the SVG backend still draws a line with round caps. Polygons are flat-shaded, two-sided, and may be concave. Widths are in *width units*: pixels for SVG, and world units times a scale factor for mesh backends (ABOP's widths are line widths in pixels, as in Fig 2.6, where a trunk 1 unit long is 10 wide). Later chapters add more primitives: generalized cylinders, surfaces.
+**(v0.2)** In 3D a segment is an **open cylinder** (a tube without end caps) of diameter `width` from p0 to p1, as in ABOP's own software (cpfg's and lpfg's cylinder line style). Mesh backends tessellate it; the SVG backend draws a line with straight (butt) ends, like the book's figures. Polygons are flat-shaded, two-sided, and may be concave. Widths are in *width units*: pixels for SVG, and world units times a scale factor for mesh backends (ABOP's widths are line widths in pixels, as in Fig 2.6, where a trunk 1 unit long is 10 wide). Later chapters add more primitives: generalized cylinders, surfaces.
 
 Backends (SVG, OBJ, glTF, …) consume this geometry; see [`backends.md`](backends.md). Scale and framing are backend concerns; SVG fits the drawing to the viewport, which replaces ABOP's "decrease *d* between images". SVG line widths are in pixels, so it reserves half the widest line around the drawing; if the image is too small for that, rendering fails rather than clipping.
 

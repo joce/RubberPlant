@@ -55,8 +55,8 @@ What changes is what it means in 3D:
 - **`Segment` is an open cylinder**, a tube without end caps, of diameter `width` from p0 to p1.
   This is the 3D segment of ABOP's own software (cpfg's and lpfg's `line style: cylinder`, and
   lpfg's OBJ export); the book's figures are line drawings or renders made with it. A zero-length or zero-width segment is invisible.
-- The SVG backend stays a **line drawing**: it keeps its round-capped strokes, so the 0.1 output
-  doesn't change. It isn't meant to be an exact projection of the mesh (§7).
+- The SVG backend stays a **line drawing**, with straight (butt) line ends like the book's figures.
+  It isn't meant to be an exact projection of the mesh (§7).
 - **`Polygon`** is a flat, filled, two-sided face. Its vertices may be non-planar, and the polygon may
   be concave (ABOP's leaves are). Self-intersecting polygons are triangulated on a best-effort basis
   (§4.3).
@@ -248,13 +248,16 @@ the `.gltf` form because it is text.
 
 ## 7. SVG backend in 0.2
 
-- Unchanged output for every existing example.
+- Line ends change from round to straight (butt), so every golden with segments changes once.
 - 3D models are drawn as before: an orthographic front view (looking down −Z), primitives painted
   in geometry order, with no depth sorting. ABOP's own line drawings of 3D trees (Figs 2.6–2.8) are
   front views too.
-- Segments keep their round caps and joins. Seen from the side, a cylinder would project to a
-  butt-capped line, but butt caps would change every 0.1 golden and open notches at every joint of
-  a 2D drawing. SVG is a line drawing, like the book's figures, not a projection of the mesh.
+- Segments have **straight (butt) ends**, like the lines of ABOP's figures (drawn by cpfg). A round
+  cap would stick out half a line width past the end of every segment, which shows on thick
+  trunks and at every change of width. Consecutive segments with the same width and color still
+  form one path with **round joins**, so bends have no notches; where the width or color changes,
+  the lines meet end to end and the width steps, as in the book. SVG is a line drawing, like the
+  book's figures, not a projection of the mesh.
 - The palette moves to the shared `Palette` module (§4.5).
 
 ## 8. CLI
