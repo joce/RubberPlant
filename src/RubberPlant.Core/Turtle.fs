@@ -59,7 +59,7 @@ let roll (a: float) (t: State) =
 /// The direction opposite to gravity, used by `$` (§5.1).
 let private vertical = Vec3.create 0.0 1.0 0.0
 
-/// Below this, a cross product is treated as zero (§5.2, §5.5).
+/// Below this, a cross product is treated as zero (§5.2).
 let private parallelEpsilon = 1e-9
 
 /// `$` (v0.2): roll around H so that L is horizontal and U points up
@@ -74,28 +74,27 @@ let rollToHorizontal (t: State) =
         let l = (1.0 / len) * c
         { t with L = l; U = Vec3.cross t.H l }
 
-/// Rotates `v` around the unit axis `k` by the angle whose sine is `s` and
-/// cosine `c` (Rodrigues' formula).
-let private rotate (k: Vec3) (s: float) (c: float) (v: Vec3) =
-    c * v + s * Vec3.cross k v + ((1.0 - c) * Vec3.dot k v) * k
-
-/// Tropism (v0.2, §5.5): turn the whole frame around H × T by the angle α
-/// with sin α = e · |H × T|, clamped. `tHat` is T normalized.
+/// Tropism (v0.2, §5.5), computed as cpfg's `bend` does: turn H toward U by
+/// e · (T · U), then toward L by e · (T · L), each a rotation in the plane of two
+/// frame vectors, with the sine clamped to [-1, 1]. `tHat` is T normalized.
 let bend (tHat: Vec3) (e: float) (t: State) =
-    let a = Vec3.cross t.H tHat
-    let len = Vec3.length a
-
-    if e = 0.0 || len < parallelEpsilon then
+    if e = 0.0 then
         t
     else
-        let s = max -1.0 (min 1.0 (e * len))
-        let c = sqrt (1.0 - s * s)
-        let k = (1.0 / len) * a
+        let clamp x = max -1.0 (min 1.0 x)
+        // Toward U by T's component along U (L unchanged).
+        let s1 = clamp (e * Vec3.dot tHat t.U)
+        let c1 = sqrt (1.0 - s1 * s1)
+        let h1 = c1 * t.H + s1 * t.U
+        let u1 = c1 * t.U - s1 * t.H
+        // Then toward L by T's component along L (U unchanged).
+        let s2 = clamp (e * Vec3.dot tHat t.L)
+        let c2 = sqrt (1.0 - s2 * s2)
 
         { t with
-            H = rotate k s c t.H
-            L = rotate k s c t.L
-            U = rotate k s c t.U }
+            H = c2 * h1 + s2 * t.L
+            L = c2 * t.L - s2 * h1
+            U = u1 }
 
 /// Symbols the turtle understands, and how many parameters each one uses.
 let private turtleArity =
