@@ -1,0 +1,19 @@
+(* ABOP Fig 2.6b: monopodial tree-like structure of Honda (book p. 56).
+   Constants: Table 2.1, row b (book p. 57).
+   Probable misprint: Table 2.1 prints r1 = 0.9. With r1 = 0.8 the tree matches the book's
+   figure line for line (checked against cpfg, the program that drew the book's figures);
+   with 0.9 it is taller and its crown starts lower.
+*)
+settings { derivations = 10; }
+
+let r1 = 0.8;     (* contraction ratio for the trunk *)
+let r2 = 0.9;     (* contraction ratio for branches *)
+let a0 = 45;      (* branching angle from the trunk *)
+let a2 = 45;      (* branching angle for lateral axes *)
+let d  = 137.5;   (* divergence angle *)
+let wr = 0.707;   (* width decrease rate *)
+
+axiom: A(1, 10);
+A(l, w) -> !(w) F(l) [ &(a0) B(l*r2, w*wr) ] /(d) A(l*r1, w*wr);
+B(l, w) -> !(w) F(l) [ -(a2) $ C(l*r2, w*wr) ] C(l*r1, w*wr);
+C(l, w) -> !(w) F(l) [ +(a2) $ B(l*r2, w*wr) ] B(l*r1, w*wr);

@@ -1,0 +1,22 @@
+(* ABOP Fig 2.8c: tree-like structure with ternary branching and tropism (book p. 60).
+   Constants: Table 2.3, row c (book p. 61).
+   Probable misprint: Table 2.3 prints lr = 1.790, which grows the trunk 105-fold over 8 steps
+   and gives a tall column. lr = 1.079 gives the weeping shape of the book's figure, though
+   not line for line: the figure couldn't be reproduced exactly, even with cpfg.
+*)
+settings {
+  derivations = 8;
+  tropism = (-0.02, -1, 0);
+  elasticity = 0.27;
+}
+
+let d1 = 112.5;    (* divergence angle 1 *)
+let d2 = 157.5;    (* divergence angle 2 *)
+let a  = 22.5;     (* branching angle *)
+let lr = 1.079;    (* elongation rate; Table 2.3 prints 1.790 *)
+let vr = 1.732;    (* width increase rate *)
+
+axiom: !(1) F(200) /(45) A;
+A    -> !(vr) F(50) [ &(a) F(50) A ] /(d1) [ &(a) F(50) A ] /(d2) [ &(a) F(50) A ];
+F(l) -> F(l*lr);
+!(w) -> !(w*vr);

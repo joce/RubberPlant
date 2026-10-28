@@ -1,0 +1,19 @@
+(* ABOP Fig 2.8b: tree-like structure with ternary branching and tropism (book p. 60).
+   Constants: Table 2.3, row b (book p. 61).
+*)
+settings {
+  derivations = 8;
+  tropism = (0, -1, 0);
+  elasticity = 0.14;
+}
+
+let d1 = 137.5;    (* divergence angle 1 *)
+let d2 = 137.5;    (* divergence angle 2 *)
+let a  = 18.95;    (* branching angle *)
+let lr = 1.109;    (* elongation rate *)
+let vr = 1.732;    (* width increase rate *)
+
+axiom: !(1) F(200) /(45) A;
+A    -> !(vr) F(50) [ &(a) F(50) A ] /(d1) [ &(a) F(50) A ] /(d2) [ &(a) F(50) A ];
+F(l) -> F(l*lr);
+!(w) -> !(w*vr);

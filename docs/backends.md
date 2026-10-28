@@ -1,6 +1,8 @@
 # Geometry and output backends
 
-Status: **v0.2, specified**. Nothing in this document is implemented yet. It specifies
+Status: **v0.2, partly implemented**. Implemented: the SVG backend's 0.2 changes (§7) and the
+Chapter 2 examples (§9). Not yet: `Palette` and `Mesh` (§4), OBJ (§5), glTF (§6), the CLI format
+selection (§8), mesh tests and the Chapter 3 examples (§9). This document specifies
 what the 0.2 milestone adds after the turtle: the meaning of the geometry in 3D, a shared mesh
 builder, the OBJ and glTF backends, the CLI changes, and how all of it is tested. The language side
 (`$`, tropism, `%`, `consider:`, `G`, `.`) is in [`language.md`](language.md).
@@ -250,8 +252,9 @@ the `.gltf` form because it is text.
 
 - Line ends change from round to straight (butt), so every golden with segments changes once.
 - 3D models are drawn as before: an orthographic front view (looking down −Z), primitives painted
-  in geometry order, with no depth sorting. ABOP's own line drawings of 3D trees (Figs 2.6–2.8) are
-  front views too.
+  in geometry order, with no depth sorting. ABOP chose a view for each of its line drawings of 3D
+  trees: Figs 2.6a–c and 2.8b–d are front views, Figs 2.6d and 2.7 are seen from +X (their examples
+  turn the tree with `/(90)`), and Fig 2.8a from below (not reproduced; `language.md` §7).
 - Segments have **straight (butt) ends**, like the lines of ABOP's figures (drawn by cpfg). A round
   cap would stick out half a line width past the end of every segment, which shows on thick
   trunks and at every change of width. Consecutive segments with the same width and color still
@@ -321,9 +324,9 @@ New in 0.2:
 
 | Example | Source | Needs |
 |---|---|---|
-| `fig2-6a` … `fig2-6d` | Fig 2.6, Table 2.1 | `$` |
-| `fig2-7a` … `fig2-7d` | Fig 2.7, Table 2.2 | `$` |
-| `fig2-8a` … `fig2-8d` | Fig 2.8, Table 2.3 | tropism |
+| `fig2-6a` … `fig2-6d` | Fig 2.6, Table 2.1 | `$`; 2.6b uses r1 = 0.8 (Table 2.1 prints 0.9, a probable misprint); 2.6d starts with `/(90)` (seen from +X) |
+| `fig2-7a` … `fig2-7d` | Fig 2.7, Table 2.2 | `$`; start with `/(90)` (seen from +X) |
+| `fig2-8a` … `fig2-8d` | Fig 2.8, Table 2.3 | tropism; 2.8c uses lr = 1.079 (Table 2.3 prints 1.790, a probable misprint); the book's 2.8a is seen from below, and its 2.8c–d couldn't be reproduced exactly, even with cpfg |
 | `fig3-5-capsella` | Fig 3.5 | `.`, `G`, `%`, polygons |
 | `fig3-17-mycelis` | L-system 3.2 (model II) | `G`, `ignore:`; stand-in for `~O` |
 | `mycelis-model3` | L-system 3.3 | `consider:`, `G`; stand-in for `K` |

@@ -8,7 +8,7 @@ final product". What matters is the milestones and their order.
 | Version | Scope | Status |
 |---|---|---|
 | 0.1 | ABOP Chapter 1 | ✅ released |
-| 0.2 | 3D output (OBJ, glTF); ABOP Chapters 2–3 | next |
+| 0.2 | 3D output (OBJ, glTF); ABOP Chapters 2–3 | in progress |
 | 0.3 | ABOP Chapters 4–6 | |
 | 0.4 | ABOP Chapters 7–8: **all of ABOP covered** | |
 | 1.0 | L-Py / lpfg-level capability, including scripting | |
@@ -25,15 +25,17 @@ final product". What matters is the milestones and their order.
 
 ## 0.2: 3D output, Chapters 2–3
 
-- Spec first: extend `language.md` for the turtle features of Chapters 2–3 (specified).
-  - `$`: roll the turtle to horizontal (Ch 2).
-  - Tropism: bend the heading toward a vector **T** after each step, with an elasticity setting (Ch 2).
-  - `%`: cut the remainder of a branch (Ch 3).
-  - `consider:` (Ch 3, Mycelis model III).
-  - `G` and `.` pulled forward from Ch 5 (Capsella, Mycelis).
+- ✅ Spec first: extend `language.md` for the turtle features of Chapters 2–3.
+- ✅ Language: `consider:`, `tropism` and `elasticity` settings, `%` (cut), `empty`.
+- ✅ Turtle: `$` (roll to horizontal), tropism, `G` and `.` (pulled forward from Ch 5),
+  `{` starting an empty polygon.
+- ✅ Checked against cpfg, the software that made ABOP's figures: `/` and `\` roll the way
+  cpfg's do, tropism bends in cpfg's two steps, and SVG lines have straight ends. RubberPlant's
+  3D geometry matches cpfg's for every Chapter 2 figure.
+- ✅ The Chapter 2 figures as examples, with golden SVGs.
 - 3D geometry: segments are cylinders, as in ABOP's software ([`backends.md`](backends.md)).
 - Mesh backends: OBJ, then glTF ([`backends.md`](backends.md)).
-- The Chapter 2–3 figures as examples, with golden outputs.
+- The Chapter 3 figures as examples, with golden outputs.
 
 ## 0.3: Chapters 4–6
 
