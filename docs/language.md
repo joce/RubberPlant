@@ -839,7 +839,7 @@ K as [ '(4) { -(45) f +(90) f +(90) f } ];   (* stand-in flower: a red triangle 
 None.
 
 Not modeled yet:
-- **Predefined surfaces** (`~`, ABOP's `#include`; Ch 5, 0.3). `~H` lexes as `~` followed by the name `H`, and the turtle ignores `~`. The Chapter 3 examples that need surfaces (crocus, Lychnis, Mycelis, lilac) draw their organs with stand-in `as` rules, marked as such in comments.
+- **Predefined surfaces** (`~`, ABOP's `#include`; Ch 5, 0.3). `~H` lexes as `~` followed by the name `H`, and the turtle ignores `~`. The Chapter 3 examples that need surfaces (crocus, Lychnis, Mycelis, lilac; not written yet, step 8 of the 0.2 plan) will draw their organs with stand-in `as` rules, marked as such in comments.
 - **Table L-systems** (ABOP §3.1.2, "the effect of environment"): no figure uses them. lpfg has groups; revisit with 1.0.
 - **Partial L-systems** (ABOP §3.1.1, §3.3): they are nondeterministic and have no geometry. They can be written as `weight` rules plus `as` rules, but the book's diagrams aren't transcribed as examples. The developmental sequences that the book prints in full (the signal example of §3.1.2, the lily-of-the-valley sequence of §3.3.1) are derivation tests instead.
 - **Developmental sequences in one image** (Figs 3.5, 3.9, 3.10, 3.14, 3.17 show several stages side by side): deferred to animation (Ch 6, 0.3). Each example renders one stage, chosen with `derivations`.
