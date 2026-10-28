@@ -111,7 +111,11 @@ For `Segment(p0, p1, w, c)` with width scale *k* (§4.4):
 - **Vertices**, 2*s* in this order: the ring at p0 (p0 + *r* **d**<sub>j</sub>), then the ring at p1
   (p1 + *r* **d**<sub>j</sub>). Vertex *j* of each ring has the normal **d**<sub>j</sub>, so the tube is
   smoothly shaded.
-- **Triangles**, 2*s*: two per side quad (*j*, *j* + 1), counter-clockwise seen from outside.
+- **Triangles**, 2*s*: two per side quad, counter-clockwise seen from outside. For *j* = 0 … *s* − 1
+  in order, with *j*′ = (*j* + 1) mod *s*, the triangles are (*j*, *j*′, *s* + *j*′) and
+  (*j*, *s* + *j*′, *s* + *j*), as indices into the cylinder's own vertices. (**e1**, **e2**, **n**)
+  is right-handed, so going from *j* to *j*′ turns counter-clockwise around **n**, and both
+  triangles face outward.
 - **No end caps**, as in cpfg and lpfg: the end of a branch tip is open, which shows only from
   close up.
 - Per cylinder: 24 vertices and 24 triangles with the defaults.
@@ -132,17 +136,35 @@ with the bend angle and the width; it is small for the gentle bends of tropism. 
 
 For `Polygon(vs, c)`:
 
-1. Drop consecutive duplicate vertices, then drop the last vertex while it equals the first.
+1. Drop consecutive duplicate vertices (exact equality), then drop the last vertex while it equals
+   the first. What is left is the **loop**.
 2. Fewer than 3 vertices left: no triangles.
-3. Compute the **Newell normal** **N** of the vertex loop. If |**N**| < 10<sup>−12</sup> × (squared
-   extent of the loop), the polygon has no area: no triangles.
-4. Project the loop onto the coordinate plane perpendicular to **N**'s largest component, keeping
-   the loop counter-clockwise around **N**.
-5. **Ear clipping**: scan the remaining loop from its first vertex, clip the first ear found, repeat.
-   If no ear can be found (a self-intersecting or degenerate loop), triangulate what's left as a fan
-   from its first remaining vertex.
-6. Every vertex gets the normal **N** / |**N**| (flat shading). Triangles are counter-clockwise
-   around **N**.
+3. Compute the **Newell normal** **N** of the loop. Let *E* be the loop's largest extent along X,
+   Y or Z (max − min of that coordinate). If |**N**| < 10<sup>−12</sup> × *E*<sup>2</sup>, the
+   polygon has no area: no triangles.
+4. Project the loop onto the coordinate plane perpendicular to **N**'s largest component (in
+   absolute value; X, Y, then Z on ties). The 2D coordinates (*u*, *v*) are the other two axes in
+   cyclic order ((Y, Z) when dropping X, (Z, X) when dropping Y, (X, Y) when dropping Z), swapped
+   when the dropped component of **N** is negative. This keeps the loop counter-clockwise around
+   **N**.
+5. **Ear clipping**, in the projection, on the *remaining loop* (initially the whole loop):
+   - While more than 3 vertices remain, scan them from the first remaining vertex and clip the
+     first ear found: emit its triangle and remove its middle vertex from the remaining loop. Each
+     scan starts again from the first remaining vertex.
+   - A remaining vertex *v*, with *p* before it and *q* after it in the remaining loop (cyclically),
+     is an **ear** when the turn *p*, *v*, *q* is strictly counter-clockwise (exact sign of the 2D
+     cross product, no tolerance), and no other remaining vertex lies inside the triangle
+     (*p*, *v*, *q*) or on its edges. Remaining vertices at the same 2D position as *p*, *v* or *q*
+     don't count, so a loop that touches itself at a vertex can still be clipped.
+   - When 3 vertices remain, they form the last triangle. If no ear can be found (a
+     self-intersecting or degenerate loop), what remains is triangulated as a fan from the first
+     remaining vertex. The last triangle and the fan's triangles are emitted only if their area
+     in the projection isn't zero. (An ear's area is never zero. Zero-area leftovers are common:
+     a leaf drawn with `F F F` has collinear vertices along its edges.)
+6. The polygon's vertices are the loop's, in loop order, each with the normal **N** / |**N**| (flat
+   shading). Triangles are counter-clockwise around **N**.
+
+A primitive that produces no triangles, polygon or segment, adds no vertices.
 
 Polygons are **two-sided**: glTF materials set `doubleSided`, and OBJ viewers draw both sides by
 default. Back faces aren't duplicated.
@@ -157,9 +179,9 @@ Taken as world units, that trunk would be a blob. Mesh backends therefore multip
 - **Auto** (the default): *k* makes the mesh match the SVG that the default options would draw.
   Take *E* = max(x extent, y extent) of all geometry points (the SVG's front view), *W* = the largest
   segment width, and the SVG defaults *size* = 800 and *margin* = 10. Then
-  *k* = *E* / (*size* − 2 (*margin* + *W* / 2)), and *k* = 1 if *E* = 0. If the denominator isn't
-  positive, which is the case where the SVG backend would refuse to render, `build` fails and suggests
-  `--width-scale`.
+  *k* = *E* / (*size* − 2 (*margin* + *W* / 2)). If the denominator isn't positive, which is the
+  case where the SVG backend would refuse to render, `build` fails and suggests `--width-scale`;
+  this is checked first. Otherwise *k* = 1 if *E* = 0.
 
 So by default a cylinder appears as thick, relative to the plant, as the line in the SVG. The cost is
 that *k* depends on the extent of the drawing. That's harmless for still images, and animation
