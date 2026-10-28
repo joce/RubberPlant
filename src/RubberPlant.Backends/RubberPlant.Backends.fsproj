@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <Compile Include="Palette.fs" />
     <Compile Include="Svg.fs" />
   </ItemGroup>
 

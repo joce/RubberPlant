@@ -163,8 +163,8 @@ let tests =
           }
 
           test "colors wrap around the palette" {
-              Expect.equal (Svg.colorOf Svg.palette.Length) (Svg.colorOf 0) ""
-              Expect.equal (Svg.colorOf -1) (Svg.colorOf (Svg.palette.Length - 1)) ""
+              let svg = Svg.render options [ Polygon([ Vec3.zero; Vec3.create 1.0 0.0 0.0; Vec3.create 0.0 1.0 0.0 ], -7) ] |> ok
+              Expect.stringContains svg "fill=\"#2e7d32\"" "-7 is palette entry 1"
           }
 
           test "empty geometry" {
