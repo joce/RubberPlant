@@ -238,11 +238,54 @@ let v02 =
                     expectPath g [ v 0 0 0; v 0 1 0; v s30 (1.0 + c30) 0 ]
                 }
 
-                test "the whole frame turns around H x T" {
+                test "T along L: H and L turn, U stays" {
                     let t = Turtle.bend (v 1 0 0) 0.5 start
                     Expect.isTrue (close t.H (v s30 c30 0)) $"H: %A{t.H}"
                     Expect.isTrue (close t.L (v -c30 s30 0)) $"L: %A{t.L}"
                     Expect.isTrue (close t.U (v 0 0 1)) $"U is along the axis and doesn't move: %A{t.U}"
+                }
+
+                test "the bend is cpfg's, step for step" {
+                    // cpfg's bend() transcribed from interpret.c, in cpfg's own frame (its U is our -U).
+                    let changeDir (a: Vec3) (b: Vec3) s c = c * a + s * b, c * b - s * a
+
+                    let cpfgBend (tHat: Vec3) (e: float) (h: Vec3, l: Vec3, uc: Vec3) =
+                        let s1 = e * dot tHat uc
+                        let h1, uc1 = changeDir h uc s1 (sqrt (1.0 - s1 * s1))
+                        let s2 = e * dot tHat l
+                        let h2, l1 = changeDir h1 l s2 (sqrt (1.0 - s2 * s2))
+                        h2, l1, uc1
+
+                    // Fig 2.8d's tropism, from a frame that has turned, pitched and rolled.
+                    let t = v -0.61 0.77 -0.19
+                    let tHat = (1.0 / sqrt (dot t t)) * t
+                    let mutable ours = start |> Turtle.pitch 36.0 |> Turtle.roll 50.0 |> Turtle.turn 20.0
+                    let mutable theirs = ours.H, ours.L, -1.0 * ours.U
+
+                    for _ in 1..20 do
+                        ours <- Turtle.bend tHat 0.4 ours
+                        theirs <- cpfgBend tHat 0.4 theirs
+
+                    let h, l, uc = theirs
+                    Expect.isTrue (close ours.H h) $"H: %A{ours.H} vs %A{h}"
+                    Expect.isTrue (close ours.L l) $"L: %A{ours.L} vs %A{l}"
+                    Expect.isTrue (close ours.U (-1.0 * uc)) $"U: %A{ours.U} vs %A{-1.0 * uc}"
+                }
+
+                test "two steps: toward U first, then toward L" {
+                    // T = (0, 0, 1) = U: one rotation toward U, sin = e.
+                    let up = Turtle.bend (v 0 0 1) 0.5 start
+                    Expect.isTrue (close up.H (v 0 c30 s30)) $"H: %A{up.H}"
+                    Expect.isTrue (close up.L start.L) "L unchanged"
+                    // T halfway between U and -L: two rotations, not one around H x T.
+                    let k = 1.0 / sqrt 2.0
+                    let both = Turtle.bend (v k 0 k) 0.5 start
+                    let s1 = 0.5 * k
+                    let c1 = sqrt (1.0 - s1 * s1)
+                    let s2 = 0.5 * -k
+                    let c2 = sqrt (1.0 - s2 * s2)
+                    let h1 = c1 * start.H + s1 * start.U
+                    Expect.isTrue (close both.H (c2 * h1 + s2 * start.L)) $"H: %A{both.H}"
                 }
 
                 test "negative elasticity bends away from T" {

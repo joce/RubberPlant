@@ -649,18 +649,21 @@ Backends (SVG, OBJ, glTF, …) consume this geometry; see [`backends.md`](backen
 
 ### 5.5 Tropism (v0.2)
 
-ABOP Ch 2 (p. 58, Fig 2.8, Fig 2.9) bends branches by "slightly rotating the turtle in the direction of a predefined tropism vector **T** after drawing each segment", by α = *e* · |H × **T**|. With **T̂** = **T** / |**T**| and *e* from the settings (§4.7), after every move (`F`, `f` and `G`):
+ABOP Ch 2 (p. 58, Fig 2.8, Fig 2.9) bends branches by "slightly rotating the turtle in the direction of a predefined tropism vector **T** after drawing each segment", by α = *e* · |H × **T**|. RubberPlant computes this the way cpfg does (`bend` in `interpret.c`), in two rotations. With **T̂** = **T** / |**T**| and *e* from the settings (§4.7), after every move (`F`, `f` and `G`):
 
-1. Let **A** = H × **T̂**. If |**A**| < 10<sup>−9</sup> (H parallel to **T**), nothing happens.
-2. Otherwise rotate the whole frame (H, L and U together) around the axis **A** / |**A**| by the angle α given by **sin α = *e* · |A|**, clamped to [−1, 1]. Rotating around H × **T̂** turns H toward **T**; a negative *e* turns it away.
+1. **Toward U.** Let *s*<sub>1</sub> = *e* · (**T̂** · U), clamped to [−1, 1], and *c*<sub>1</sub> = √(1 − *s*<sub>1</sub><sup>2</sup>). Then H′ = *c*<sub>1</sub> H + *s*<sub>1</sub> U and U′ = *c*<sub>1</sub> U − *s*<sub>1</sub> H. L is unchanged.
+2. **Toward L.** Let *s*<sub>2</sub> = *e* · (**T̂** · L), clamped to [−1, 1], and *c*<sub>2</sub> = √(1 − *s*<sub>2</sub><sup>2</sup>), with the L of step 1 (unchanged). Then H″ = *c*<sub>2</sub> H′ + *s*<sub>2</sub> L and L′ = *c*<sub>2</sub> L − *s*<sub>2</sub> H′. U′ is unchanged.
+
+Each step turns H toward the component of **T̂** along U, then along L, so H turns toward **T**; a negative *e* turns it away. When H is parallel to **T**, both components are zero and nothing happens; *e* = 0 disables tropism.
 
 Notes:
-- **No angle unit is involved.** *e* is a plain coefficient, and the formula gives the sine of the bend. For the small bends of ABOP's tables, sin α ≈ α (in radians), which is the book's formula. Nothing in the language is written in radians.
-- **This is what cpfg and lpfg compute** (checked in their source: `bend` in cpfg's `interpret.c`, `Turtle::_Bend` in lpfg's `turtle.cpp`). They use the same sine, but apply it as two successive rotations: toward U by the component of **T̂** along U, then toward L by its component along L. The single rotation used here agrees with that to second order, doesn't depend on the turtle's roll, and stays defined when *e* · |**A**| > 1, where the tools take the square root of a negative number.
-- **T is normalized**, as in both tools: the vector gives the direction, and *e* alone gives the strength. ABOP's Table 2.3 vectors are unit vectors anyway.
-- **Every move bends, `f` included**, as in both tools. ABOP says "after drawing each segment", but its figures were made with cpfg.
+- **Why two rotations.** This is cpfg's computation, and cpfg made ABOP's figures: with it, RubberPlant's Fig 2.8 geometry matches cpfg's segment for segment. (cpfg's frame starts with U = (0, 0, −1); written in RubberPlant's frame, its rotations are the ones above.) A single rotation around H × **T̂** by sin α = *e* · |H × **T̂**| agrees to first order but drifts from cpfg on strong, tilted tropisms (by up to 1.25% of the tree's height on Fig 2.8d). The two-step bend depends slightly on the turtle's roll; that is cpfg's behavior too.
+- **No angle unit is involved.** *e* is a plain coefficient, and the formula gives the sine of each bend. For the small bends of ABOP's tables, sin α ≈ α (in radians), which is the book's formula. Nothing in the language is written in radians.
+- **Clamped.** cpfg takes the square root of a negative number when *e* · (**T̂** · U) or *e* · (**T̂** · L) exceeds 1 in magnitude; RubberPlant clamps the sine to [−1, 1] instead, so a strong elasticity turns H by at most 90° per step.
+- **T is normalized**, as in cpfg and lpfg: the vector gives the direction, and *e* alone gives the strength. ABOP's Table 2.3 vectors are unit vectors anyway.
+- **Every move bends, `f` included**, as in cpfg and lpfg. ABOP says "after drawing each segment", but its figures were made with cpfg.
 - Order within a move: the segment is emitted (for `F` and `G`) and the polygon vertex recorded (for `F` and `f`), then the frame bends. The bend affects the next move.
-- The frame stays orthonormal: it is one rigid rotation (Rodrigues' formula) applied to all three vectors.
+- The frame stays orthonormal: each step is a rotation in the plane of two of its vectors.
 
 ---
 
