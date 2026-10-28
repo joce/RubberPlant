@@ -1,0 +1,18 @@
+(* ABOP Fig 2.7a: sympodial tree-like structure of Aono and Kunii (book p. 59).
+   Constants: Table 2.2, row a (book p. 58).
+   RubberPlant addition: the book draws this tree seen from +X (from the side). The axiom
+   starts with /(90), which turns the whole tree a quarter turn about the vertical axis so
+   that a front view shows it the same way. It is exact here: the model has no tropism, and
+   $ only depends on the vertical.
+*)
+settings { derivations = 10; }
+
+let r1 = 0.9;     (* contraction ratio 1 *)
+let r2 = 0.7;     (* contraction ratio 2 *)
+let a1 = 5;       (* branching angle 1 *)
+let a2 = 65;      (* branching angle 2 *)
+let wr = 0.707;   (* width decrease rate *)
+
+axiom: /(90) A(1, 10);
+A(l, w) -> !(w) F(l) [ &(a1) B(l*r1, w*wr) ] /(180) [ &(a2) B(l*r2, w*wr) ];
+B(l, w) -> !(w) F(l) [ +(a1) $ B(l*r1, w*wr) ] [ -(a2) $ B(l*r2, w*wr) ];

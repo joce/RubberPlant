@@ -1,6 +1,6 @@
 # RubberPlant L-system language
 
-Status: **v0.2, specified**. v0.1 covers ABOP Chapter 1 (§1.1–§1.10) and is implemented. The v0.2 additions for Chapters 2–3 are marked **(v0.2)**; they are specified but not implemented yet. Geometry and output backends are specified in [`backends.md`](backends.md).
+Status: **v0.2, implemented**. v0.1 covers ABOP Chapter 1 (§1.1–§1.10) and is implemented. The v0.2 additions for Chapters 2–3 are marked **(v0.2)**; they are implemented. Geometry and output backends are specified in [`backends.md`](backends.md).
 
 Source of truth for semantics: *The Algorithmic Beauty of Plants* (Prusinkiewicz & Lindenmayer, 1990), "ABOP" below. Section refs like §1.8 point there.
 
@@ -839,11 +839,11 @@ K as [ '(4) { -(45) f +(90) f +(90) f } ];   (* stand-in flower: a red triangle 
 None.
 
 Not modeled yet:
-- **Predefined surfaces** (`~`, ABOP's `#include`; Ch 5, 0.3). `~H` lexes as `~` followed by the name `H`, and the turtle ignores `~`. The Chapter 3 examples that need surfaces (crocus, Lychnis, Mycelis, lilac) draw their organs with stand-in `as` rules, marked as such in comments.
+- **Predefined surfaces** (`~`, ABOP's `#include`; Ch 5, 0.3). `~H` lexes as `~` followed by the name `H`, and the turtle ignores `~`. The Chapter 3 examples that need surfaces (crocus, Lychnis, Mycelis, lilac; not written yet, step 8 of the 0.2 plan) will draw their organs with stand-in `as` rules, marked as such in comments.
 - **Table L-systems** (ABOP §3.1.2, "the effect of environment"): no figure uses them. lpfg has groups; revisit with 1.0.
 - **Partial L-systems** (ABOP §3.1.1, §3.3): they are nondeterministic and have no geometry. They can be written as `weight` rules plus `as` rules, but the book's diagrams aren't transcribed as examples. The developmental sequences that the book prints in full (the signal example of §3.1.2, the lily-of-the-valley sequence of §3.3.1) are derivation tests instead.
 - **Developmental sequences in one image** (Figs 3.5, 3.9, 3.10, 3.14, 3.17 show several stages side by side): deferred to animation (Ch 6, 0.3). Each example renders one stage, chosen with `derivations`.
-- **Initial heading or view** (Fig 1.37b renders rotated 90°): no Chapter 2–3 figure needs it.
+- **Views** (v0.2): ABOP chose a view for each figure, and RubberPlant has no camera yet (backends draw a front view, looking down −Z). Fig 1.37b renders rotated 90°. Figs 2.6d and 2.7a–d are drawn from +X: their examples start the axiom with `/(90)`, which turns the tree a quarter turn about the vertical axis; that is exact because they have no tropism and `$` only depends on the vertical. Fig 2.8a is drawn from below (about 54° under the horizon), which a roll can't reproduce: a view setting is deferred.
 
 Temporary decisions (may be revisited):
 - **Module declarations**: dropped. `module` stays reserved.

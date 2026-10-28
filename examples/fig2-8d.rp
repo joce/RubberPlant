@@ -1,0 +1,21 @@
+(* ABOP Fig 2.8d: tree-like structure with ternary branching and tropism (book p. 60).
+   Constants: Table 2.3, row d (book p. 61).
+   The book's figure couldn't be reproduced from this L-system, in any view, even with cpfg
+   (the program that drew the book's figures): its crown is wider and droops more.
+*)
+settings {
+  derivations = 6;
+  tropism = (-0.61, 0.77, -0.19);
+  elasticity = 0.4;
+}
+
+let d1 = 180;      (* divergence angle 1 *)
+let d2 = 252;      (* divergence angle 2 *)
+let a  = 36;       (* branching angle *)
+let lr = 1.07;     (* elongation rate *)
+let vr = 1.732;    (* width increase rate *)
+
+axiom: !(1) F(200) /(45) A;
+A    -> !(vr) F(50) [ &(a) F(50) A ] /(d1) [ &(a) F(50) A ] /(d2) [ &(a) F(50) A ];
+F(l) -> F(l*lr);
+!(w) -> !(w*vr);
