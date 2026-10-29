@@ -9,6 +9,8 @@
   <ItemGroup>
     <Compile Include="PaletteTests.fs" />
     <Compile Include="SvgTests.fs" />
+    <Compile Include="MeshFixtures.fs" />
+    <Compile Include="MeshTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 

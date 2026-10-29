@@ -3,6 +3,7 @@
   <ItemGroup>
     <Compile Include="Palette.fs" />
     <Compile Include="Svg.fs" />
+    <Compile Include="Mesh.fs" />
   </ItemGroup>
 
   <ItemGroup>

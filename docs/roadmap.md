@@ -33,7 +33,9 @@ final product". What matters is the milestones and their order.
   cpfg's do, tropism bends in cpfg's two steps, and SVG lines have straight ends. RubberPlant's
   3D geometry matches cpfg's for every Chapter 2 figure.
 - ✅ The Chapter 2 figures as examples, with golden SVGs.
-- 3D geometry: segments are cylinders, as in ABOP's software ([`backends.md`](backends.md)).
+- ✅ `sin`, `cos` and `tan` give the same bits on every platform, so 3D output is reproducible.
+- ✅ 3D geometry: segments are cylinders, as in ABOP's software, and polygons are triangulated
+  ([`backends.md`](backends.md)).
 - Mesh backends: OBJ, then glTF ([`backends.md`](backends.md)).
 - The Chapter 3 figures as examples, with golden outputs.
 
