@@ -142,6 +142,20 @@ let tests =
                   Expect.equal (run [ "render"; input; "-o"; glb; "--size"; "100" ]) 2 "--size with glTF")
           }
 
+          test "glTF of coordinates beyond float32 is an error, and keeps existing output" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "huge.rp")
+                  File.WriteAllText(input, "axiom: F(1e39);")
+
+                  for ext in [ "gltf"; "glb" ] do
+                      let out = Path.Combine(dir, "huge." + ext)
+                      File.WriteAllText(out, "previous")
+                      Expect.equal (run [ "render"; input; "-o"; out ]) 1 ext
+                      Expect.equal (File.ReadAllText out) "previous" "existing output kept"
+
+                  Expect.equal (run [ "render"; input; "-o"; Path.Combine(dir, "huge.obj") ]) 0 "OBJ is fine")
+          }
+
           test "the format comes from the extension, case-insensitive" {
               withTempDir (fun dir ->
                   let out = Path.Combine(dir, "TREE.OBJ")

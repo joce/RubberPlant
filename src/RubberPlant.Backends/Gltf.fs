@@ -56,6 +56,20 @@ let private buffer (mesh: Mesh) =
 
     bytes
 
+/// The mesh, if every position and normal fits in float32 (§6): glTF forbids
+/// infinite accessor data, and double coordinates can exceed float32's range.
+let private meshFor (options: MeshOptions) (geometry: Geometry) : Result<Mesh, string> =
+    let fits (v: Vec3) =
+        Single.IsFinite(float32 v.X) && Single.IsFinite(float32 v.Y) && Single.IsFinite(float32 v.Z)
+
+    build options geometry
+    |> Result.bind (fun mesh ->
+        if mesh.Groups |> List.forall (fun g -> Array.forall fits g.Positions && Array.forall fits g.Normals) then
+            Ok mesh
+        else
+            Error
+                "the mesh has coordinates too large for glTF (beyond float32's ±3.4e38); use smaller steps, or OBJ")
+
 /// The JSON document (§6), ending with a newline. `uri` is the buffer's data URI
 /// (.gltf), or None (.glb, where the buffer is the BIN chunk).
 let private document (mesh: Mesh) (bufferLength: int) (uri: string option) : byte[] =
@@ -195,9 +209,9 @@ let private document (mesh: Mesh) (bufferLength: int) (uri: string option) : byt
     stream.ToArray()
 
 /// Renders geometry as a .gltf: JSON text with the buffer embedded as a base64
-/// data URI. Fails when the mesh can't be built (§4).
+/// data URI. Fails when the mesh can't be built (§4) or doesn't fit in float32 (§6).
 let renderText (options: MeshOptions) (geometry: Geometry) : Result<string, string> =
-    build options geometry
+    meshFor options geometry
     |> Result.map (fun mesh ->
         let data = buffer mesh
         let uri = "data:application/octet-stream;base64," + Convert.ToBase64String data
@@ -209,9 +223,9 @@ let private padded (pad: byte) (bytes: byte[]) =
     Array.append bytes (Array.create extra pad)
 
 /// Renders geometry as a .glb: header, JSON chunk, BIN chunk (§6). Fails when the
-/// mesh can't be built (§4).
+/// mesh can't be built (§4) or doesn't fit in float32 (§6).
 let renderBinary (options: MeshOptions) (geometry: Geometry) : Result<byte[], string> =
-    build options geometry
+    meshFor options geometry
     |> Result.map (fun mesh ->
         let data = buffer mesh
         let json = padded (byte ' ') (document mesh data.Length None)

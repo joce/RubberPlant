@@ -412,6 +412,8 @@ The document, with every key in this order (`…` stands for more elements of th
   with the bufferView of the same index, and the material *g*.
 - Positions and normals are converted to float32 (round to nearest). `min` and `max` are those of
   the float32 positions, so they match the data exactly, as the validator requires.
+- If a position overflows float32 (a coordinate beyond about ±3.4·10<sup>38</sup>, which double
+  precision and OBJ allow), rendering fails with an error: glTF forbids infinite accessor data.
 - Numbers: integers as integers; float32 values (`min`, `max`) in the shortest form that reads
   back as the same float32; other doubles (`baseColorFactor`) in the shortest form that reads back
   as the same double. Both are .NET's round-trip format (`"R"`), which may use an exponent

@@ -159,6 +159,20 @@ let tests =
               | cs -> failtestf "expected one JSON chunk, got %A" (cs |> List.map fst)
           }
 
+          test "coordinates beyond float32 are an error, not an exception" {
+              // Found in review: F(1e39) is fine in double precision (and OBJ) but
+              // overflows glTF's float32.
+              let huge = [ Segment(Vec3.create 0.0 0.0 0.0, Vec3.create 0.0 1e39 0.0, 1.0, 0) ]
+
+              for r in [ Gltf.renderText defaultMeshOptions huge |> Result.map ignore
+                         Gltf.renderBinary defaultMeshOptions huge |> Result.map ignore ] do
+                  match r with
+                  | Error msg -> Expect.stringContains msg "float32" ""
+                  | Ok() -> failtest "expected an error"
+
+              Expect.isOk (Obj.render defaultMeshOptions "huge.mtl" huge) "OBJ keeps double range"
+          }
+
           test "mesh errors are passed on" {
               let bad = { defaultMeshOptions with Sides = 2 }
               Expect.isError (Gltf.renderText bad []) ""
