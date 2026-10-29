@@ -402,6 +402,17 @@ let private scaleTests =
                       Expect.equal g.Positions[1] (v s 0.0 z) "world coordinates"
           }
 
+          test "polygons spanning nearly the whole double range" {
+              // Found in review: the local frame's differences overflowed and the
+              // triangle vanished. Whichever vertex comes first, it's kept.
+              let a, b, c = v -1e308 0.0 0.0, v 1e308 0.0 0.0, v 0.0 1e308 0.0
+
+              for loop in [ [ a; b; c ]; [ b; c; a ]; [ c; a; b ] ] do
+                  let g = build (explicitScale 1.0) [ Polygon(loop, 0) ] |> ok |> single
+                  Expect.equal (g.Triangles.Length / 3) 1 "one triangle"
+                  closeVec g.Normals[0] (v 0.0 0.0 1.0) "normal"
+          }
+
           test "coordinates beyond double precision are an error" {
               build defaultMeshOptions [ seg (v -1e308 0.0 0.0) (v 1e308 0.0 0.0) 1.0 0 ]
               |> failsWith "too large"

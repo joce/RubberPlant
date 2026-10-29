@@ -151,7 +151,9 @@ For `Polygon(vs, c)`:
 
 Steps 3 to 5 work in the loop's **local frame**: each vertex minus the loop's first vertex,
 multiplied by 2<sup>−*e*</sup>, where 2<sup>*e*</sup> ≤ (the largest absolute coordinate of
-those differences) < 2<sup>*e*+1</sup>.
+those differences) < 2<sup>*e*+1</sup>. If some coordinate of the loop is at least 2<sup>1022</sup>
+in absolute value, the vertices are halved before the subtraction (exact), so that the
+differences can't overflow.
 
 3. Compute the **Newell normal** **N** of the loop (in the local frame). Let *E* be the loop's
    largest extent along X, Y or Z (max − min of that coordinate, in the local frame). If |**N**| < 10<sup>−12</sup> × *E*<sup>2</sup>, the

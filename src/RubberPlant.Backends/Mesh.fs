@@ -238,6 +238,9 @@ let private earClip (pts: struct (float * float)[]) : ResizeArray<int> =
 
     tris
 
+/// Coordinates from which differences could overflow (2^1022).
+let private HalveAbove = Math.ScaleB(1.0, 1022)
+
 /// A flat polygon (§4.3).
 let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
     let loop = loopOf vertices
@@ -247,7 +250,10 @@ let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
         // two from the loop's size, so that the result depends neither on where the
         // polygon is nor on its size, and the Newell normal's products neither
         // overflow nor underflow.
-        let relative = loop |> Array.map (fun v -> v - loop[0])
+        // Halved first if a difference could overflow (exact: these are huge numbers).
+        let largest = loop |> Array.map (fun v -> max (abs v.X) (max (abs v.Y) (abs v.Z))) |> Array.max
+        let pre = if largest >= HalveAbove then 0.5 else 1.0
+        let relative = loop |> Array.map (fun v -> pre * v - pre * loop[0])
         let m = relative |> Array.map (fun v -> max (abs v.X) (max (abs v.Y) (abs v.Z))) |> Array.max
         let exponent = if m > 0.0 then Math.ILogB m else 0
 
