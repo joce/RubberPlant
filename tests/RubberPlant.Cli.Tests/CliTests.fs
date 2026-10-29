@@ -128,6 +128,20 @@ let tests =
                   Expect.stringContains (File.ReadAllText(Path.Combine(dir, "tree.mtl"))) "newmtl color0" "")
           }
 
+          test "render writes a .gltf and a .glb" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+                  let gltf, glb = Path.Combine(dir, "tree.gltf"), Path.Combine(dir, "tree.glb")
+                  Expect.equal (run [ "render"; input; "-o"; gltf ]) 0 ".gltf"
+                  Expect.stringStarts (File.ReadAllText gltf) "{\n  \"asset\"" "JSON"
+                  Expect.equal (run [ "render"; input; "-o"; glb; "--sides"; "6"; "--width-scale"; "0.01" ]) 0 ".glb"
+                  Expect.equal (File.ReadAllBytes(glb)[0..3]) "glTF"B "binary glTF"
+                  Expect.isFalse (File.Exists(Path.Combine(dir, "tree.mtl"))) "no MTL"
+                  Expect.equal (run [ "render"; input; "--format"; "glb" ]) 0 "--format glb"
+                  Expect.isTrue (File.Exists(Path.Combine(dir, "koch.glb"))) "koch.glb"
+                  Expect.equal (run [ "render"; input; "-o"; glb; "--size"; "100" ]) 2 "--size with glTF")
+          }
+
           test "the format comes from the extension, case-insensitive" {
               withTempDir (fun dir ->
                   let out = Path.Combine(dir, "TREE.OBJ")
@@ -155,7 +169,6 @@ let tests =
                   Expect.equal (run [ "render"; input; "-o"; out "svg"; "--format"; "obj" ]) 2 "-o and --format disagree"
                   Expect.equal (run [ "render"; input; "-o"; out "obj"; "--format"; "obj" ]) 0 "they agree"
                   Expect.equal (run [ "render"; input; "--format"; "png" ]) 2 "unknown format"
-                  Expect.equal (run [ "render"; input; "-o"; out "gltf" ]) 2 "glTF isn't available yet"
                   Expect.isFalse (File.Exists(out "png")) "nothing written")
           }
 

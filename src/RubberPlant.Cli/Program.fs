@@ -15,7 +15,8 @@ let usage =
   rubberplant check  <file.rp> [options]
 
 Commands:
-  render   Derive, interpret and draw the L-system, as SVG or as a 3D mesh (OBJ).
+  render   Derive, interpret and draw the L-system, as SVG or as a 3D mesh
+           (OBJ, glTF).
   derive   Print the derived string (with --drawing: the string after
            interpretation rules, as the turtle sees it).
   check    Parse and check the file; report errors and warnings.
@@ -31,15 +32,18 @@ Options (override the file's settings):
       --seed <n>          random seed (default 0)
 
 Render options:
-  -o, --output <file>     output file; its extension (.svg, .obj) picks the format
-                          (default: the input file, with the extension of --format)
-      --format <f>        svg (default) or obj, when there's no -o
+  -o, --output <file>     output file; its extension (.svg, .obj, .gltf, .glb)
+                          picks the format (default: the input file, with the
+                          extension of --format)
+      --format <f>        svg (default), obj, gltf or glb, when there's no -o
       --size <px>         SVG: size of the longer side of the image (default 800)
-      --sides <n>         OBJ: facets around each cylinder, at least 3 (default 12)
-      --width-scale <k>   OBJ: world units per line width unit, or auto (default)
-                          to match the SVG's proportions
+      --sides <n>         meshes: facets around each cylinder, at least 3
+                          (default 12)
+      --width-scale <k>   meshes: world units per line width unit, or auto
+                          (default) to match the SVG's proportions
 
 OBJ output writes two files: the .obj, and its colors in a .mtl next to it.
+glTF output is one file: .gltf (JSON, data embedded) or .glb (binary).
 """
 
 type Command =
@@ -138,7 +142,7 @@ let private parseArgs (argv: string list) : Args =
         | "--format" :: v :: rest ->
             match formatOfName v with
             | Some f -> go rest { acc with Format = Some f }
-            | None -> raise (UsageError $"--format expects svg or obj, got '%s{v}'")
+            | None -> raise (UsageError $"--format expects svg, obj, gltf or glb, got '%s{v}'")
         | "--sides" :: v :: rest ->
             match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
             | true, n when n >= 3 -> go rest { acc with Sides = Some n }
@@ -234,7 +238,7 @@ let private outputFormat (args: Args) : Format =
                 | Some g when g <> f ->
                     raise (UsageError $"--format %s{formatName g} disagrees with the output file '%s{out}'")
                 | _ -> f
-            | None -> raise (UsageError $"can't tell the output format from '%s{out}': use .svg or .obj")
+            | None -> raise (UsageError $"can't tell the output format from '%s{out}': use .svg, .obj, .gltf or .glb")
         | None -> defaultArg args.Format SvgFormat
 
     // Options that don't apply to the format are errors too (§8).
@@ -248,10 +252,7 @@ let private outputFormat (args: Args) : Format =
         if args.Size.IsSome then
             raise (UsageError $"--size doesn't apply to %s{(formatName format).ToUpperInvariant()} output")
 
-    match format with
-    | GltfFormat
-    | GlbFormat -> raise (UsageError "glTF output isn't available yet; use .svg or .obj")
-    | f -> f
+    format
 
 let private applyOverrides (args: Args) (s: Settings) : Settings =
     { s with
@@ -269,7 +270,7 @@ let private report (file: string) (diags: Diagnostic list) =
         eprintfn "%s" (Diagnostic.format file d)
 
 /// Writes all the files or none (§8), and prints `wrote <path>` for each.
-let private writeAll (files: (string * string) list) =
+let private writeAll (files: (string * byte[]) list) =
     match Output.writeAll Output.realFileSystem files with
     | Ok paths ->
         for path in paths do
@@ -281,6 +282,9 @@ let private writeAll (files: (string * string) list) =
             eprintfn "error: can't write the output: %s" m
 
         false
+
+/// UTF-8 without a byte order mark, as File.WriteAllText writes.
+let private utf8 (text: string) = Text.UTF8Encoding(false).GetBytes text
 
 let private run (args: Args) : int =
     let source =
@@ -348,14 +352,18 @@ let private run (args: Args) : int =
                                 { Svg.defaultOptions with
                                     Size = defaultArg args.Size Svg.defaultOptions.Size }
 
-                            Svg.render options output.Geometry |> Result.map (fun svg -> [ outPath, svg ])
-                        | ObjFormat
-                        | GltfFormat
-                        | GlbFormat ->
+                            Svg.render options output.Geometry |> Result.map (fun svg -> [ outPath, utf8 svg ])
+                        | ObjFormat ->
                             let mtlPath = Path.ChangeExtension(outPath, ".mtl")
 
                             Obj.render meshOptions (Path.GetFileName mtlPath) output.Geometry
-                            |> Result.map (fun o -> [ outPath, o.Obj; mtlPath, o.Mtl ])
+                            |> Result.map (fun o -> [ outPath, utf8 o.Obj; mtlPath, utf8 o.Mtl ])
+                        | GltfFormat ->
+                            Gltf.renderText meshOptions output.Geometry
+                            |> Result.map (fun text -> [ outPath, utf8 text ])
+                        | GlbFormat ->
+                            Gltf.renderBinary meshOptions output.Geometry
+                            |> Result.map (fun bytes -> [ outPath, bytes ])
 
                     match files with
                     | Error msg ->

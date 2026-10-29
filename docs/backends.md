@@ -1,9 +1,9 @@
 # Geometry and output backends
 
-Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4), OBJ (§5), the
-SVG backend's 0.2 changes (§7), the CLI (§8) for SVG and OBJ, the Chapter 2 examples and the
-mesh fixtures with their OBJ goldens (§9). Not yet: glTF (§6) and its CLI formats, the glTF
-goldens, the mesh digests, the glTF validator in CI, and the Chapter 3 examples (§9). This document specifies
+Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4), OBJ (§5), glTF
+(§6), the SVG backend's 0.2 changes (§7), the CLI (§8), and the tests (§9): the Chapter 2
+examples, the mesh fixtures with their OBJ and glTF goldens, the mesh digests and the glTF
+validator in CI. Not yet: the Chapter 3 examples (§9). This document specifies
 what the 0.2 milestone adds after the turtle: the meaning of the geometry in 3D, a shared mesh
 builder, the OBJ and glTF backends, the CLI changes, and how all of it is tested. The language side
 (`$`, tropism, `%`, `consider:`, `G`, `.`) is in [`language.md`](language.md).

@@ -22,6 +22,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      # For the Khronos glTF Validator (scripts/validate-gltf).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Build
         run: dotnet build -c Release --nologo
 
@@ -32,10 +37,18 @@ jobs:
           done
 
       # Renders every example with the CLI and compares with the committed
-      # goldens byte for byte. Identical SVG text means identical pixels in any
-      # renderer, and it is stricter than comparing rasterized images.
+      # goldens: SVGs byte for byte (identical SVG text means identical pixels in
+      # any renderer, stricter than comparing rasterized images), and the SHA-256
+      # of every example's OBJ and glTF (golden/mesh-digests.txt).
       - name: Examples match the goldens
         run: bash scripts/check-goldens.sh
+
+      # Every example's .gltf and .glb, and the mesh fixtures, must pass the
+      # Khronos glTF Validator without errors.
+      - name: glTF output is valid
+        run: |
+          npm ci --prefix scripts/validate-gltf --no-audit --no-fund
+          bash scripts/validate-examples.sh
 
       # The tests must never write, add or change a golden (untracked and
       # staged files included).

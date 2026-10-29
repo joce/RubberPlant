@@ -7,30 +7,9 @@ open RubberPlant
 open RubberPlant.Geometry
 open RubberPlant.Backends
 
-let private examples = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "examples")
-let private goldenDir = Path.Combine(__SOURCE_DIRECTORY__, "golden")
-
-/// Set RUBBERPLANT_UPDATE_GOLDEN=1 to rewrite the golden files.
-let private update = Environment.GetEnvironmentVariable "RUBBERPLANT_UPDATE_GOLDEN" = "1"
-
-/// `golden/seeds.txt`: lines of `<example> <seed>`; examples not listed use seed 0.
-/// scripts/check-goldens.sh reads the same file.
-let private seeds =
-    File.ReadAllLines(Path.Combine(goldenDir, "seeds.txt"))
-    |> Array.filter (fun l -> l.Trim() <> "" && not (l.StartsWith "#"))
-    |> Array.map (fun l ->
-        match l.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries) with
-        | [| name; seed |] -> name, int64 seed
-        | _ -> failwithf "bad line in seeds.txt: %s" l)
-    |> Map.ofArray
-
-let private seedOf name = seeds |> Map.tryFind name |> Option.defaultValue 0L
-
-let private exampleNames =
-    Directory.GetFiles(examples, "*.rp")
-    |> Array.map Path.GetFileNameWithoutExtension
-    |> Array.sort
-    |> Array.toList
+let private goldenDir = Examples.goldenDir
+let private update = Examples.update
+let private exampleNames = Examples.names
 
 let private normalize (s: string) = s.Replace("\r\n", "\n")
 
@@ -43,17 +22,7 @@ let private wideSeg (width: float) =
     Segment(Vec3.create 0.0 0.0 0.0, Vec3.create 0.0 1.0 0.0, width, 0)
 
 let private renderExample (name: string) =
-    let source = File.ReadAllText(Path.Combine(examples, name + ".rp"))
-
-    // The seed is a run parameter (§4.7); golden/seeds.txt lists the non-default ones.
-    let seed = seedOf name
-
-    let withSeed (m: Model.Model) =
-        { m with Settings = { m.Settings with Seed = seed } }
-
-    match Pipeline.compile source |> Result.bind (fst >> withSeed >> Pipeline.run) with
-    | Ok output -> Svg.render Svg.defaultOptions output.Geometry |> ok
-    | Error ds -> failtestf "%s:\n%s" name (ds |> List.map (Diagnostic.format name) |> String.concat "\n")
+    Svg.render Svg.defaultOptions (Examples.geometry name) |> ok
 
 let private golden (name: string) =
     test name {

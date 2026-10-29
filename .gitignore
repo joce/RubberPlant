@@ -10,3 +10,6 @@ obj/
 .idea/
 out/
 docs/handoff.md
+
+# Node packages for scripts/validate-gltf (installed with npm ci)
+node_modules/
