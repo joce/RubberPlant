@@ -198,6 +198,30 @@ let tests =
                   Expect.equal (run [ "render"; input; "-o"; out; "--width-scale"; "0.01" ]) 0 "explicit")
           }
 
+          test "an existing OBJ/MTL pair survives a failed render" {
+              // Found in review: the OBJ used to be replaced before the MTL failed.
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "tree.rp")
+                  let obj, mtl = Path.Combine(dir, "tree.obj"), Path.Combine(dir, "tree.mtl")
+                  File.WriteAllText(input, "axiom: F;")
+                  Expect.equal (run [ "render"; input; "-o"; obj ]) 0 "first render"
+                  let oldObj, oldMtl = File.ReadAllText obj, File.ReadAllText mtl
+                  File.SetAttributes(mtl, FileAttributes.ReadOnly)
+                  File.WriteAllText(input, "axiom: '(1) F;")
+                  Expect.equal (run [ "render"; input; "-o"; obj ]) 1 "the MTL can't be written"
+                  Expect.equal (File.ReadAllText obj) oldObj "OBJ unchanged"
+                  Expect.equal (File.ReadAllText mtl) oldMtl "MTL unchanged")
+          }
+
+          test "no OBJ is left without its MTL" {
+              withTempDir (fun dir ->
+                  let obj = Path.Combine(dir, "tree.obj")
+                  let mtlDir = Directory.CreateDirectory(Path.Combine(dir, "tree.mtl"))
+                  Expect.equal (run [ "render"; Path.Combine(dir, "koch.rp"); "-o"; obj ]) 1 "a directory is in the way"
+                  Expect.isFalse (File.Exists obj) "no new OBJ"
+                  mtlDir.Delete())
+          }
+
           test "a mesh that can't be built is an error" {
               withTempDir (fun dir ->
                   let input = Path.Combine(dir, "wide.rp")

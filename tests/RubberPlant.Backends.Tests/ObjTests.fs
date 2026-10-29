@@ -49,13 +49,21 @@ let tests =
         "OBJ"
         [ goldens
 
-          test "numbers: 6 decimals, halves away from zero, no exponent, no -0" {
+          test "numbers: the exact value to 6 decimals, halves to even, no exponent, no -0" {
               Expect.equal (Obj.num 0.0) "0" ""
               Expect.equal (Obj.num -0.0) "0" ""
               Expect.equal (Obj.num 1.0) "1" ""
               Expect.equal (Obj.num -2.5) "-2.5" ""
-              Expect.equal (Obj.num 0.0078125) "0.007813" "an exact tie rounds away from zero"
-              Expect.equal (Obj.num -0.0078125) "-0.007813" ""
+              Expect.equal (Obj.num 0.0078125) "0.007812" "an exact tie rounds to even"
+              Expect.equal (Obj.num 0.0234375) "0.023438" "an exact tie rounds to even"
+              Expect.equal (Obj.num -0.0078125) "-0.007812" ""
+              // Found in review: "0.######" rounded to 15 significant digits first.
+              Expect.equal (Obj.num (Math.BitDecrement 0.0078125)) "0.007812" "just below a tie"
+              Expect.equal (Obj.num (Math.BitIncrement 0.0078125)) "0.007813" "just above a tie"
+              Expect.equal (Obj.num -(Math.BitDecrement 0.0078125)) "-0.007812" ""
+              Expect.equal (Obj.num -(Math.BitIncrement 0.0078125)) "-0.007813" ""
+              Expect.equal (Obj.num 9007199254740991.0) "9007199254740991" "a large exact integer"
+              Expect.equal (Obj.num 123456789.1234567) "123456789.123457" ""
               Expect.equal (Obj.num 1e-7) "0" ""
               Expect.equal (Obj.num -4e-7) "0" "rounds to -0, written 0"
               Expect.equal (Obj.num 1e20) "100000000000000000000" "no exponent"

@@ -10,10 +10,12 @@ open RubberPlant.Backends.Mesh
 
 type ObjOutput = { Obj: string; Mtl: string }
 
-/// The exact value rounded to 6 decimals, halves away from zero, without
-/// exponent, trailing zeros or "-0" (§5).
+/// The exact binary value rounded to 6 decimals, halves to even, without
+/// exponent, trailing zeros or "-0" (§5). .NET's "F6" is exact (custom formats
+/// such as "0.######" round to 15 significant digits first).
 let num (v: float) =
-    let s = v.ToString("0.######", CultureInfo.InvariantCulture)
+    let s = v.ToString("F6", CultureInfo.InvariantCulture)
+    let s = if s.Contains '.' then s.TrimEnd('0').TrimEnd('.') else s
     if s = "-0" then "0" else s
 
 let private vec (prefix: string) (v: Vec3) = $"%s{prefix} %s{num v.X} %s{num v.Y} %s{num v.Z}"

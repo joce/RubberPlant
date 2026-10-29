@@ -184,8 +184,11 @@ for it (halving can round subnormal coordinates).
 
 A primitive that produces no triangles, polygon or segment, adds no vertices.
 
-Polygons are **two-sided**: glTF materials set `doubleSided`, and OBJ viewers draw both sides by
-default. Back faces aren't duplicated.
+Polygons are **two-sided**, and back faces aren't duplicated. glTF says so in the file: its
+materials set `doubleSided`. OBJ and MTL have no standard way to say it, and viewers differ: some
+draw both sides by default, others cull back faces (three.js's `MTLLoader` makes front-side
+materials, for example). To see leaves from behind in such a viewer, turn off back-face culling
+or make the materials double-sided (§5).
 
 ### 4.4 Width scale
 
@@ -255,14 +258,17 @@ illum 1
 
 - Materials are named `color<i>`, where *i* is the group's palette entry (0–7). `Kd` is the sRGB
   color / 255 (MTL has no color management).
-- Numbers (`v`, `vn`, `Kd`): the double's exact value rounded to 6 decimals, halves away from
-  zero; invariant culture, no exponent, trailing zeros and a trailing point removed, and `-0`
-  written `0`.
+- Numbers (`v`, `vn`, `Kd`): the double's exact binary value rounded to 6 decimals, halves to
+  even (IEEE's default rounding; .NET's `F6` format); invariant culture, no exponent, trailing
+  zeros and a trailing point removed, and `-0` written `0`.
 - Both files use LF line endings, and every line ends with one, the last included. There are no
   blank lines in the OBJ.
 - The OBJ refers to the MTL by `mtlFileName`, a bare file name that the CLI derives from the output
   path. The function itself does no I/O.
 - Empty geometry: the header and `mtllib` lines only, and an empty MTL.
+- Two-sided faces: OBJ can't mark faces or materials as two-sided, so importers that cull back
+  faces hide leaves seen from behind; disable back-face culling (or use double-sided materials)
+  there (§4.3). glTF doesn't have this problem.
 
 ## 6. glTF backend
 
@@ -337,6 +343,9 @@ rubberplant render <file.rp> [-o <out>] [--format svg|obj|gltf|glb] [options]
   usage error, not silently ignored. So is an option that doesn't apply to the command: `-o`,
   `--format`, `--size`, `--sides` and `--width-scale` with `derive` or `check`, and `--drawing`
   with anything but `derive`.
+- Writing is all or nothing: the CLI first checks that every output file can be written, and if
+  writing one still fails, it restores the files it already replaced. A failed OBJ render never
+  leaves an OBJ next to an MTL it doesn't match.
 - For each file written, the CLI prints `wrote <path>`. A mesh that can't be built (`Mesh.build`
   fails, §4) is an error, like an SVG that can't be drawn.
 
