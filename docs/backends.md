@@ -64,7 +64,8 @@ What changes is what it means in 3D:
   be concave (ABOP's leaves are). Self-intersecting polygons are triangulated on a best-effort basis
   (§4.3).
 
-The turtle guarantees finite coordinates (RP0205), so backends never check for NaN or infinity.
+The turtle guarantees finite coordinates (RP0205), so backends never check their input for NaN or
+infinity. (`Mesh.build` still checks its output, §4.)
 
 ## 4. Mesh construction (`Mesh.build`)
 
@@ -93,6 +94,12 @@ Primitives are grouped **by palette entry** (the color index wrapped into the pa
 ascending order: color indices that look the same share a group. Within a group, primitives keep their
 geometry order, and each primitive appends its own vertices: nothing is shared or deduplicated
 between primitives. The result is fully deterministic.
+
+Lengths, normalizations and the Newell normal (§4.3) are computed on coordinates scaled by a power
+of two, so they neither overflow nor underflow for any finite geometry. Scaling by a power of two
+is exact, so this changes no result that the direct computation would get right. If a vertex
+still comes out non-finite (a cylinder's radius or a coordinate near the limits of double
+precision), `build` fails.
 
 ### 4.1 Cylinders
 
@@ -160,8 +167,10 @@ For `Polygon(vs, c)`:
    - When 3 vertices remain, they form the last triangle. If no ear can be found (a
      self-intersecting or degenerate loop), what remains is triangulated as a fan from the first
      remaining vertex. The last triangle and the fan's triangles are emitted only if their area
-     in the projection isn't zero. (An ear's area is never zero. Zero-area leftovers are common:
-     a leaf drawn with `F F F` has collinear vertices along its edges.)
+     in the projection isn't zero, and with their last two vertices swapped if it is negative
+     (which happens only in self-intersecting loops), so every triangle turns counter-clockwise.
+     (An ear's area is never zero. Zero-area leftovers are common: a leaf drawn with `F F F` has
+     collinear vertices along its edges.)
 6. The polygon's vertices are the loop's, in loop order, each with the normal **N** / |**N**| (flat
    shading). Triangles are counter-clockwise around **N**.
 

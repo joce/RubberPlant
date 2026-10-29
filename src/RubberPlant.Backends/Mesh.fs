@@ -3,6 +3,7 @@
 /// open cylinders, polygons flat two-sided faces. Pure and deterministic.
 module RubberPlant.Backends.Mesh
 
+open System
 open System.Collections.Generic
 open RubberPlant
 open RubberPlant.Geometry
@@ -27,7 +28,33 @@ type MeshGroup =
 /// Groups in ascending Color; colors with no triangles are omitted.
 type Mesh = { Groups: MeshGroup list }
 
-let private normalize (v: Vec3) = (1.0 / Vec3.length v) * v
+// Scale-safe vector arithmetic (§4). Squaring the components of a finite vector
+// can overflow (1e200) or underflow (1e-200); scaling by a power of two first
+// can't, and it's exact, so the results are otherwise the same bits as the
+// direct computation.
+
+/// v scaled by 2^-e, where 2^e <= max |component| < 2^(e+1); and e. v must not be 0.
+let private scaled (v: Vec3) =
+    let m = max (abs v.X) (max (abs v.Y) (abs v.Z))
+    let e = Math.ILogB m
+    Vec3.create (Math.ScaleB(v.X, -e)) (Math.ScaleB(v.Y, -e)) (Math.ScaleB(v.Z, -e)), e
+
+/// True when the direct computation is safe: the largest component squared is a
+/// normal number, so nothing overflows, and whatever underflows is far below its
+/// last bit. Then the scaled computation is unnecessary; skipping it is faster.
+let private isSafe (v: Vec3) =
+    let m = max (abs v.X) (max (abs v.Y) (abs v.Z))
+    m > 1e-150 && m < 1e150
+
+/// v / |v|, without overflow or underflow. v must not be 0.
+let private normalize (v: Vec3) =
+    if isSafe v then
+        (1.0 / Vec3.length v) * v
+    else
+        let w, _ = scaled v
+        (1.0 / Vec3.length w) * w
+
+let private isFinite (v: Vec3) = Vec3.isFinite v
 
 /// Vertices and triangles being collected for one palette entry.
 type private GroupBuilder() =
@@ -46,7 +73,7 @@ let private points (geometry: Geometry) =
 /// The width scale k (§4.4).
 let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<float, string> =
     match options.WidthScale with
-    | Some k when System.Double.IsFinite k && k > 0.0 -> Ok k
+    | Some k when Double.IsFinite k && k > 0.0 -> Ok k
     | Some k -> Error $"the width scale must be a finite number greater than 0, got %g{k}"
     | None ->
         // Match the SVG that the default options would draw: same extent, same
@@ -93,10 +120,8 @@ let private zAxis = Vec3.create 0.0 0.0 1.0
 
 /// An open cylinder of radius r from p0 to p1 (§4.1).
 let private addCylinder (g: GroupBuilder) (ring: struct (float * float)[]) (p0: Vec3) (p1: Vec3) (r: float) =
-    let len = Vec3.length (p1 - p0)
-
-    if r > 0.0 && len > 0.0 then
-        let n = (1.0 / len) * (p1 - p0)
+    if r > 0.0 && p1 <> p0 then
+        let n = normalize (p1 - p0)
         // The world axis least aligned with n (X, Y, then Z on ties).
         let ax, ay, az = abs n.X, abs n.Y, abs n.Z
 
@@ -185,9 +210,13 @@ let private earClip (pts: struct (float * float)[]) : ResizeArray<int> =
                        // Inside the triangle or on its edges blocks the ear.
                        not (orient pp pv x >= 0.0 && orient pv pq x >= 0.0 && orient pq pp x >= 0.0))
 
+    // The last triangle and the fan: zero-area ones are dropped, and clockwise
+    // ones (only in self-intersecting loops) turned counter-clockwise.
     let emitIfNotFlat a b c =
-        if orient pts[a] pts[b] pts[c] <> 0.0 then
-            tris.AddRange [ a; b; c ]
+        let area = orient pts[a] pts[b] pts[c]
+
+        if area > 0.0 then tris.AddRange [ a; b; c ]
+        elif area < 0.0 then tris.AddRange [ a; c; b ]
 
     let mutable fanned = false
 
@@ -214,14 +243,23 @@ let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
     let loop = loopOf vertices
 
     if loop.Length >= 3 then
-        let n = newell loop
+        // Work on the loop scaled by a power of two (exact), so that the Newell
+        // normal's products neither overflow nor underflow.
+        let m = loop |> Array.map (fun v -> max (abs v.X) (max (abs v.Y) (abs v.Z))) |> Array.max
+        let exponent = Math.ILogB m
+
+        let work =
+            loop
+            |> Array.map (fun v -> Vec3.create (Math.ScaleB(v.X, -exponent)) (Math.ScaleB(v.Y, -exponent)) (Math.ScaleB(v.Z, -exponent)))
+
+        let n = newell work
 
         let extent (coord: Vec3 -> float) =
-            (loop |> Array.maxBy coord |> coord) - (loop |> Array.minBy coord |> coord)
+            (work |> Array.maxBy coord |> coord) - (work |> Array.minBy coord |> coord)
 
         let e = max (extent _.X) (max (extent _.Y) (extent _.Z))
 
-        if Vec3.length n >= 1e-12 * e * e then
+        if n <> Vec3.zero && Vec3.length n >= 1e-12 * e * e then
             // Drop the axis of N's largest component (X, Y, then Z on ties); keep
             // the other two in cyclic order, swapped if that component is negative.
             let ax, ay, az = abs n.X, abs n.Y, abs n.Z
@@ -236,7 +274,7 @@ let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
                 else
                     (fun p -> struct (p.Y, p.X))
 
-            let tris = earClip (Array.map project loop)
+            let tris = earClip (Array.map project work)
 
             if tris.Count > 0 then
                 let first = g.Positions.Count
@@ -288,3 +326,11 @@ let build (options: MeshOptions) (geometry: Geometry) : Result<Mesh, string> =
                       Normals = kv.Value.Normals.ToArray()
                       Triangles = kv.Value.Triangles.ToArray() })
                 |> List.ofSeq })
+        |> Result.bind (fun mesh ->
+            let finite (g: MeshGroup) =
+                Array.forall isFinite g.Positions && Array.forall isFinite g.Normals
+
+            if List.forall finite mesh.Groups then
+                Ok mesh
+            else
+                Error "the mesh has coordinates too large to represent; use a smaller --width-scale or smaller steps")

@@ -252,15 +252,46 @@ let private polygonTests =
               close (totalArea g) 1.0 "area"
           }
 
-          test "a self-intersecting loop is triangulated somehow" {
-              // A pentagram {5/2}: no ear, so it falls back to a fan.
+          test "the fan fallback, turned counter-clockwise" {
+              // No vertex of this self-intersecting loop is an ear (found in review).
+              // The fan's signed areas are 6, -2, -2: the last two are swapped.
+              let g =
+                  poly [ v 1.0 0.0 0.0; v 3.0 0.0 0.0; v 0.0 3.0 0.0; v 1.0 2.0 0.0; v 2.0 0.0 0.0 ] |> ok |> single
+
+              Expect.equal g.Normals[0] (v 0.0 0.0 1.0) ""
+              Expect.equal g.Triangles [| 0; 1; 2; 0; 3; 2; 0; 4; 3 |] "triangles"
+              checkCcw g
+          }
+
+          test "the fan fallback drops zero-area triangles" {
+              // The same loop with (1.5, 0) added: still no ear, and the last fan
+              // triangle (1,0) (2,0) (1.5,0) is flat.
+              let g =
+                  poly [ v 1.0 0.0 0.0; v 3.0 0.0 0.0; v 0.0 3.0 0.0; v 1.0 2.0 0.0; v 2.0 0.0 0.0; v 1.5 0.0 0.0 ]
+                  |> ok
+                  |> single
+
+              Expect.equal g.Triangles [| 0; 1; 2; 0; 3; 2; 0; 4; 3 |] "triangles"
+              checkCcw g
+          }
+
+          test "a clockwise last triangle is turned counter-clockwise" {
+              // Self-intersecting: one ear, then a last triangle with negative area
+              // (found in review).
+              let g = poly [ v 0.0 0.0 0.0; v 3.0 0.0 0.0; v 0.0 1.0 0.0; v 2.0 2.0 0.0 ] |> ok |> single
+              Expect.equal g.Triangles [| 3; 0; 1; 1; 3; 2 |] "triangles"
+              checkCcw g
+          }
+
+          test "a pentagram: two ears, then a clockwise last triangle turned around" {
               let star =
                   [ for i in 0..4 ->
                         let a = Math.PI / 2.0 + float (2 * i) * 2.0 * Math.PI / 5.0
                         v (cos a) (sin a) 0.0 ]
 
               let g = poly star |> ok |> single
-              Expect.isGreaterThan g.Triangles.Length 0 "some triangles"
+              Expect.equal g.Triangles [| 4; 0; 1; 1; 2; 3; 1; 4; 3 |] "triangles"
+              checkCcw g
           }
 
           test "degenerate polygons produce nothing" {
@@ -318,6 +349,49 @@ let private widthScaleTests =
 
               for k in [ 0.0; -1.0; nan; infinity ] do
                   build (explicitScale k) g |> failsWith "width scale"
+          } ]
+
+let private scaleTests =
+    testList
+        "scale"
+        [ test "huge cylinders are finite" {
+              // axiom: F(1e200); squaring its length used to overflow into NaNs.
+              let p0, p1 = v 0.0 0.0 0.0, v 0.0 1e200 0.0
+              let g = build defaultMeshOptions [ seg p0 p1 1.0 0 ] |> ok |> single
+
+              for i in 0 .. g.Positions.Length - 1 do
+                  Expect.isTrue (Vec3.isFinite g.Positions[i]) "finite position"
+                  close (Vec3.length g.Normals[i]) 1.0 "unit normal"
+
+              // Vertex 0 is p0 + r d0, with d0 = (0, 0, -1) (basis tie-break).
+              close (-g.Positions[0].Z / 1e200) (1.0 / 779.0 / 2.0) "radius"
+          }
+
+          test "tiny cylinders keep their shape" {
+              let p0, p1 = v 0.0 0.0 0.0, v 0.0 1e-200 0.0
+              let g = build (explicitScale 1e-200) [ seg p0 p1 1.0 0 ] |> ok |> single
+
+              for n in g.Normals do
+                  close (Vec3.length n) 1.0 "unit normal"
+          }
+
+          test "huge and tiny triangles behave like unit ones" {
+              for s in [ 1e-150; 1e-90; 1.0; 1e90; 1e150 ] do
+                  let g =
+                      build defaultMeshOptions [ Polygon([ v 0.0 0.0 0.0; v s 0.0 0.0; v 0.0 s 0.0 ], 0) ]
+                      |> ok
+                      |> single
+
+                  Expect.equal g.Triangles [| 0; 1; 2 |] $"scale %g{s}"
+                  closeVec g.Normals[0] (v 0.0 0.0 1.0) $"scale %g{s}"
+          }
+
+          test "coordinates beyond double precision are an error" {
+              build defaultMeshOptions [ seg (v -1e308 0.0 0.0) (v 1e308 0.0 0.0) 1.0 0 ]
+              |> failsWith "too large"
+
+              build (explicitScale 1e300) [ seg (v 0.0 0.0 0.0) (v 0.0 1.0 0.0) 1e10 0 ]
+              |> failsWith "too large"
           } ]
 
 let private groupTests =
@@ -383,4 +457,4 @@ let private fixtureTests =
 
 [<Tests>]
 let tests =
-    testList "Mesh" [ cylinderTests; polygonTests; widthScaleTests; groupTests; fixtureTests ]
+    testList "Mesh" [ cylinderTests; polygonTests; widthScaleTests; scaleTests; groupTests; fixtureTests ]
