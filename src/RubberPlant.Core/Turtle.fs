@@ -33,7 +33,7 @@ let initialState (settings: Settings) =
 
 /// R_U(a): turn left by a degrees.
 let turn (a: float) (t: State) =
-    let c, s = cosDeg a, sinDeg a
+    let struct (s, c) = sinCosDeg a
 
     { t with
         H = c * t.H + s * t.L
@@ -41,7 +41,7 @@ let turn (a: float) (t: State) =
 
 /// R_L(a): pitch down by a degrees.
 let pitch (a: float) (t: State) =
-    let c, s = cosDeg a, sinDeg a
+    let struct (s, c) = sinCosDeg a
 
     { t with
         H = c * t.H - s * t.U
@@ -50,7 +50,7 @@ let pitch (a: float) (t: State) =
 /// R_H(a): roll left by a degrees. Not ABOP's printed matrix: the roll turns
 /// the way cpfg's does, so L goes toward +U (language.md 5.1, "Roll direction").
 let roll (a: float) (t: State) =
-    let c, s = cosDeg a, sinDeg a
+    let struct (s, c) = sinCosDeg a
 
     { t with
         L = c * t.L + s * t.U

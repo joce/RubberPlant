@@ -401,6 +401,8 @@ Atom     = Number
 
 **Built-in functions (v0.1):** `sin cos tan asin acos atan atan2 sqrt exp log abs floor ceil round min max`. Trigonometry is in **degrees**, to match the turtle. `atan2(y, x)`, `min(a, b)` and `max(a, b)` take two arguments; the others take one. `round` rounds halves away from zero: `round(2.5)` is 3, `round(-2.5)` is −3.
 
+**Same results on every platform (v0.2).** IEEE 754 defines `+ − × ÷` and `sqrt` exactly, but not the transcendental functions: system math libraries (glibc, Microsoft's C runtime, …) differ in the last bit. So RubberPlant computes `sin`, `cos` and `tan`, and the turtle's rotations, itself, from exactly defined operations only: they give the same bits everywhere, within one ulp of the exact value. They are exact at multiples of 90°: `sin(180)` and `cos(90)` are 0, so `tan(90)` is +∞ and `tan(-90)` is −∞. The other transcendental functions (`asin`, `acos`, `atan`, `atan2`, `exp`, `log` and the `^` operator) still use the system's math library, so their results may differ in the last bit between platforms. `sqrt`, `abs`, `floor`, `ceil`, `round`, `min` and `max` are exact everywhere.
+
 ### 4.2 Names and scope
 
 - `let` constants are global numeric constants (not macros). They are evaluated in **source order**, and may reference only **earlier** `let`s. A forward reference is an error ("`b` used before its definition"). Settings aren't values and can't be referenced.
