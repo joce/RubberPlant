@@ -23,21 +23,6 @@ let defaultOptions =
       Margin = 10.0
       Background = Some "white" }
 
-/// Color index → CSS color. Indices wrap around.
-let palette =
-    [| "#1a1a1a" // 0: near black
-       "#2e7d32" // 1: green
-       "#6d4c41" // 2: brown
-       "#f9a825" // 3: yellow
-       "#c62828" // 4: red
-       "#1565c0" // 5: blue
-       "#6a1b9a" // 6: purple
-       "#ef6c00" |] // 7: orange
-
-let colorOf (index: int) =
-    let n = palette.Length
-    palette[((index % n) + n) % n]
-
 let private num (v: float) =
     let r = Math.Round(v, 2)
     let r = if r = 0.0 then 0.0 else r // no "-0"
@@ -100,7 +85,7 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
         match style with
         | Some(width, color) ->
             line
-                $"""<path d="%s{path.ToString()}" fill="none" stroke="%s{colorOf color}" stroke-width="%s{num width}" stroke-linecap="butt" stroke-linejoin="round"/>"""
+                $"""<path d="%s{path.ToString()}" fill="none" stroke="%s{Palette.hex color}" stroke-width="%s{num width}" stroke-linecap="butt" stroke-linejoin="round"/>"""
 
             path.Clear() |> ignore
             style <- None
@@ -134,7 +119,7 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
                     $"%s{num x},%s{num y}")
                 |> String.concat " "
 
-            line $"""<polygon points="%s{pts}" fill="%s{colorOf color}"/>"""
+            line $"""<polygon points="%s{pts}" fill="%s{Palette.hex color}"/>"""
 
     flush ()
     line "</svg>"

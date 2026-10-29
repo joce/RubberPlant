@@ -1,8 +1,9 @@
 # Geometry and output backends
 
-Status: **v0.2, partly implemented**. Implemented: the SVG backend's 0.2 changes (§7) and the
-Chapter 2 examples (§9). Not yet: `Palette` and `Mesh` (§4), OBJ (§5), glTF (§6), the CLI format
-selection (§8), mesh tests and the Chapter 3 examples (§9). This document specifies
+Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4) with their unit
+tests and fixtures, the SVG backend's 0.2 changes (§7) and the Chapter 2 examples (§9). Not yet:
+OBJ (§5), glTF (§6), the CLI format selection (§8), the mesh goldens and digests, and the
+Chapter 3 examples (§9). This document specifies
 what the 0.2 milestone adds after the turtle: the meaning of the geometry in 3D, a shared mesh
 builder, the OBJ and glTF backends, the CLI changes, and how all of it is tested. The language side
 (`$`, tropism, `%`, `consider:`, `G`, `.`) is in [`language.md`](language.md).
@@ -63,7 +64,8 @@ What changes is what it means in 3D:
   be concave (ABOP's leaves are). Self-intersecting polygons are triangulated on a best-effort basis
   (§4.3).
 
-The turtle guarantees finite coordinates (RP0205), so backends never check for NaN or infinity.
+The turtle guarantees finite coordinates (RP0205), so backends never check their input for NaN or
+infinity. (`Mesh.build` still checks its output, §4.)
 
 ## 4. Mesh construction (`Mesh.build`)
 
@@ -93,6 +95,13 @@ ascending order: color indices that look the same share a group. Within a group,
 geometry order, and each primitive appends its own vertices: nothing is shared or deduplicated
 between primitives. The result is fully deterministic.
 
+Lengths and normalizations are computed on vectors scaled by a power of two, so they neither
+overflow nor underflow for any finite geometry (scaling by a power of two is exact). Polygons are
+triangulated in a **local frame** (§4.3): their vertices relative to the loop's first vertex,
+scaled by a power of two from the loop's own size, so the result depends neither on where the
+polygon is nor on how big it is. If a vertex still comes out non-finite (a cylinder's radius or a
+coordinate near the limits of double precision), `build` fails.
+
 ### 4.1 Cylinders
 
 For `Segment(p0, p1, w, c)` with width scale *k* (§4.4):
@@ -111,7 +120,11 @@ For `Segment(p0, p1, w, c)` with width scale *k* (§4.4):
 - **Vertices**, 2*s* in this order: the ring at p0 (p0 + *r* **d**<sub>j</sub>), then the ring at p1
   (p1 + *r* **d**<sub>j</sub>). Vertex *j* of each ring has the normal **d**<sub>j</sub>, so the tube is
   smoothly shaded.
-- **Triangles**, 2*s*: two per side quad (*j*, *j* + 1), counter-clockwise seen from outside.
+- **Triangles**, 2*s*: two per side quad, counter-clockwise seen from outside. For *j* = 0 … *s* − 1
+  in order, with *j*′ = (*j* + 1) mod *s*, the triangles are (*j*, *j*′, *s* + *j*′) and
+  (*j*, *s* + *j*′, *s* + *j*), as indices into the cylinder's own vertices. (**e1**, **e2**, **n**)
+  is right-handed, so going from *j* to *j*′ turns counter-clockwise around **n**, and both
+  triangles face outward.
 - **No end caps**, as in cpfg and lpfg: the end of a branch tip is open, which shows only from
   close up.
 - Per cylinder: 24 vertices and 24 triangles with the defaults.
@@ -132,17 +145,44 @@ with the bend angle and the width; it is small for the gentle bends of tropism. 
 
 For `Polygon(vs, c)`:
 
-1. Drop consecutive duplicate vertices, then drop the last vertex while it equals the first.
+1. Drop consecutive duplicate vertices (exact equality), then drop the last vertex while it equals
+   the first. What is left is the **loop**.
 2. Fewer than 3 vertices left: no triangles.
-3. Compute the **Newell normal** **N** of the vertex loop. If |**N**| < 10<sup>−12</sup> × (squared
-   extent of the loop), the polygon has no area: no triangles.
-4. Project the loop onto the coordinate plane perpendicular to **N**'s largest component, keeping
-   the loop counter-clockwise around **N**.
-5. **Ear clipping**: scan the remaining loop from its first vertex, clip the first ear found, repeat.
-   If no ear can be found (a self-intersecting or degenerate loop), triangulate what's left as a fan
-   from its first remaining vertex.
-6. Every vertex gets the normal **N** / |**N**| (flat shading). Triangles are counter-clockwise
-   around **N**.
+
+Steps 3 to 5 work in the loop's **local frame**: each vertex minus the loop's first vertex,
+multiplied by 2<sup>−*e*</sup>, where 2<sup>*e*</sup> ≤ (the largest absolute coordinate of
+those differences) < 2<sup>*e*+1</sup>. If a difference overflows (a loop spanning nearly the
+whole double range), the vertices are halved before the subtraction instead; only that case pays
+for it (halving can round subnormal coordinates).
+
+3. Compute the **Newell normal** **N** of the loop (in the local frame). Let *E* be the loop's
+   largest extent along X, Y or Z (max − min of that coordinate, in the local frame). If |**N**| < 10<sup>−12</sup> × *E*<sup>2</sup>, the
+   polygon has no area: no triangles.
+4. Project the loop onto the coordinate plane perpendicular to **N**'s largest component (in
+   absolute value; X, Y, then Z on ties). The 2D coordinates (*u*, *v*) are the other two axes in
+   cyclic order ((Y, Z) when dropping X, (Z, X) when dropping Y, (X, Y) when dropping Z), swapped
+   when the dropped component of **N** is negative. This keeps the loop counter-clockwise around
+   **N**.
+5. **Ear clipping**, in the projection, on the *remaining loop* (initially the whole loop):
+   - While more than 3 vertices remain, scan them from the first remaining vertex and clip the
+     first ear found: emit its triangle and remove its middle vertex from the remaining loop. Each
+     scan starts again from the first remaining vertex.
+   - A remaining vertex *v*, with *p* before it and *q* after it in the remaining loop (cyclically),
+     is an **ear** when the turn *p*, *v*, *q* is strictly counter-clockwise (exact sign of the 2D
+     cross product, no tolerance), and no other remaining vertex lies inside the triangle
+     (*p*, *v*, *q*) or on its edges. Remaining vertices at the same 2D position as *p*, *v* or *q*
+     don't count, so a loop that touches itself at a vertex can still be clipped.
+   - When 3 vertices remain, they form the last triangle. If no ear can be found (a
+     self-intersecting or degenerate loop), what remains is triangulated as a fan from the first
+     remaining vertex. The last triangle and the fan's triangles are emitted only if their area
+     in the projection isn't zero, and with their last two vertices swapped if it is negative
+     (which happens only in self-intersecting loops), so every triangle turns counter-clockwise.
+     (An ear's area is never zero. Zero-area leftovers are common: a leaf drawn with `F F F` has
+     collinear vertices along its edges.)
+6. The polygon's vertices are the loop's (in world coordinates), in loop order, each with the normal **N** / |**N**| (flat
+   shading). Triangles are counter-clockwise around **N**.
+
+A primitive that produces no triangles, polygon or segment, adds no vertices.
 
 Polygons are **two-sided**: glTF materials set `doubleSided`, and OBJ viewers draw both sides by
 default. Back faces aren't duplicated.
@@ -157,9 +197,9 @@ Taken as world units, that trunk would be a blob. Mesh backends therefore multip
 - **Auto** (the default): *k* makes the mesh match the SVG that the default options would draw.
   Take *E* = max(x extent, y extent) of all geometry points (the SVG's front view), *W* = the largest
   segment width, and the SVG defaults *size* = 800 and *margin* = 10. Then
-  *k* = *E* / (*size* − 2 (*margin* + *W* / 2)), and *k* = 1 if *E* = 0. If the denominator isn't
-  positive, which is the case where the SVG backend would refuse to render, `build` fails and suggests
-  `--width-scale`.
+  *k* = *E* / (*size* − 2 (*margin* + *W* / 2)). If the denominator isn't positive, which is the
+  case where the SVG backend would refuse to render, `build` fails and suggests `--width-scale`;
+  this is checked first. Otherwise *k* = 1 if *E* = 0.
 
 So by default a cylinder appears as thick, relative to the plant, as the line in the SVG. The cost is
 that *k* depends on the extent of the drawing. That's harmless for still images, and animation
