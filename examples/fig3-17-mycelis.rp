@@ -1,0 +1,33 @@
+(* ABOP Fig 3.17: development of Mycelis muralis, wall lettuce; L-system 3.2, model II
+   (book p. 88). Janssen and Lindenmayer's model: a flowering signal S travels up from the
+   base; when it reaches an apex, the apex becomes a flower bud O and sends a signal T down,
+   which lets the branches below grow, each with a growth potential c.
+   The figure shows a developmental sequence; this file renders its final stage, when every
+   apex has turned into a flower and the structure no longer changes.
+   G is drawn like F (book p. 88). The figure's colors, which show where the signals have
+   been, aren't part of the L-system.
+   ~O is a predefined surface in the book (a flower; Ch 5, not supported yet): the `O as`
+   rule draws a stand-in. That rule is a RubberPlant addition.
+*)
+settings { derivations = 98; }
+
+ignore: / + ~ O;
+axiom: I(20) F A(0);
+S < A(t) -> T(0) ~ O;
+A(t) :
+    when t > 0  -> A(t-1)
+    when t == 0 -> [ +(30) G ] F /(180) A(2);
+S < F -> F S;
+F > T(c) -> T(c+1) F U(c-1);
+U(c) < G -> I(c) F A(2);
+I(c) :
+    when c > 0  -> I(c-1)
+    when c == 0 -> S;
+S -> empty;
+T(c) -> empty;
+
+(* Stand-in for the flower ~O (RubberPlant addition): a small yellow star. *)
+O as [ '(3) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
+              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
+              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
+              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) } ];

@@ -1,0 +1,34 @@
+(* ABOP L-system 3.3: Mycelis muralis, wall lettuce, model III (book p. 89).
+   Like model II (fig3-17-mycelis), but the branches' growth is limited by the time between
+   two basipetal signals, T (which lets the branches grow) and V (which makes them flower),
+   instead of a growth potential carried by T. The book says both models produce identical
+   developmental sequences, and prints no figure for this one.
+   This file renders the final stage, when every apex has turned into a flower and the
+   structure no longer changes.
+   K is a predefined surface in the book (a flower; Ch 5, not supported yet): the `K as`
+   rule draws a stand-in. That rule is a RubberPlant addition.
+*)
+settings { derivations = 49; }
+
+consider: M S T V;
+axiom: I(20) F A(0);
+S < A(t) -> T V K;
+V < A(t) -> T V K;
+A(t) :
+    when t > 0  -> A(t-1)
+    when t == 0 -> M [ +(30) G ] F /(180) A(2);
+S < M -> S;
+S > T -> T;
+T < G -> F A(2);
+V < M -> S;
+T > V -> W;
+W -> V;
+I(t) :
+    when t > 0  -> I(t-1)
+    when t == 0 -> S;
+
+(* Stand-in for the flower K (RubberPlant addition): a small yellow star. *)
+K as [ '(3) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
+              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
+              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
+              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) } ];

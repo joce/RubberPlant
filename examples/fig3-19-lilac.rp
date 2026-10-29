@@ -1,0 +1,20 @@
+(* ABOP Fig 3.19: lilac inflorescence (book p. 92); Fig 3.20b shows its skeleton.
+   Each axis grows subapically; the 90 degree roll at every node gives a decussate pattern,
+   with consecutive pairs of branches in perpendicular planes.
+   ~K is a predefined surface in the book (a flower; Ch 5, not supported yet): the `K as`
+   rule draws a stand-in, a small purple four-petal flower. That rule is a RubberPlant
+   addition.
+*)
+settings { derivations = 10; angle = 60; }
+
+axiom: A ~K;
+A -> [ - / ~K ] [ + / ~K ] I(0) /(90) A;
+I(t) :
+    when t != 2 -> F I(t+1)
+    when t == 2 -> I(t+1) [ - F F A ] [ + F F A ];
+
+(* Stand-in for the flower ~K (RubberPlant addition): four purple petals. *)
+K as [ '(6) { . +(20) f(0.3) -(40) f(0.3) -(140) f(0.3) -(40) f(0.3) }
+              +(90) { . +(20) f(0.3) -(40) f(0.3) -(140) f(0.3) -(40) f(0.3) }
+              +(90) { . +(20) f(0.3) -(40) f(0.3) -(140) f(0.3) -(40) f(0.3) }
+              +(90) { . +(20) f(0.3) -(40) f(0.3) -(140) f(0.3) -(40) f(0.3) } ];

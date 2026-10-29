@@ -1,0 +1,28 @@
+(* ABOP Fig 3.5: development of Capsella bursa-pastoris, shepherd's purse (book p. 74).
+   The figure shows every fourth derivation step; this file renders the last stage shown.
+   Leaves, petals and fruits are polygons: `.` records a vertex, and `G` draws without one,
+   so the fruit is a polygon on a framework of lines that aren't its edges. `%` cuts the
+   petals off when the fruit forms.
+   The colors are RubberPlant additions (the book's L-system has none): the plant is green
+   (axiom), and the petals yellow, because the palette has no white.
+*)
+settings { derivations = 34; angle = 18; }
+
+axiom: '(1) I(9) a(13);                      (* '(1): RubberPlant addition *)
+a(t) :
+    when t > 0  -> [ &(70) L ] /(137.5) I(10) a(t-1)
+    when t == 0 -> [ &(70) L ] /(137.5) I(10) A;
+A -> [ &(18) u(4) F F I(10) I(5) X(5) K K K K ] /(137.5) I(8) A;
+I(t) :
+    when t > 0  -> F I(t-1)
+    when t == 0 -> F;
+u(t) :
+    when t > 0  -> &(9) u(t-1)
+    when t == 0 -> &(9);
+L -> [ { . - F I(7) + F I(7) + F I(7) } ] [ { . + F I(7) - F I(7) - F I(7) } ];
+K -> [ '(3) & { . + F I(2) - - F I(2) } ]    (* '(3): RubberPlant addition *)
+     [ '(3) & { . - F I(2) + + F I(2) } ] /(90);
+X(t) :
+    when t > 0  -> X(t-1)
+    when t == 0 -> ^(50) [ [ - G G G G + + [ G G G [ + + G { . ] . ] . ] .
+                   + + G G G G . - - G G G . - - G . } ] %;
