@@ -343,9 +343,15 @@ rubberplant render <file.rp> [-o <out>] [--format svg|obj|gltf|glb] [options]
   usage error, not silently ignored. So is an option that doesn't apply to the command: `-o`,
   `--format`, `--size`, `--sides` and `--width-scale` with `derive` or `check`, and `--drawing`
   with anything but `derive`.
-- Writing is all or nothing: the CLI first checks that every output file can be written, and if
-  writing one still fails, it restores the files it already replaced. A failed OBJ render never
-  leaves an OBJ next to an MTL it doesn't match.
+- Writing is all or nothing, so a failed OBJ render doesn't leave an OBJ next to an MTL it
+  doesn't match:
+  1. Existing outputs must be writable files: a read-only or locked file, or a directory in the
+     way, fails before anything changes.
+  2. The new contents are written to temporary files next to the outputs (`tree.obj.tmp-…`).
+  3. They are swapped in: each existing output is renamed to a backup (`tree.obj.bak-…`), then
+     its temporary file takes its place. The backups are deleted once every file is in place.
+  4. If a step fails, the CLI puts the old files back and deletes the temporary ones. If the file
+     system prevents even that, it leaves the old files as their backups and says where they are.
 - For each file written, the CLI prints `wrote <path>`. A mesh that can't be built (`Mesh.build`
   fails, §4) is an error, like an SVG that can't be drawn.
 

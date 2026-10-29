@@ -268,69 +268,19 @@ let private report (file: string) (diags: Diagnostic list) =
     for d in diags do
         eprintfn "%s" (Diagnostic.format file d)
 
-/// Writes all the files or none (§8), then prints `wrote <path>` for each.
-/// Returns false, with an error printed, if they can't all be written.
+/// Writes all the files or none (§8), and prints `wrote <path>` for each.
 let private writeAll (files: (string * string) list) =
-    let report (path: string) (e: exn) =
-        eprintfn "%s: error: can't write the output: %s" path e.Message
+    match Output.writeAll Output.realFileSystem files with
+    | Ok paths ->
+        for path in paths do
+            printfn "wrote %s" path
 
-    // What was there before, to put back: the old contents, or None if the file
-    // didn't exist (and was created empty by the check below).
-    let before = Collections.Generic.List<string * byte[] option>()
+        true
+    | Error messages ->
+        for m in messages do
+            eprintfn "error: can't write the output: %s" m
 
-    let restore () =
-        for path, old in before do
-            try
-                match old with
-                | Some bytes -> File.WriteAllBytes(path, bytes)
-                | None -> File.Delete path
-            with
-            | :? IOException
-            | :? UnauthorizedAccessException as e -> report path e
-
-    // 1. Check that every file can be written: opening one for writing doesn't
-    //    change it (a missing one is created empty). This catches read-only files,
-    //    directories and missing folders before anything is replaced.
-    let unwritable =
-        files
-        |> List.tryPick (fun (path, _) ->
-            try
-                let old = if File.Exists path then Some(File.ReadAllBytes path) else None
-
-                using (new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None)) ignore
-                before.Add((path, old))
-                None
-            with
-            | :? IOException
-            | :? UnauthorizedAccessException as e -> Some(path, e))
-
-    match unwritable with
-    | Some(path, e) ->
-        report path e
-        restore ()
         false
-    | None ->
-        // 2. Write them; if one still fails, put everything back.
-        let failed =
-            files
-            |> List.tryPick (fun (path, text) ->
-                try
-                    File.WriteAllText(path, text)
-                    None
-                with
-                | :? IOException
-                | :? UnauthorizedAccessException as e -> Some(path, e))
-
-        match failed with
-        | Some(path, e) ->
-            report path e
-            restore ()
-            false
-        | None ->
-            for path, _ in files do
-                printfn "wrote %s" path
-
-            true
 
 let private run (args: Args) : int =
     let source =
