@@ -243,13 +243,16 @@ let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
     let loop = loopOf vertices
 
     if loop.Length >= 3 then
-        // Work on the loop scaled by a power of two (exact), so that the Newell
-        // normal's products neither overflow nor underflow.
-        let m = loop |> Array.map (fun v -> max (abs v.X) (max (abs v.Y) (abs v.Z))) |> Array.max
-        let exponent = Math.ILogB m
+        // The local frame (§4.3): relative to the first vertex, scaled by a power of
+        // two from the loop's size, so that the result depends neither on where the
+        // polygon is nor on its size, and the Newell normal's products neither
+        // overflow nor underflow.
+        let relative = loop |> Array.map (fun v -> v - loop[0])
+        let m = relative |> Array.map (fun v -> max (abs v.X) (max (abs v.Y) (abs v.Z))) |> Array.max
+        let exponent = if m > 0.0 then Math.ILogB m else 0
 
         let work =
-            loop
+            relative
             |> Array.map (fun v -> Vec3.create (Math.ScaleB(v.X, -exponent)) (Math.ScaleB(v.Y, -exponent)) (Math.ScaleB(v.Z, -exponent)))
 
         let n = newell work

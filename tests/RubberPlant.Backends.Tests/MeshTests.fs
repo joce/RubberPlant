@@ -386,6 +386,22 @@ let private scaleTests =
                   closeVec g.Normals[0] (v 0.0 0.0 1.0) $"scale %g{s}"
           }
 
+          test "polygons far from the origin behave like near ones" {
+              // Found in review: scaling by the absolute coordinates made these vanish.
+              for z in [ 1.0; 1e90; 1e200 ] do
+                  for s in [ 1e-90; 1.0 ] do
+                      let g =
+                          build
+                              defaultMeshOptions
+                              [ Polygon([ v 0.0 0.0 z; v s 0.0 z; v 0.0 s z ], 0) ]
+                          |> ok
+                          |> single
+
+                      Expect.equal g.Triangles [| 0; 1; 2 |] $"size %g{s} at z = %g{z}"
+                      closeVec g.Normals[0] (v 0.0 0.0 1.0) $"size %g{s} at z = %g{z}"
+                      Expect.equal g.Positions[1] (v s 0.0 z) "world coordinates"
+          }
+
           test "coordinates beyond double precision are an error" {
               build defaultMeshOptions [ seg (v -1e308 0.0 0.0) (v 1e308 0.0 0.0) 1.0 0 ]
               |> failsWith "too large"

@@ -95,11 +95,12 @@ ascending order: color indices that look the same share a group. Within a group,
 geometry order, and each primitive appends its own vertices: nothing is shared or deduplicated
 between primitives. The result is fully deterministic.
 
-Lengths, normalizations and the Newell normal (§4.3) are computed on coordinates scaled by a power
-of two, so they neither overflow nor underflow for any finite geometry. Scaling by a power of two
-is exact, so this changes no result that the direct computation would get right. If a vertex
-still comes out non-finite (a cylinder's radius or a coordinate near the limits of double
-precision), `build` fails.
+Lengths and normalizations are computed on vectors scaled by a power of two, so they neither
+overflow nor underflow for any finite geometry (scaling by a power of two is exact). Polygons are
+triangulated in a **local frame** (§4.3): their vertices relative to the loop's first vertex,
+scaled by a power of two from the loop's own size, so the result depends neither on where the
+polygon is nor on how big it is. If a vertex still comes out non-finite (a cylinder's radius or a
+coordinate near the limits of double precision), `build` fails.
 
 ### 4.1 Cylinders
 
@@ -147,8 +148,13 @@ For `Polygon(vs, c)`:
 1. Drop consecutive duplicate vertices (exact equality), then drop the last vertex while it equals
    the first. What is left is the **loop**.
 2. Fewer than 3 vertices left: no triangles.
-3. Compute the **Newell normal** **N** of the loop. Let *E* be the loop's largest extent along X,
-   Y or Z (max − min of that coordinate). If |**N**| < 10<sup>−12</sup> × *E*<sup>2</sup>, the
+
+Steps 3 to 5 work in the loop's **local frame**: each vertex minus the loop's first vertex,
+multiplied by 2<sup>−*e*</sup>, where 2<sup>*e*</sup> ≤ (the largest absolute coordinate of
+those differences) < 2<sup>*e*+1</sup>.
+
+3. Compute the **Newell normal** **N** of the loop (in the local frame). Let *E* be the loop's
+   largest extent along X, Y or Z (max − min of that coordinate, in the local frame). If |**N**| < 10<sup>−12</sup> × *E*<sup>2</sup>, the
    polygon has no area: no triangles.
 4. Project the loop onto the coordinate plane perpendicular to **N**'s largest component (in
    absolute value; X, Y, then Z on ties). The 2D coordinates (*u*, *v*) are the other two axes in
@@ -171,7 +177,7 @@ For `Polygon(vs, c)`:
      (which happens only in self-intersecting loops), so every triangle turns counter-clockwise.
      (An ear's area is never zero. Zero-area leftovers are common: a leaf drawn with `F F F` has
      collinear vertices along its edges.)
-6. The polygon's vertices are the loop's, in loop order, each with the normal **N** / |**N**| (flat
+6. The polygon's vertices are the loop's (in world coordinates), in loop order, each with the normal **N** / |**N**| (flat
    shading). Triangles are counter-clockwise around **N**.
 
 A primitive that produces no triangles, polygon or segment, adds no vertices.
