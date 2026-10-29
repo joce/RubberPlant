@@ -13,6 +13,20 @@ let colors: (byte * byte * byte)[] =
        0x6auy, 0x1buy, 0x9auy // 6: purple
        0xefuy, 0x6cuy, 0x00uy |] // 7: orange
 
+/// The palette's colors in linear RGB, for glTF (backends.md §6): the standard
+/// sRGB transfer function applied to `colors` / 255, computed once with mpmath and
+/// rounded to double. Constants, because Math.Pow can differ in the last bit
+/// between platforms (language.md §4.1).
+let linear: (float * float * float)[] =
+    [| 0.010329823029626936, 0.010329823029626936, 0.010329823029626936
+       0.02732089163907489, 0.2050787363903169, 0.03189603307301152
+       0.15292615199615014, 0.07227185068231748, 0.05286064702318025
+       0.9473065367331996, 0.3915724777497231, 0.01850022012837969
+       0.5647115057049289, 0.021219010376003555, 0.021219010376003555
+       0.00749903204322617, 0.13013647669036427, 0.527115125705813
+       0.14412847085805772, 0.01096009400648824, 0.3231432091129507
+       0.863157213454102, 0.14995978981060853, 0.0 |]
+
 /// The palette entry (0-7) of a color index. Negative indices wrap too.
 let entry (index: int) =
     let n = colors.Length
