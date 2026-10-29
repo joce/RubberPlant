@@ -12,6 +12,7 @@
     <Compile Include="CheckerTests.fs" />
     <Compile Include="DerivationTests.fs" />
     <Compile Include="TurtleTests.fs" />
+    <Compile Include="TrigTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 
