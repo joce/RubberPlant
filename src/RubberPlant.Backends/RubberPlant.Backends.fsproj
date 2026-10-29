@@ -4,6 +4,7 @@
     <Compile Include="Palette.fs" />
     <Compile Include="Svg.fs" />
     <Compile Include="Mesh.fs" />
+    <Compile Include="Obj.fs" />
   </ItemGroup>
 
   <ItemGroup>

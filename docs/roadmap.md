@@ -36,7 +36,7 @@ final product". What matters is the milestones and their order.
 - ✅ `sin`, `cos` and `tan` give the same bits on every platform, so 3D output is reproducible.
 - ✅ 3D geometry: segments are cylinders, as in ABOP's software, and polygons are triangulated
   ([`backends.md`](backends.md)).
-- Mesh backends: OBJ, then glTF ([`backends.md`](backends.md)).
+- Mesh backends: ✅ OBJ, then glTF ([`backends.md`](backends.md)).
 - The Chapter 3 figures as examples, with golden outputs.
 
 ## 0.3: Chapters 4–6
