@@ -11,6 +11,7 @@
     <Compile Include="SvgTests.fs" />
     <Compile Include="MeshFixtures.fs" />
     <Compile Include="MeshTests.fs" />
+    <Compile Include="ObjTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 

@@ -1,9 +1,9 @@
 # Geometry and output backends
 
-Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4) with their unit
-tests and fixtures, the SVG backend's 0.2 changes (§7) and the Chapter 2 examples (§9). Not yet:
-OBJ (§5), glTF (§6), the CLI format selection (§8), the mesh goldens and digests, and the
-Chapter 3 examples (§9). This document specifies
+Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4), OBJ (§5), the
+SVG backend's 0.2 changes (§7), the CLI (§8) for SVG and OBJ, the Chapter 2 examples and the
+mesh fixtures with their OBJ goldens (§9). Not yet: glTF (§6) and its CLI formats, the glTF
+goldens, the mesh digests, the glTF validator in CI, and the Chapter 3 examples (§9). This document specifies
 what the 0.2 milestone adds after the turtle: the meaning of the geometry in 3D, a shared mesh
 builder, the OBJ and glTF backends, the CLI changes, and how all of it is tested. The language side
 (`$`, tropism, `%`, `consider:`, `G`, `.`) is in [`language.md`](language.md).
@@ -184,8 +184,11 @@ for it (halving can round subnormal coordinates).
 
 A primitive that produces no triangles, polygon or segment, adds no vertices.
 
-Polygons are **two-sided**: glTF materials set `doubleSided`, and OBJ viewers draw both sides by
-default. Back faces aren't duplicated.
+Polygons are **two-sided**, and back faces aren't duplicated. glTF says so in the file: its
+materials set `doubleSided`. OBJ and MTL have no standard way to say it, and viewers differ: some
+draw both sides by default, others cull back faces (three.js's `MTLLoader` makes front-side
+materials, for example). To see leaves from behind in such a viewer, turn off back-face culling
+or make the materials double-sided (§5).
 
 ### 4.4 Width scale
 
@@ -241,20 +244,31 @@ reader understands it, and lpfg's own OBJ export works the same way (`objout.cpp
 colors (`v x y z r g b`) would keep a single file, but they aren't part of the OBJ format and many
 programs ignore or reject them. For a single file with colors, use glTF.
 
-`.mtl` text, one material per group, in the same order:
+`.mtl` text, one material per group, in the same order, separated by a blank line:
 
 ```
 newmtl color1
 Kd 0.180392 0.490196 0.196078
 illum 1
+
+newmtl color2
+Kd 0.427451 0.298039 0.254902
+illum 1
 ```
 
 - Materials are named `color<i>`, where *i* is the group's palette entry (0–7). `Kd` is the sRGB
   color / 255 (MTL has no color management).
-- Numbers: at most 6 decimals, invariant culture, trailing zeros removed, no `-0`.
+- Numbers (`v`, `vn`, `Kd`): the double's exact binary value rounded to 6 decimals, halves to
+  even (IEEE's default rounding; .NET's `F6` format); invariant culture, no exponent, trailing
+  zeros and a trailing point removed, and `-0` written `0`.
+- Both files use LF line endings, and every line ends with one, the last included. There are no
+  blank lines in the OBJ.
 - The OBJ refers to the MTL by `mtlFileName`, a bare file name that the CLI derives from the output
   path. The function itself does no I/O.
 - Empty geometry: the header and `mtllib` lines only, and an empty MTL.
+- Two-sided faces: OBJ can't mark faces or materials as two-sided, so importers that cull back
+  faces hide leaves seen from behind; disable back-face culling (or use double-sided materials)
+  there (§4.3). glTF doesn't have this problem.
 
 ## 6. glTF backend
 
@@ -326,7 +340,20 @@ rubberplant render <file.rp> [-o <out>] [--format svg|obj|gltf|glb] [options]
   | `--elasticity <e>` | all | overrides the `elasticity` setting |
 
 - An option that doesn't apply to the chosen format (`--size` with OBJ, `--sides` with SVG) is a
-  usage error, not silently ignored.
+  usage error, not silently ignored. So is an option that doesn't apply to the command: `-o`,
+  `--format`, `--size`, `--sides` and `--width-scale` with `derive` or `check`, and `--drawing`
+  with anything but `derive`.
+- Writing is all or nothing, so a failed OBJ render doesn't leave an OBJ next to an MTL it
+  doesn't match:
+  1. Existing outputs must be writable files: a read-only or locked file, or a directory in the
+     way, fails before anything changes.
+  2. The new contents are written to temporary files next to the outputs (`tree.obj.tmp-…`).
+  3. They are swapped in: each existing output is renamed to a backup (`tree.obj.bak-…`), then
+     its temporary file takes its place. The backups are deleted once every file is in place.
+  4. If a step fails, the CLI puts the old files back and deletes the temporary ones. If the file
+     system prevents even that, it leaves the old files as their backups and says where they are.
+- For each file written, the CLI prints `wrote <path>`. A mesh that can't be built (`Mesh.build`
+  fails, §4) is an error, like an SVG that can't be drawn.
 
 ## 9. Tests and goldens
 
