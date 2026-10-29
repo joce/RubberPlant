@@ -14,7 +14,7 @@ type FileSystem =
       /// Fails if the existing file can't be written (read-only, locked, …).
       /// Doesn't change it.
       CheckWritable: string -> unit
-      WriteText: string -> string -> unit
+      WriteBytes: string -> byte[] -> unit
       /// Moves a file to a path where nothing exists.
       Move: string -> string -> unit
       Delete: string -> unit
@@ -26,7 +26,7 @@ let realFileSystem =
       DirectoryExists = Directory.Exists
       CheckWritable =
         fun path -> using (new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None)) ignore
-      WriteText = fun path text -> File.WriteAllText(path, text)
+      WriteBytes = fun path bytes -> File.WriteAllBytes(path, bytes)
       Move = fun source dest -> File.Move(source, dest)
       Delete = File.Delete
       Unique = fun () -> Path.GetRandomFileName().Replace(".", "") }
@@ -45,7 +45,7 @@ let private attempt (path: string) (f: unit -> unit) =
 /// the old files kept as backups until every file is in place. If a step fails,
 /// the old files are put back; if even that fails, their backups stay on disk
 /// and the errors say where. Ok with the paths written, or Error with messages.
-let writeAll (fs: FileSystem) (files: (string * string) list) : Result<string list, string list> =
+let writeAll (fs: FileSystem) (files: (string * byte[]) list) : Result<string list, string list> =
     let sibling (path: string) (kind: string) = $"%s{path}.%s{kind}-%s{fs.Unique()}"
 
     // 1. Existing outputs must be writable files: read-only or locked ones fail
@@ -73,7 +73,7 @@ let writeAll (fs: FileSystem) (files: (string * string) list) : Result<string li
         let staging =
             staged
             |> List.tryPick (fun (_, text, temp) ->
-                match attempt temp (fun () -> fs.WriteText temp text) with
+                match attempt temp (fun () -> fs.WriteBytes temp text) with
                 | Ok() ->
                     written.Add temp
                     None

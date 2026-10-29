@@ -7,11 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Examples.fs" />
     <Compile Include="PaletteTests.fs" />
     <Compile Include="SvgTests.fs" />
     <Compile Include="MeshFixtures.fs" />
     <Compile Include="MeshTests.fs" />
     <Compile Include="ObjTests.fs" />
+    <Compile Include="GltfTests.fs" />
+    <Compile Include="MeshDigestTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 

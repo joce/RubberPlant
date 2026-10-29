@@ -1,9 +1,9 @@
 # Geometry and output backends
 
-Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4), OBJ (§5), the
-SVG backend's 0.2 changes (§7), the CLI (§8) for SVG and OBJ, the Chapter 2 examples and the
-mesh fixtures with their OBJ goldens (§9). Not yet: glTF (§6) and its CLI formats, the glTF
-goldens, the mesh digests, the glTF validator in CI, and the Chapter 3 examples (§9). This document specifies
+Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4), OBJ (§5), glTF
+(§6), the SVG backend's 0.2 changes (§7), the CLI (§8), and the tests (§9): the Chapter 2
+examples, the mesh fixtures with their OBJ and glTF goldens, the mesh digests and the glTF
+validator in CI. Not yet: the Chapter 3 examples (§9). This document specifies
 what the 0.2 milestone adds after the turtle: the meaning of the geometry in 3D, a shared mesh
 builder, the OBJ and glTF backends, the CLI changes, and how all of it is tested. The language side
 (`$`, tropism, `%`, `consider:`, `G`, `.`) is in [`language.md`](language.md).
@@ -297,10 +297,135 @@ the `.gltf` form because it is text.
   own bufferView (`target` 34962 for attributes, 34963 for indices), 4-byte aligned.
 - **Materials**: one per group, named `color<i>`. `pbrMetallicRoughness`:
   `baseColorFactor` is the palette color converted from sRGB to **linear** (glTF requires linear),
-  with alpha 1; `metallicFactor` 0; `roughnessFactor` 1. `doubleSided`: true.
+  with alpha 1; `metallicFactor` 0; `roughnessFactor` 1. `doubleSided`: true. The linear values
+  are constants in `Palette` (computed once with the standard sRGB transfer function, to double
+  precision), not computed at run time: `Math.Pow` comes from the system's math library, so its
+  last bit can differ between platforms (`language.md` §4.1).
 - Empty geometry: a scene with one node and no mesh, no buffer.
 - JSON: fixed key order, 2-space indentation, LF, numbers in shortest round-trip form (float32 values
   formatted as float32). `.glb` pads the JSON chunk with spaces and the BIN chunk with zeros.
+
+The document, with every key in this order (`…` stands for more elements of the same form):
+
+```json
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "RubberPlant"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2,
+          "material": 0,
+          "mode": 4
+        },
+        …
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "color1",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.02732089163907489,
+          0.2050787363903169,
+          0.03189603307301152,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      },
+      "doubleSided": true
+    },
+    …
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3",
+      "min": [
+        -0.05,
+        0,
+        -0.05
+      ],
+      "max": [
+        0.05,
+        1,
+        0.05
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 72,
+      "type": "SCALAR"
+    },
+    …
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 288,
+      "target": 34962
+    },
+    …
+  ],
+  "buffers": [
+    {
+      "byteLength": 864,
+      "uri": "data:application/octet-stream;base64,…"
+    }
+  ]
+}
+```
+
+- Group *g* has the accessors 3*g* (positions), 3*g* + 1 (normals) and 3*g* + 2 (indices), each
+  with the bufferView of the same index, and the material *g*.
+- Positions and normals are converted to float32 (round to nearest). `min` and `max` are those of
+  the float32 positions, so they match the data exactly, as the validator requires.
+- If a position overflows float32 (a coordinate beyond about ±3.4·10<sup>38</sup>, which double
+  precision and OBJ allow), rendering fails with an error: glTF forbids infinite accessor data.
+- Numbers: integers as integers; float32 values (`min`, `max`) in the shortest form that reads
+  back as the same float32; other doubles (`baseColorFactor`) in the shortest form that reads back
+  as the same double. Both are .NET's round-trip format (`"R"`), which may use an exponent
+  (`1E-05`, valid JSON). `-0` is written `0`.
+- The buffer is little-endian: for each group, its positions (12 bytes each), normals (12 bytes)
+  and indices (uint32, 4 bytes), so every bufferView is 4-byte aligned without padding.
+- The `.gltf` buffer has `byteLength` then `uri`, a base64 `data:application/octet-stream` URI.
+  The `.glb` buffer has only `byteLength`: its data is the BIN chunk. A `.glb` is the 12-byte
+  header (magic `glTF`, version 2, total length), the JSON chunk (type `JSON`, the same document
+  without the `uri`, padded with spaces to a multiple of 4 bytes) and, unless the geometry is
+  empty, the BIN chunk (type `BIN\0`, the buffer, already a multiple of 4 bytes).
+- Empty geometry: `asset`, `scene`, `scenes` and `nodes` (one node written `{}`), nothing else.
 
 ## 7. SVG backend in 0.2
 
@@ -381,10 +506,16 @@ New in 0.2:
   small enough to review.
 - **Mesh digests for every example**: full meshes of the large trees run to megabytes (Fig 2.8b has
   about 13,000 cylinders), too big to check in. `golden/mesh-digests.txt` lists
-  `<example> <sha256 of obj+mtl> <sha256 of gltf>` with default options. The tests and
-  `check-goldens.sh` compare them, and `RUBBERPLANT_UPDATE_GOLDEN=1` rewrites them.
-- **glTF validation**: CI runs the Khronos glTF Validator on every example's `.gltf` and fails on
-  errors. This adds Node (`npx gltf-validator`) to CI.
+  `<example> <sha256 of obj+mtl> <sha256 of gltf>` with default options (and the seed from
+  `seeds.txt`). The first digest is that of the OBJ's bytes followed by the MTL's, rendered as
+  `<example>.obj` (so `mtllib <example>.mtl`); the second, that of the `.gltf`. Lowercase hex;
+  lines starting with `#` are comments. The tests and `check-goldens.sh` compare them, and
+  `RUBBERPLANT_UPDATE_GOLDEN=1` rewrites them. They are the same on every platform, because
+  every computation behind them is (`language.md` §4.1).
+- **glTF validation**: CI runs the Khronos glTF Validator on every example's `.gltf` and `.glb`
+  and fails on errors. The validator is the `gltf-validator` npm package, a library (it has no
+  command line), so `scripts/validate-gltf/` holds a small Node script that calls it, with the
+  package's version pinned by a lockfile. This adds Node to CI.
 - `seeds.txt` stays as it is.
 
 ### Examples for 0.2

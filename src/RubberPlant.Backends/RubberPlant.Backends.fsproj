@@ -5,6 +5,7 @@
     <Compile Include="Svg.fs" />
     <Compile Include="Mesh.fs" />
     <Compile Include="Obj.fs" />
+    <Compile Include="Gltf.fs" />
   </ItemGroup>
 
   <ItemGroup>

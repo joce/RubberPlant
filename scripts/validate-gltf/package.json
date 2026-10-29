@@ -1,0 +1,9 @@
+{
+  "name": "rubberplant-validate-gltf",
+  "private": true,
+  "description": "Runs the Khronos glTF Validator on RubberPlant's glTF output (docs/backends.md §9).",
+  "type": "module",
+  "dependencies": {
+    "gltf-validator": "2.0.0-dev.3.10"
+  }
+}

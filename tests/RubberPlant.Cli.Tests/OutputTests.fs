@@ -7,7 +7,7 @@ open RubberPlant.Cli
 
 /// An in-memory file system whose operations can be made to fail.
 type private MemoryFs() =
-    member val Files = Dictionary<string, string>()
+    member val Files = Dictionary<string, string>()  // decoded as UTF-8
     member val ReadOnly = HashSet<string>()
     member val Directories = HashSet<string>()
     /// (operation, path) -> fail? Operations: check, write, move-from, move-to, delete.
@@ -27,14 +27,14 @@ type private MemoryFs() =
 
                 if fs.ReadOnly.Contains p then
                     raise (System.UnauthorizedAccessException "read-only")
-          WriteText =
-            fun p text ->
+          WriteBytes =
+            fun p bytes ->
                 fail "write" p
 
                 if fs.ReadOnly.Contains p || fs.Directories.Contains p then
                     raise (System.UnauthorizedAccessException "can't write")
 
-                fs.Files[p] <- text
+                fs.Files[p] <- System.Text.Encoding.UTF8.GetString bytes
           Move =
             fun source dest ->
                 fail "move-from" source
@@ -68,7 +68,10 @@ let private once (pred: string -> string -> bool) =
         else
             false
 
-let private outputs = [ "tree.obj", "new obj"; "tree.mtl", "new mtl" ]
+let private texts = [ "tree.obj", "new obj"; "tree.mtl", "new mtl" ]
+
+let private outputs =
+    texts |> List.map (fun (p, t) -> p, System.Text.Encoding.UTF8.GetBytes(t: string))
 
 /// A file system holding an existing pair.
 let private withPair () =
@@ -100,7 +103,7 @@ let tests =
           test "writes new files" {
               let fs = MemoryFs()
               Expect.equal (Output.writeAll fs.Api outputs) (Ok [ "tree.obj"; "tree.mtl" ]) ""
-              Expect.equal (files fs) (Map outputs) ""
+              Expect.equal (files fs) (Map texts) ""
           }
 
           test "a read-only output fails before anything changes" {
