@@ -413,6 +413,18 @@ let private scaleTests =
                   closeVec g.Normals[0] (v 0.0 0.0 1.0) "normal"
           }
 
+          test "subnormal detail survives a huge translation" {
+              // Found in review: halving every vertex rounded these to zero.
+              let s = Double.Epsilon
+              let g =
+                  build (explicitScale 1.0) [ Polygon([ v 0.0 0.0 1e308; v s 0.0 1e308; v 0.0 s 1e308 ], 0) ]
+                  |> ok
+                  |> single
+
+              Expect.equal g.Triangles [| 0; 1; 2 |] ""
+              closeVec g.Normals[0] (v 0.0 0.0 1.0) ""
+          }
+
           test "coordinates beyond double precision are an error" {
               build defaultMeshOptions [ seg (v -1e308 0.0 0.0) (v 1e308 0.0 0.0) 1.0 0 ]
               |> failsWith "too large"
