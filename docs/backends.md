@@ -241,17 +241,25 @@ reader understands it, and lpfg's own OBJ export works the same way (`objout.cpp
 colors (`v x y z r g b`) would keep a single file, but they aren't part of the OBJ format and many
 programs ignore or reject them. For a single file with colors, use glTF.
 
-`.mtl` text, one material per group, in the same order:
+`.mtl` text, one material per group, in the same order, separated by a blank line:
 
 ```
 newmtl color1
 Kd 0.180392 0.490196 0.196078
 illum 1
+
+newmtl color2
+Kd 0.427451 0.298039 0.254902
+illum 1
 ```
 
 - Materials are named `color<i>`, where *i* is the group's palette entry (0–7). `Kd` is the sRGB
   color / 255 (MTL has no color management).
-- Numbers: at most 6 decimals, invariant culture, trailing zeros removed, no `-0`.
+- Numbers (`v`, `vn`, `Kd`): the double's exact value rounded to 6 decimals, halves away from
+  zero; invariant culture, no exponent, trailing zeros and a trailing point removed, and `-0`
+  written `0`.
+- Both files use LF line endings, and every line ends with one, the last included. There are no
+  blank lines in the OBJ.
 - The OBJ refers to the MTL by `mtlFileName`, a bare file name that the CLI derives from the output
   path. The function itself does no I/O.
 - Empty geometry: the header and `mtllib` lines only, and an empty MTL.
@@ -326,7 +334,11 @@ rubberplant render <file.rp> [-o <out>] [--format svg|obj|gltf|glb] [options]
   | `--elasticity <e>` | all | overrides the `elasticity` setting |
 
 - An option that doesn't apply to the chosen format (`--size` with OBJ, `--sides` with SVG) is a
-  usage error, not silently ignored.
+  usage error, not silently ignored. So is an option that doesn't apply to the command: `-o`,
+  `--format`, `--size`, `--sides` and `--width-scale` with `derive` or `check`, and `--drawing`
+  with anything but `derive`.
+- For each file written, the CLI prints `wrote <path>`. A mesh that can't be built (`Mesh.build`
+  fails, §4) is an error, like an SVG that can't be drawn.
 
 ## 9. Tests and goldens
 
