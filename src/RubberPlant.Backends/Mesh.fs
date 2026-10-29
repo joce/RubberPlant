@@ -158,7 +158,7 @@ let private orient (a: struct (float * float)) (b: struct (float * float)) (c: s
     let struct (cu, cv) = c
     (bu - au) * (cv - av) - (bv - av) * (cu - au)
 
-/// Triangulates a loop projected to 2D (counter-clockwise), steps 5 of §4.3.
+/// Triangulates a loop projected to 2D (counter-clockwise), step 5 of §4.3.
 /// Returns triangles as indices into the loop.
 let private earClip (pts: struct (float * float)[]) : ResizeArray<int> =
     let tris = ResizeArray<int>()
@@ -215,6 +215,7 @@ let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
 
     if loop.Length >= 3 then
         let n = newell loop
+
         let extent (coord: Vec3 -> float) =
             (loop |> Array.maxBy coord |> coord) - (loop |> Array.minBy coord |> coord)
 
