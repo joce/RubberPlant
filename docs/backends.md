@@ -528,14 +528,14 @@ New in 0.2:
 | `fig3-5-capsella` | Fig 3.5 | `.`, `G`, `%`, polygons |
 | `fig3-17-mycelis` | L-system 3.2 (model II) | `G`, `ignore:`; stand-in for `~O` |
 | `mycelis-model3` | L-system 3.3 | `consider:`, `G`; stand-in for `K` |
-| `fig3-9-dibotryoid`, `fig3-10-dibotryoid` | L-system 3.1, with the figures' constants | added `as` rules for `I`, `L`, `K` (the book gives no geometry) |
+| `fig3-9-dibotryoid`, `fig3-10-dibotryoid` | L-system 3.1, with the figures' constants | L-system 3.1 is a schema (no geometry); completed with marked additions, see `language.md` §7 |
 | `fig3-2-crocus` | Fig 3.2 | stand-ins for `~L(t)`, `~K(t)` |
 | `fig3-14-lychnis` | Fig 3.14 | stand-ins for `~L(t)`, `~K(t)` |
 | `fig3-19-lilac` | Fig 3.19 | stand-in for `~K` |
 
 Each example renders one developmental stage. Where the book shows several stages, the file says
-which one it uses. Every stand-in and every added `as` rule is marked with a comment: these are
-RubberPlant additions, not the book's.
+which one it uses. Every stand-in, every added `as` rule and every completion of a schema is
+marked with a comment: these are RubberPlant additions, not the book's.
 
 ## 10. Suggested PR order
 
