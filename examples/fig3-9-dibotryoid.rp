@@ -1,0 +1,56 @@
+(* ABOP Fig 3.9: an acropetal flowering sequence in an open dibotryoid (book p. 79), from L-system 3.1, a model of dibotryoids
+   (book p. 77), with the figure's constants: m = 2, n = 3, u = 1, v = 1.
+   The main axis makes leaves, then branches; a flowering signal sent from the base after
+   d steps turns every apex it reaches into a flowering apex B, which makes flowers.
+   The figure shows the derivation lengths 15, 18, 21, 24, 27, 30, 33; this file renders the last.
+   d and e aren't in the caption: they are L-system 3.1's.
+
+   L-system 3.1 is an L-system schema (book pp. 64 and 68): it gives topology and timing,
+   but no geometry, by design. The book draws the figures from a completed version that it
+   doesn't print. This file completes it the way the figures look; the completion is a
+   RubberPlant addition, marked "completion" below:
+   - each branch leaves its axis at 45 degrees: `[ b(1) ]` becomes `[ +(45) b(1) ]` in p3
+     and p10, and `ignore: +` keeps that turn out of context matching, so the signal still
+     passes from an axis into its branches;
+   - `as` rules draw internodes as F, followed by a 180 degree roll, so successive branches,
+     leaves and flowers alternate sides; internodes are thick and black once the signal has
+     passed them, thin and green before (the figure's grey; the palette has none); leaves
+     are small arcs, flowers dots on short stalks, and apices arrows.
+*)
+settings { derivations = 33; }
+
+let d = 13;   (* delay for sending florigen *)
+let e = 3;    (* delay for creating branches *)
+let m = 2;    (* plastochron, main axis *)
+let n = 3;    (* plastochron, lateral axis *)
+let u = 1;    (* signal delay, main axis *)
+let v = 1;    (* signal delay, lateral axis *)
+
+ignore: +;    (* completion *)
+axiom: S(0) a(1, 0);
+a(t, c) :
+    when t < m            -> a(t+1, c)
+    when t == m && c < e  -> I(0, u) [ L ] a(1, c+1)
+    when t == m && c == e -> I(0, u) [ L ] [ +(45) b(1) ] a(1, c);   (* completion: +(45) *)
+b(t) :
+    when t < n  -> b(t+1)
+    when t == n -> I(0, v) [ L ] b(1);
+S(t) -> S(t+1);
+S(t) < I(i, j) : when t == d -> I(1, j);
+I(i, j) : when 0 < i && i < j -> I(i+1, j);
+I(i, j) < I(k, l) : when i == j && k == 0 -> I(1, l);
+I(i, j) < a(k, l) : when i > 0 -> I [ L ] [ +(45) b(1) ] B;          (* completion: +(45) *)
+I(i, j) < b(k) : when i > 0 -> I [ L ] B;
+B -> I [ K ] B;
+
+(* Appearance (completion). *)
+I(i, j) :
+    when i > 0 as '(0) !(3) F /(180)
+    else       as '(1) !(1) F /(180);
+I as '(0) !(3) F /(180);
+L as [ '(1) !(1) -(70) F(0.12) +(25) F(0.12) +(25) F(0.12) +(25) F(0.12) ];
+K as [ '(1) !(1) +(45) F(0.5) '(0) { . +(90) f(0.07) -(45) f(0.1) -(45) f(0.1) -(45) f(0.1)
+                                     -(45) f(0.1) -(45) f(0.1) -(45) f(0.1) -(45) f(0.1) } ];
+a(t, c) as [ '(0) !(3) F(0.4) { . +(155) f(0.3) +(115) f(0.2536) } ];
+b(t) as [ '(0) !(3) F(0.4) { . +(155) f(0.3) +(115) f(0.2536) } ];
+B as [ '(0) !(3) F(0.4) { . +(155) f(0.3) +(115) f(0.2536) } ];
