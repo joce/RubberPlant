@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current version: 0.1.** All of ABOP Chapter 1 is implemented.
+**Current version: 0.2.** ABOP Chapters 1–3 are implemented, with SVG, OBJ and glTF output.
 
 Version numbers below 1.0 are notional: "0.4" means "all of ABOP, but not the
 final product". What matters is the milestones and their order.
@@ -8,8 +8,8 @@ final product". What matters is the milestones and their order.
 | Version | Scope | Status |
 |---|---|---|
 | 0.1 | ABOP Chapter 1 | ✅ released |
-| 0.2 | 3D output (OBJ, glTF); ABOP Chapters 2–3 | in progress |
-| 0.3 | ABOP Chapters 4–6 | |
+| 0.2 | 3D output (OBJ, glTF); ABOP Chapters 2–3 | ✅ released |
+| 0.3 | ABOP Chapters 4–6 | next |
 | 0.4 | ABOP Chapters 7–8: **all of ABOP covered** | |
 | 1.0 | L-Py / lpfg-level capability, including scripting | |
 
@@ -23,7 +23,7 @@ final product". What matters is the milestones and their order.
 - SVG backend, and the `rubberplant` CLI (`render`, `derive`, `check`).
 - Every Chapter 1 figure as an example, each with a golden SVG checked in CI.
 
-## 0.2: 3D output, Chapters 2–3
+## 0.2: 3D output, Chapters 2–3 ✅
 
 - ✅ Spec first: extend `language.md` for the turtle features of Chapters 2–3.
 - ✅ Language: `consider:`, `tropism` and `elasticity` settings, `%` (cut), `empty`.
@@ -44,6 +44,9 @@ final product". What matters is the milestones and their order.
 
 Phyllotaxis (Ch 4), models of plant organs and predefined surfaces such as
 `~H` (Ch 5), and animation of plant development (Ch 6).
+
+Also: the CLI's startup time, about 180 ms of a typical run. All options are open
+(several stages in one `derive`, a long-lived stdin mode, in-process library calls).
 
 ## 0.4: Chapters 7–8
 
