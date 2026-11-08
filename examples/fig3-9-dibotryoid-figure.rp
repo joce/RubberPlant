@@ -10,10 +10,10 @@
    - branches: a branch makes its first internode 2 steps after it appears, its second one step
      later, then one every n steps (b's second parameter marks that first cycle);
    - flowering: when the signal reaches the internode below an apex, the apex (F) still makes its
-     next regular internode, then stops growing; v + 1 steps after the signal's arrival it bears a
-     flower at its tip (the main apex: a short lateral X instead), and from the next step on it makes
-     one flowering internode I(l) with a flower per step. A lateral apex reacts only once it has
-     an internode of its own;
+     next regular internode, then stops growing; v + 2 steps after the signal's arrival it bears a
+     flower at its tip (the main apex: u + 2 steps, and a short lateral X instead), and from the
+     next step on it makes one flowering internode I(l) with a flower per step. A lateral apex
+     reacts only once it has an internode of its own;
    - a new internode next to one the signal has passed is born with the signal (i == j);
    - geometry: internodes carry a length l and a growth factor g: main-axis internodes have length 1
      and don't grow; branch and flowering internodes start at 0.5 and grow 3% per step (as measured

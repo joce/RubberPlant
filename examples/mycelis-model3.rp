@@ -3,6 +3,11 @@
    two basipetal signals, T (which lets the branches grow) and V (which makes them flower),
    instead of a growth potential carried by T. The book says both models produce identical
    developmental sequences, and prints no figure for this one.
+   As printed, it doesn't: once the basipetal signals have passed a node, its marker stays V, so
+   `V < A(t) -> T V K` fires on a lateral apex one step after T releases it, and the branch
+   flowers without growing. Its final structure is much smaller than model II's (23 segments and
+   12 flowers, against 147 and 74). That is the printed model's behavior, not RubberPlant's: cpfg
+   derives the same strings. The file keeps the printed model.
    This file renders the final stage, when every apex has turned into a flower and the
    structure no longer changes.
    K is a predefined surface in the book (a flower; Ch 5, not supported yet): the `K as`
