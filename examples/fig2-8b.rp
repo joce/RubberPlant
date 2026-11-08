@@ -1,5 +1,7 @@
 (* ABOP Fig 2.8b: tree-like structure with ternary branching and tropism (book p. 60).
    Constants: Table 2.3, row b (book p. 61).
+   The book shows the tree from slightly below (about 20 degrees under the horizon);
+   RubberPlant draws it from the front.
 *)
 settings {
   derivations = 8;

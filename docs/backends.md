@@ -432,8 +432,9 @@ The document, with every key in this order (`…` stands for more elements of th
 - Line ends change from round to straight (butt), so every golden with segments changes once.
 - 3D models are drawn as before: an orthographic front view (looking down −Z), primitives painted
   in geometry order, with no depth sorting. ABOP chose a view for each of its line drawings of 3D
-  trees: Figs 2.6a–c and 2.8b–d are front views, Figs 2.6d and 2.7 are seen from +X (their examples
-  turn the tree with `/(90)`), and Fig 2.8a from below (not reproduced; `language.md` §7).
+  trees: Figs 2.6a–c are front views, Figs 2.6d and 2.7 are seen from +X (their examples turn the
+  tree with `/(90)`), Figs 2.8a and 2.8c from below and Fig 2.8b from slightly below (not
+  reproduced; `language.md` §7). Fig 2.8d's view is unknown: its model couldn't be reproduced.
 - Segments have **straight (butt) ends**, like the lines of ABOP's figures (drawn by cpfg). A round
   cap would stick out half a line width past the end of every segment, which shows on thick
   trunks and at every change of width. Consecutive segments with the same width and color still
@@ -524,7 +525,8 @@ New in 0.2:
 |---|---|---|
 | `fig2-6a` … `fig2-6d` | Fig 2.6, Table 2.1 | `$`; 2.6b uses r1 = 0.8 (Table 2.1 prints 0.9, a probable misprint); 2.6d starts with `/(90)` (seen from +X) |
 | `fig2-7a` … `fig2-7d` | Fig 2.7, Table 2.2 | `$`; start with `/(90)` (seen from +X) |
-| `fig2-8a` … `fig2-8d` | Fig 2.8, Table 2.3 | tropism; 2.8c uses lr = 1.079 (Table 2.3 prints 1.790, a probable misprint); the book's 2.8a is seen from below, and its 2.8c–d couldn't be reproduced exactly, even with cpfg |
+| `fig2-8a` … `fig2-8d` | Fig 2.8, Table 2.3 | tropism; Table 2.3's constants as printed (2.8c's lr = 1.790 grows a column); the book's 2.8a and 2.8c are seen from below, 2.8b from slightly below; its 2.8d couldn't be reproduced, even with cpfg |
+| `fig2-8c-figure` | Fig 2.8c | a reconstruction: Table 2.3's row c with lr = 1.2, fitted against the figure; marked as a reconstruction |
 | `fig3-5-capsella` | Fig 3.5 | `.`, `G`, `%`, polygons |
 | `fig3-17-mycelis` | L-system 3.2 (model II) | `G`, `ignore:`; stand-in for `~O` |
 | `mycelis-model3` | L-system 3.3 | `consider:`, `G`; stand-in for `K` |
