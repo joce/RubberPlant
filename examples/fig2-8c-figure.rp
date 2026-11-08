@@ -1,0 +1,31 @@
+(* ABOP Fig 2.8c: tree-like structure with ternary branching and tropism (book p. 60),
+   reconstructed.
+   RubberPlant reconstruction of the model that drew the figure; companion to fig2-8c.rp,
+   which keeps Table 2.3's row c (book p. 61) as printed.
+
+   Same as Table 2.3's row c, except (RubberPlant reconstruction):
+   - lr = 1.2 (the table prints 1.790, which grows a tall column). Fitted against the book's
+     figure: drawn by RubberPlant, rasterized and compared with the figure's strokes, with the
+     view and the constants free, lr settles at 1.18-1.21, and lr = 1.079 or 1.109 fit much
+     worse. Every other constant keeps its printed value (fitted freely, d1 and d2 return to
+     it). The main limbs fall near the book's, not on them: the figure isn't reproduced line
+     for line.
+   The book shows the tree from below (about 5 degrees to the side, 52 under the horizon), like
+   Fig 2.8a; RubberPlant has no camera yet and draws it from the front.
+*)
+settings {
+  derivations = 8;
+  tropism = (-0.02, -1, 0);
+  elasticity = 0.27;
+}
+
+let d1 = 112.5;    (* divergence angle 1 *)
+let d2 = 157.5;    (* divergence angle 2 *)
+let a  = 22.5;     (* branching angle *)
+let lr = 1.2;      (* elongation rate: reconstruction (the table prints 1.790) *)
+let vr = 1.732;    (* width increase rate *)
+
+axiom: !(1) F(200) /(45) A;
+A    -> !(vr) F(50) [ &(a) F(50) A ] /(d1) [ &(a) F(50) A ] /(d2) [ &(a) F(50) A ];
+F(l) -> F(l*lr);
+!(w) -> !(w*vr);

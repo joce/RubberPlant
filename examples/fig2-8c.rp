@@ -1,8 +1,8 @@
 (* ABOP Fig 2.8c: tree-like structure with ternary branching and tropism (book p. 60).
-   Constants: Table 2.3, row c (book p. 61).
-   Probable misprint: Table 2.3 prints lr = 1.790, which grows the trunk 105-fold over 8 steps
-   and gives a tall column. lr = 1.079 gives the weeping shape of the book's figure, though
-   not line for line: the figure couldn't be reproduced exactly, even with cpfg.
+   Constants: Table 2.3, row c (book p. 61), as printed.
+   With the printed lr = 1.790, the trunk grows 105-fold over 8 steps and the tree becomes a
+   tall column, not the book's figure. fig2-8c-figure.rp reconstructs the model that drew the
+   figure: the same L-system with lr = 1.2, fitted against the figure.
 *)
 settings {
   derivations = 8;
@@ -13,7 +13,7 @@ settings {
 let d1 = 112.5;    (* divergence angle 1 *)
 let d2 = 157.5;    (* divergence angle 2 *)
 let a  = 22.5;     (* branching angle *)
-let lr = 1.079;    (* elongation rate; Table 2.3 prints 1.790 *)
+let lr = 1.790;    (* elongation rate *)
 let vr = 1.732;    (* width increase rate *)
 
 axiom: !(1) F(200) /(45) A;
