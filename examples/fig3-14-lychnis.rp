@@ -1,0 +1,33 @@
+(* ABOP Fig 3.14: development of Lychnis coronaria, rose campion (book p. 84), after
+   Robinson's analysis. A double cyme: each apex makes a flower and two lateral apices, in
+   states A(0) and A(4), so one needs eight steps to flower again and the other four.
+   The figure shows three stages; this file renders the largest one: step 28 has about as
+   many buds, open flowers and fruits as the figure's middle plant (13, 8 and 12).
+   ~L(t) and ~K(t) are predefined surfaces in the book (a leaf and a flower at age t; Ch 5,
+   not supported yet): the `L as` and `K as` rules draw stand-ins. Those rules are
+   RubberPlant additions.
+*)
+settings { derivations = 28; }
+
+axiom: A(7);
+A(t) :
+    when t == 7 -> F I(20) [ &(60) ~L(0) ] /(90) [ &(45) A(0) ] /(90)
+                   [ &(60) ~L(0) ] /(90) [ &(45) A(4) ] F I(10) ~K(0)
+    when t < 7  -> A(t+1);
+I(t) : when t > 0 -> F F I(t-1);
+L(t) -> L(t+1);
+K(t) -> K(t+1);
+
+(* Stand-ins (RubberPlant additions). A leaf grows for 6 steps, a narrow green rhombus. *)
+L(t) as [ '(1) { . +(12) f(min(t+1, 6)) -(24) f(min(t+1, 6))
+                   -(156) f(min(t+1, 6)) -(24) f(min(t+1, 6)) } ];
+(* A flower: a green bud for 4 steps, then five purple petals for 4 steps, then a brown fruit. *)
+K(t) :
+    when t < 4 as [ '(1) { . +(30) f(1.6) -(60) f(1.6) -(120) f(1.6) -(60) f(1.6) } ]
+    when t < 8 as [ '(6) ^(90)
+                    { . +(20) f(4) -(40) f(4) -(140) f(4) -(40) f(4) } +(72)
+                    { . +(20) f(4) -(40) f(4) -(140) f(4) -(40) f(4) } +(72)
+                    { . +(20) f(4) -(40) f(4) -(140) f(4) -(40) f(4) } +(72)
+                    { . +(20) f(4) -(40) f(4) -(140) f(4) -(40) f(4) } +(72)
+                    { . +(20) f(4) -(40) f(4) -(140) f(4) -(40) f(4) } ]
+    else          as [ '(2) { . +(30) f(1.6) -(60) f(1.6) -(120) f(1.6) -(60) f(1.6) } ];
