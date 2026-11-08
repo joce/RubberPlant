@@ -432,8 +432,9 @@ The document, with every key in this order (`…` stands for more elements of th
 - Line ends change from round to straight (butt), so every golden with segments changes once.
 - 3D models are drawn as before: an orthographic front view (looking down −Z), primitives painted
   in geometry order, with no depth sorting. ABOP chose a view for each of its line drawings of 3D
-  trees: Figs 2.6a–c and 2.8b–d are front views, Figs 2.6d and 2.7 are seen from +X (their examples
-  turn the tree with `/(90)`), and Figs 2.8a and 2.8c from below (not reproduced; `language.md` §7).
+  trees: Figs 2.6a–c are front views, Figs 2.6d and 2.7 are seen from +X (their examples turn the
+  tree with `/(90)`), Figs 2.8a and 2.8c from below and Fig 2.8b from slightly below (not
+  reproduced; `language.md` §7). Fig 2.8d's view is unknown: its model couldn't be reproduced.
 - Segments have **straight (butt) ends**, like the lines of ABOP's figures (drawn by cpfg). A round
   cap would stick out half a line width past the end of every segment, which shows on thick
   trunks and at every change of width. Consecutive segments with the same width and color still
