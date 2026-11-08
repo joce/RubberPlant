@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <!-- Current version; see docs/roadmap.md. -->
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarnOn>3390;1182</WarnOn>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

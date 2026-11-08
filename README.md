@@ -6,8 +6,8 @@
 An L-system modeling tool, following *The Algorithmic Beauty of Plants* (ABOP).
 The language is specified in [`docs/language.md`](docs/language.md).
 
-Version 0.1 implements all of ABOP Chapter 1. See [`docs/roadmap.md`](docs/roadmap.md)
-for what comes next.
+Version 0.2 implements ABOP Chapters 1–3, with SVG, OBJ and glTF output. See
+[`docs/roadmap.md`](docs/roadmap.md) for what comes next.
 
 ## Build and run
 
