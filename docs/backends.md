@@ -1,9 +1,9 @@
 # Geometry and output backends
 
-Status: **v0.2, partly implemented**. Implemented: `Palette` and `Mesh` (§4), OBJ (§5), glTF
-(§6), the SVG backend's 0.2 changes (§7), the CLI (§8), and the tests (§9): the Chapter 2
-examples, the mesh fixtures with their OBJ and glTF goldens, the mesh digests and the glTF
-validator in CI. Not yet: the Chapter 3 examples (§9). This document specifies
+Status: **v0.2, implemented**: `Palette` and `Mesh` (§4), OBJ (§5), glTF (§6), the SVG
+backend's 0.2 changes (§7), the CLI (§8), and the tests (§9): the Chapter 2 and 3 examples, the
+mesh fixtures with their OBJ and glTF goldens, the mesh digests and the glTF validator in CI.
+This document specifies
 what the 0.2 milestone adds after the turtle: the meaning of the geometry in 3D, a shared mesh
 builder, the OBJ and glTF backends, the CLI changes, and how all of it is tested. The language side
 (`$`, tropism, `%`, `consider:`, `G`, `.`) is in [`language.md`](language.md).
@@ -529,13 +529,19 @@ New in 0.2:
 | `fig3-17-mycelis` | L-system 3.2 (model II) | `G`, `ignore:`; stand-in for `~O` |
 | `mycelis-model3` | L-system 3.3 | `consider:`, `G`; stand-in for `K` |
 | `fig3-9-dibotryoid`, `fig3-10-dibotryoid` | L-system 3.1, with the figures' constants | L-system 3.1 is a schema (no geometry); completed with marked additions, see `language.md` §7 |
+| `fig3-9-dibotryoid-figure`, `fig3-10-dibotryoid-figure` | Figs 3.9, 3.10 | a reconstruction of the model that drew each figure, read off its vector drawing in the book's PDF: it matches every stage of the figure; marked as a RubberPlant reconstruction |
 | `fig3-2-crocus` | Fig 3.2 | stand-ins for `~L(t)`, `~K(t)` |
 | `fig3-14-lychnis` | Fig 3.14 | stand-ins for `~L(t)`, `~K(t)` |
 | `fig3-19-lilac` | Fig 3.19 | stand-in for `~K` |
 
 Each example renders one developmental stage. Where the book shows several stages, the file says
-which one it uses. Every stand-in, every added `as` rule and every completion of a schema is
-marked with a comment: these are RubberPlant additions, not the book's.
+which one it uses. Every stand-in, every added `as` rule, every completion of a schema and every
+reconstruction is marked with a comment: these are RubberPlant additions, not the book's.
+
+For each predecessor, examples list their context-sensitive productions above the context-free
+ones. RubberPlant gives them precedence anyway (ABOP §1.8, `language.md` §4.4), and in this order
+the files derive the same in cpfg, which takes the first applicable production in source order.
+Every Chapter 2 and 3 example is checked against cpfg (segment by segment, or string by string).
 
 ## 10. Suggested PR order
 

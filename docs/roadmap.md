@@ -38,7 +38,7 @@ final product". What matters is the milestones and their order.
   ([`backends.md`](backends.md)).
 - ✅ Mesh backends: OBJ and glTF (`.gltf`, `.glb`), checked with the Khronos glTF Validator in CI
   ([`backends.md`](backends.md)).
-- The Chapter 3 figures as examples, with golden outputs.
+- ✅ The Chapter 3 figures as examples, with golden outputs, checked against cpfg.
 
 ## 0.3: Chapters 4–6
 
