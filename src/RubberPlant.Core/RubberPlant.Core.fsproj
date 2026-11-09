@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- The CLI is published with Native AOT: report this assembly's AOT warnings one by one. -->
+    <!-- The CLI is published with Native AOT: report this assembly's AOT warnings one by one,
+         and forbid %A and the reflection-based ToString of records and unions. -->
     <IsAotCompatible>true</IsAotCompatible>
+    <OtherFlags>$(OtherFlags) --reflectionfree</OtherFlags>
   </PropertyGroup>
 
   <ItemGroup>

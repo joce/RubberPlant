@@ -258,3 +258,24 @@ let tests =
                   Expect.isFalse (File.Exists out) "nothing written"
                   Expect.equal (run [ "render"; input; "-o"; out; "--width-scale"; "0.001" ]) 0 "explicit is fine")
           } ]
+
+// Native AOT: F# printf-style formatting of a value type (`%d`, `%g`, `%c`, `%x`, …) builds its
+// formatter by reflection, and the native executable may lack the code for it ("missing native
+// code" at run time). In src, only `%s` is allowed; format numbers with `string` first.
+[<Tests>]
+let aotFormatTests =
+    test "src uses printf-style specifiers for strings only" {
+        let src = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src")
+        let specifier = System.Text.RegularExpressions.Regex @"%[-+0#]*[0-9]*(\.[0-9]+)?[a-rt-zA-Z]"
+
+        let files = Directory.GetFiles(src, "*.fs", SearchOption.AllDirectories)
+
+        let offenders =
+            [ for file in files do
+                  for i, line in Array.indexed (File.ReadAllLines file) do
+                      if specifier.IsMatch line && not (line.TrimStart().StartsWith "//") then
+                          $"%s{file}(%d{i + 1}): %s{line.Trim()}" ]
+
+        Expect.isNonEmpty files "src found"
+        Expect.isEmpty offenders "use %s{string x} instead"
+    }

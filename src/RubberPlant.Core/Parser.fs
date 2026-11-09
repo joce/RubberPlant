@@ -151,7 +151,7 @@ let private describeHere (s: CharStream<unit>) =
         match s.Peek() with
         | _ when nameLength s > 0 -> $"`%s{peekName s}`"
         | _ when isArrowAt s -> "`->`"
-        | c -> $"`%c{c}`"
+        | c -> $"`%s{string c}`"
 
 // Trivia ----------------------------------------------------------------------
 
@@ -203,7 +203,7 @@ let private punct (c: char) : P<unit> =
             s.Skip()
             ws s
         else
-            Reply(Error, expected $"`%c{c}`")
+            Reply(Error, expected $"`%s{string c}`")
 
 let private keyword (k: string) : P<unit> =
     fun s ->
@@ -532,7 +532,7 @@ let private bracketed (inner: P<'a>) : P<'a> =
                 let w = ws s
                 if w.Status = Ok then r else Reply(w.Status, w.Error)
             else
-                moduleStop $"`]` to close the `[` at line %d{p.Line}, column %d{p.Column}" false s
+                moduleStop $"`]` to close the `[` at line %s{string p.Line}, column %s{string p.Column}" false s
 
 /// The cut `%` (v0.2). It takes no parameters.
 let private cut: P<ActualElem> =
@@ -831,7 +831,7 @@ let private buildBranches
                     err
                         p
                         Codes.ElseAfterUnguardedWeight
-                        $"`else` can never fire: the branch at line %d{u.Line} has no guard, so it's always eligible"
+                        $"`else` can never fire: the branch at line %s{string u.Line} has no guard, so it's always eligible"
                 | _ -> Result.Ok(Production(h, ProdWeighted(weights, elseSucc), rulePos))
 
 let private ruleBody (h: Head) (rulePos: Pos) : P<Rule> =
@@ -1003,7 +1003,7 @@ let private closeBrace (blockPos: Pos) : P<unit> =
             fatalAt
                 p
                 Codes.MissingBrace
-                $"missing `}}`? unexpected %s{describeHere s} in the `settings` block at line %d{blockPos.Line}"
+                $"missing `}}`? unexpected %s{describeHere s} in the `settings` block at line %s{string blockPos.Line}"
         else
             fatalAt p Codes.Syntax $"unexpected %s{describeHere s}; expected a setting or `}}`"
 
@@ -1092,7 +1092,7 @@ let private describeAt (source: string) (index: int) =
 
             $"`%s{source.Substring(index, j - index)}`"
         else
-            $"`%c{c}`"
+            $"`%s{string c}`"
 
 let private toDiagnostic (source: string) (err: ParserError) =
     match findDiagnostic err.Messages with

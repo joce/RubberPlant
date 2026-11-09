@@ -38,4 +38,5 @@ let rgb (index: int) = colors[entry index]
 /// CSS color (`#rrggbb`) of a color index.
 let hex (index: int) =
     let r, g, b = rgb index
-    $"#%02x{r}%02x{g}%02x{b}"
+    let x2 (v: byte) = v.ToString "x2"
+    $"#%s{x2 r}%s{x2 g}%s{x2 b}"

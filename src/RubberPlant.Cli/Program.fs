@@ -136,7 +136,7 @@ let private parseArgs (argv: string list) : Args =
             let minSize = 2.0 * Svg.defaultOptions.Margin
 
             if s <= minSize then
-                raise (UsageError $"--size must be greater than %g{minSize} (twice the margin)")
+                raise (UsageError $"--size must be greater than %s{string minSize} (twice the margin)")
 
             go rest { acc with Size = Some s }
         | "--format" :: v :: rest ->
@@ -193,7 +193,9 @@ let private parseArgs (argv: string list) : Args =
             // Integers a float represents exactly (§4.7).
             match Int64.TryParse(v, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) with
             | true, n when abs (float n) <= maxSeed -> go rest { acc with Seed = Some n }
-            | _ -> raise (UsageError $"--seed expects an integer between -%.0f{maxSeed} and %.0f{maxSeed}, got '%s{v}'")
+            | _ ->
+                let max = maxSeed.ToString("F0", CultureInfo.InvariantCulture)
+                raise (UsageError $"--seed expects an integer between -%s{max} and %s{max}, got '%s{v}'")
         | opt :: [] when opt.StartsWith "-" -> raise (UsageError $"%s{opt} expects a value")
         | opt :: _ when opt.StartsWith "-" -> raise (UsageError $"unknown option '%s{opt}'")
         | input :: rest ->

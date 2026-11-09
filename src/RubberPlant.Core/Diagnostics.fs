@@ -187,7 +187,7 @@ module Diagnostic =
             | Severity.Warning -> "warning"
 
         match d.Pos with
-        | Some p -> $"%s{file}(%d{p.Line},%d{p.Column}): %s{sev} %s{d.Code}: %s{d.Message}"
+        | Some p -> $"%s{file}(%s{string p.Line},%s{string p.Column}): %s{sev} %s{d.Code}: %s{d.Message}"
         | None -> $"%s{file}: %s{sev} %s{d.Code}: %s{d.Message}"
 
     let isError d = d.Severity = Severity.Error

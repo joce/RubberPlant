@@ -191,7 +191,7 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
                             Diagnostic.warning
                                 Codes.ExtraTurtleParameters
                                 None
-                                $"the turtle ignores the extra parameters of `%s{name}` (it uses %d{arity}, got %d{args.Length})"
+                                $"the turtle ignores the extra parameters of `%s{name}` (it uses %s{string arity}, got %s{string args.Length})"
                         )
 
                     // The value a command consumes: its first parameter, or the

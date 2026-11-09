@@ -13,7 +13,7 @@ let turtleNames = [ "F"; "f"; "G" ]
 
 let private lineOf (p: Pos option) =
     match p with
-    | Some p -> $"line %d{p.Line}"
+    | Some p -> $"line %s{string p.Line}"
     | None -> "predefined by the turtle"
 
 // Collecting names ------------------------------------------------------------
@@ -124,7 +124,7 @@ let rec private resolve (ctx: Context) (defines: Map<string, float>) (paramSlots
                 ctx.Error
                     Codes.LetUsedBeforeDefinition
                     pos
-                    $"`%s{name}` is used before its definition (line %d{ctx.AllDefines[name].Line})"
+                    $"`%s{name}` is used before its definition (line %s{string (ctx.AllDefines[name].Line)})"
             elif ctx.Modules.ContainsKey name then
                 ctx.Error Codes.NotAValue pos $"`%s{name}` is a module, not a value"
             elif Builtins.isBuiltin name then
@@ -144,7 +144,7 @@ let rec private resolve (ctx: Context) (defines: Map<string, float>) (paramSlots
                 ctx.Error
                     Codes.WrongArity
                     pos
-                    $"`%s{name}` takes %d{arity} argument%s{plural}, got %d{cargs.Length}"
+                    $"`%s{name}` takes %s{string arity} argument%s{plural}, got %s{string cargs.Length}"
 
                 // Constant expressions are evaluated right away: don't call
                 // the function with the wrong number of arguments.
@@ -191,13 +191,13 @@ let private compileHead (ctx: Context) (h: Head) =
                     ctx.Error
                         Codes.NamespaceClash
                         pos
-                        $"`%s{name}` is used as a module (%s{lineOf mp}) and as a parameter (line %d{pos.Line})"
+                        $"`%s{name}` is used as a module (%s{lineOf mp}) and as a parameter (line %s{string pos.Line})"
                 | _ ->
                     if ctx.AllDefines.ContainsKey name then
                         ctx.Error
                             Codes.NamespaceClash
                             pos
-                            $"`%s{name}` is used as a `let` (line %d{ctx.AllDefines[name].Line}) and as a parameter (line %d{pos.Line})"
+                            $"`%s{name}` is used as a `let` (line %s{string (ctx.AllDefines[name].Line)}) and as a parameter (line %s{string pos.Line})"
                     elif Builtins.isBuiltin name then
                         ctx.Error
                             Codes.NamespaceClash
@@ -293,7 +293,7 @@ let private lintUnreachable (ctx: Context) (rules: CRule list) =
                 ctx.Warn
                     Codes.UnreachableRule
                     r.Pos
-                    $"this rule never fires: the rule at line %d{first.Pos.Line} always fires first"
+                    $"this rule never fires: the rule at line %s{string first.Pos.Line} always fires first"
             | _ ->
                 if alwaysFires r then
                     firing[key] <- r
@@ -386,7 +386,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
         | Let(name, _, pos) ->
             match allDefines.TryGetValue name with
             | true, first ->
-                ctx.Error Codes.DuplicateLet pos $"`%s{name}` is already defined (line %d{first.Line})"
+                ctx.Error Codes.DuplicateLet pos $"`%s{name}` is already defined (line %s{string first.Line})"
             | _ -> allDefines[name] <- pos
 
             match modules.TryGetValue name with
@@ -394,7 +394,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
                 ctx.Error
                     Codes.NamespaceClash
                     pos
-                    $"`%s{name}` is used as a module (%s{lineOf mp}) and as a `let` (line %d{pos.Line})"
+                    $"`%s{name}` is used as a module (%s{lineOf mp}) and as a `let` (line %s{string pos.Line})"
             | _ ->
                 if Builtins.isBuiltin name then
                     ctx.Error Codes.NamespaceClash pos $"`%s{name}` is a built-in function and can't be a `let`"
@@ -427,13 +427,13 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             ctx.Error
                 Codes.DeclarationAfterRules
                 p
-                $"declaration after rules: `settings`, `let`, `ignore:`, `consider:` and `axiom:` must come before the first rule (line %d{r.Line})"
+                $"declaration after rules: `settings`, `let`, `ignore:`, `consider:` and `axiom:` must come before the first rule (line %s{string r.Line})"
         | _ -> ()
 
         match item with
         | Settings(entries, pos) ->
             match settingsBlock with
-            | Some first -> ctx.Error Codes.DuplicateSettings pos $"there is already a `settings` block (line %d{first.Line})"
+            | Some first -> ctx.Error Codes.DuplicateSettings pos $"there is already a `settings` block (line %s{string first.Line})"
             | None ->
                 settingsBlock <- Some pos
 
@@ -445,7 +445,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
 
                     match settingsSeen.TryFind key with
                     | Some first ->
-                        ctx.Error Codes.DuplicateSetting pos $"%s{what} is already set (line %d{first.Line})"
+                        ctx.Error Codes.DuplicateSetting pos $"%s{what} is already set (line %s{string first.Line})"
                     | None ->
                         settingsSeen <- settingsSeen.Add(key, pos)
 
@@ -475,12 +475,12 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
         | Ignore(names, pos) ->
             match ignoreList, considerList with
             | Some first, _ ->
-                ctx.Error Codes.DuplicateIgnore pos $"there is already an `ignore:` list (line %d{first.Line})"
+                ctx.Error Codes.DuplicateIgnore pos $"there is already an `ignore:` list (line %s{string first.Line})"
             | None, Some other ->
                 ctx.Error
                     Codes.IgnoreAndConsider
                     pos
-                    $"a file can't have both `ignore:` and `consider:`; there is already a `consider:` list (line %d{other.Line})"
+                    $"a file can't have both `ignore:` and `consider:`; there is already a `consider:` list (line %s{string other.Line})"
             | None, None ->
                 ignoreList <- Some pos
 
@@ -489,12 +489,12 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
         | Consider(names, pos) ->
             match considerList, ignoreList with
             | Some first, _ ->
-                ctx.Error Codes.DuplicateConsider pos $"there is already a `consider:` list (line %d{first.Line})"
+                ctx.Error Codes.DuplicateConsider pos $"there is already a `consider:` list (line %s{string first.Line})"
             | None, Some other ->
                 ctx.Error
                     Codes.IgnoreAndConsider
                     pos
-                    $"a file can't have both `ignore:` and `consider:`; there is already an `ignore:` list (line %d{other.Line})"
+                    $"a file can't have both `ignore:` and `consider:`; there is already an `ignore:` list (line %s{string other.Line})"
             | None, None ->
                 considerList <- Some pos
 
@@ -502,7 +502,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
                     listed.Add n |> ignore
         | Axiom(a, pos) ->
             match axiom with
-            | Some(_, first) -> ctx.Error Codes.DuplicateAxiom pos $"the axiom is already set (line %d{first.Line})"
+            | Some(_, first) -> ctx.Error Codes.DuplicateAxiom pos $"the axiom is already set (line %s{string first.Line})"
             | None ->
                 // Walk the AST directly (not compileActual) so an evaluation error
                 // points at the failing module, not at `axiom`: axioms can span lines.

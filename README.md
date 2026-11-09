@@ -43,6 +43,10 @@ out/aot/rubberplant render examples/dragon.rp -o dragon.svg
 It gives the same output as `dotnet run`: CI checks it against the goldens. Only
 `win-x64` is checked so far.
 
+Native AOT has one rule for code in `src`: printf-style formatting (`$"…%d{n}"`,
+`sprintf "%g"`) may only format strings, as in `%s{string n}`. Formatting a number
+that way can crash the native executable; a CLI test enforces the rule.
+
 ## Tests
 
 Tests use [Expecto](https://github.com/haf/expecto) and run as executables:
