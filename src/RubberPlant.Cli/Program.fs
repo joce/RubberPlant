@@ -426,7 +426,10 @@ let splitLine (line: string) : Result<string list, string> =
             current.Append c |> ignore
             started <- true
 
-    if quoted then
+    // An OS argument can't contain NUL; file APIs throw on it rather than fail with an IOException.
+    if line.Contains '\000' then
+        Error "a batch line can't contain a NUL character"
+    elif quoted then
         Error "unclosed double quote"
     else
         if started then

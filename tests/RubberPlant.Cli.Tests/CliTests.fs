@@ -330,6 +330,15 @@ let batchTests =
                   Expect.equal out [| "exit F"; "exit 0" |] "the client must match the whole `exit <code>` line")
           }
 
+          test "a NUL character is a usage error, and the batch goes on" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+                  let bad = Path.Combine(dir, "bad\000.svg")
+                  let code, out, err = batch [ $"render \"%s{input}\" -o \"%s{bad}\""; $"derive \"%s{input}\" -n 0" ]
+                  Expect.equal (code, out) (0, [| "exit 2"; "F-F-F-F"; "exit 0" |]) "stdout"
+                  Expect.equal err[0] "rubberplant: a batch line can't contain a NUL character" "")
+          }
+
           test "a blank line is a usage error" {
               let code, out, err = batch [ "   " ]
               Expect.equal (code, out) (0, [| "exit 2" |]) "usage error"
