@@ -322,6 +322,14 @@ let batchTests =
               Expect.isError (Program.splitLine @"check ""a.rp") "unclosed quote"
           }
 
+          test "a derived string can start with `exit ` but is never an exit line" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "exit.rp")
+                  File.WriteAllText(input, "axiom: exit F;\n")
+                  let _, out, _ = batch [ $"derive \"%s{input}\"" ]
+                  Expect.equal out [| "exit F"; "exit 0" |] "the client must match the whole `exit <code>` line")
+          }
+
           test "a blank line is a usage error" {
               let code, out, err = batch [ "   " ]
               Expect.equal (code, out) (0, [| "exit 2" |]) "usage error"

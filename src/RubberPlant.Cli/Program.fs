@@ -25,7 +25,8 @@ Commands:
            each: reads one command per line on stdin, as you'd type it after
            `rubberplant` (e.g. render "my tree.rp" -o tree.svg). Double quotes
            keep spaces in an argument; backslashes are plain characters. Each
-           command prints what it would on its own, then `exit <code>` on stdout.
+           command prints what it would on its own, then `exit <code>` on stdout:
+           match that whole line (a derived string can start with `exit `).
            Input and output are UTF-8. See the README for details.
 
 Options (override the file's settings):

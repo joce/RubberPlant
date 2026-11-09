@@ -65,9 +65,11 @@ escaping; there's no way to put a double quote inside an argument.
 Each command prints what it would print on its own (`wrote …`, the derived string,
 diagnostics on stderr), then `exit <code>` on stdout, with the exit code it would
 have had: 0 success, 1 error, 2 usage error. A script writes a line and reads stdout
-up to the `exit` line; stderr is flushed before it. Usage errors print one line,
-without the usage text. Input and output are UTF-8. At the end of the input, `batch`
-exits with 0.
+up to the line that is exactly `exit <code>`; stderr is flushed before it. Match the
+whole line: a derived string can start with `exit ` (a module named `exit`), but never
+has a digit after a space, so no other output line has that form. Usage errors print
+one line, without the usage text. Input and output are UTF-8. At the end of the input,
+`batch` exits with 0.
 
 Rendering all 40 examples takes about 0.45 s in one batch, 2 s as separate native
 runs, and 9 s through `dotnet`.
@@ -75,7 +77,7 @@ runs, and 9 s through `dotnet`.
 From Python:
 
 ```python
-import subprocess
+import re, subprocess
 rp = subprocess.Popen(["out/aot/rubberplant", "batch"], stdin=subprocess.PIPE,
                       stdout=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1)
 
@@ -83,9 +85,12 @@ def run(*args):
     rp.stdin.write(" ".join(f'"{a}"' for a in args) + "\n")
     rp.stdin.flush()
     out = []
-    while not (line := rp.stdout.readline()).startswith("exit "):
-        out.append(line.rstrip("\r\n"))
-    return int(line.split()[1]), out
+    while line := rp.stdout.readline():
+        line = line.rstrip("\r\n")
+        if re.fullmatch(r"exit \d+", line):
+            return int(line[5:]), out
+        out.append(line)
+    raise EOFError("rubberplant batch stopped")
 
 code, out = run("derive", "examples/dragon.rp", "-n", "2")
 ```
