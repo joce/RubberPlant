@@ -259,6 +259,65 @@ let tests =
                   Expect.equal (run [ "render"; input; "-o"; out; "--width-scale"; "0.001" ]) 0 "explicit is fine")
           } ]
 
+/// Runs `f` with stdout and stderr captured; returns its result and both outputs' lines.
+let private captured (f: unit -> 'a) =
+    let out, err = new StringWriter(), new StringWriter()
+    let oldOut, oldErr = System.Console.Out, System.Console.Error
+    System.Console.SetOut out
+    System.Console.SetError err
+
+    try
+        let r = f ()
+        let lines (w: StringWriter) = w.ToString().Split([| "\r\n"; "\n" |], System.StringSplitOptions.RemoveEmptyEntries)
+        r, lines out, lines err
+    finally
+        System.Console.SetOut oldOut
+        System.Console.SetError oldErr
+
+let private batch (lines: string list) =
+    captured (fun () -> Program.batch (new StringReader(String.concat "\n" lines)))
+
+// Sequenced: these swap the console's writers, which the parallel tests also write to.
+[<Tests>]
+let batchTests =
+    testSequenced
+    <| testList
+        "CLI batch"
+        [ test "runs each line as a command and ends each with its exit code" {
+              withTempDir (fun dir ->
+                  // A space in the path: arguments are separated by tabs only.
+                  let sub = Directory.CreateDirectory(Path.Combine(dir, "a b")).FullName
+                  let input = Path.Combine(sub, "koch.rp")
+                  File.Copy(Path.Combine(dir, "koch.rp"), input)
+                  let svg = Path.Combine(sub, "koch.svg")
+                  let missing = Path.Combine(sub, "missing.rp")
+
+                  let code, out, err =
+                      batch
+                          [ $"render\t%s{input}\t-o\t%s{svg}"
+                            $"check\t%s{missing}"
+                            $"derive\t%s{input}\t-n\t0"
+                            "render\t--bogus" ]
+
+                  Expect.equal code 0 "batch's own exit code"
+                  Expect.equal out [| $"wrote %s{svg}"; "exit 0"; "exit 1"; "F-F-F-F"; "exit 0"; "exit 2" |] "stdout"
+                  Expect.isTrue (File.Exists svg) "the SVG is written"
+                  Expect.equal err.Length 2 "one error each for the missing file and the bad option"
+                  Expect.equal err[1] "rubberplant: --bogus expects a value" "usage error, without the usage text")
+          }
+
+          test "a batch can't run inside a batch" {
+              let code, out, err = batch [ "batch" ]
+              Expect.equal (code, out) (0, [| "exit 2" |]) "usage error"
+              Expect.stringContains err[0] "can't run inside a batch" ""
+          }
+
+          test "batch takes no arguments" {
+              let code, _, err = captured (fun () -> Program.main [| "batch"; "x" |])
+              Expect.equal code 2 "usage error"
+              Expect.stringContains err[0] "batch takes no arguments" ""
+          } ]
+
 // Native AOT: F# printf-style formatting of a value type (`%d`, `%g`, `%c`, `%x`, …) builds its
 // formatter by reflection, and the native executable may lack the code for it ("missing native
 // code" at run time). In src, only `%s` is allowed; format numbers with `string` first.

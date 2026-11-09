@@ -47,6 +47,45 @@ Native AOT has one rule for code in `src`: printf-style formatting (`$"…%d{n}"
 `sprintf "%g"`) may only format strings, as in `%s{string n}`. Formatting a number
 that way can crash the native executable; a CLI test enforces the rule.
 
+### Batch mode
+
+A script that runs RubberPlant hundreds of times still pays the startup on every
+run. `rubberplant batch` starts once and runs commands read from stdin, one per
+line, with the arguments separated by tabs (so paths can contain spaces):
+
+```
+render	tree.rp	-o	tree.svg	--seed	3
+derive	tree.rp	-n	5
+```
+
+Each command prints what it would print on its own (`wrote …`, the derived string,
+diagnostics on stderr), then `exit <code>` on stdout, with the exit code it would
+have had: 0 success, 1 error, 2 usage error. A script writes a line and reads stdout
+up to the `exit` line; stderr is flushed before it. Usage errors print one line,
+without the usage text. Input and output are UTF-8. At the end of the input, `batch`
+exits with 0.
+
+Rendering all 40 examples takes about 0.45 s in one batch, 2 s as separate native
+runs, and 9 s through `dotnet`.
+
+From Python:
+
+```python
+import subprocess
+rp = subprocess.Popen(["out/aot/rubberplant", "batch"], stdin=subprocess.PIPE,
+                      stdout=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1)
+
+def run(*args):
+    rp.stdin.write("\t".join(args) + "\n")
+    rp.stdin.flush()
+    out = []
+    while not (line := rp.stdout.readline()).startswith("exit "):
+        out.append(line.rstrip("\r\n"))
+    return int(line.split()[1]), out
+
+code, out = run("derive", "examples/dragon.rp", "-n", "2")
+```
+
 ## Tests
 
 Tests use [Expecto](https://github.com/haf/expecto) and run as executables:

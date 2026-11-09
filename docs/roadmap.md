@@ -45,8 +45,11 @@ final product". What matters is the milestones and their order.
 Phyllotaxis (Ch 4), models of plant organs and predefined surfaces such as
 `~H` (Ch 5), and animation of plant development (Ch 6).
 
-Also: the CLI's startup time, about 180 ms of a typical run. All options are open
-(several stages in one `derive`, a long-lived stdin mode, in-process library calls).
+Also:
+
+- ✅ CLI startup time, which was about 180 ms of a typical run: a native (Native AOT)
+  executable runs in about 35 ms, and `rubberplant batch` runs many commands in one
+  process ([`README.md`](../README.md)).
 
 ## 0.4: Chapters 7–8
 
