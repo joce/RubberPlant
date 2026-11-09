@@ -51,12 +51,16 @@ that way can crash the native executable; a CLI test enforces the rule.
 
 A script that runs RubberPlant hundreds of times still pays the startup on every
 run. `rubberplant batch` starts once and runs commands read from stdin, one per
-line, with the arguments separated by tabs (so paths can contain spaces):
+line, written as you'd type them after `rubberplant`:
 
 ```
-render	tree.rp	-o	tree.svg	--seed	3
-derive	tree.rp	-n	5
+render "my trees\tree.rp" -o tree.svg --seed 3
+derive tree.rp -n 5
 ```
+
+Spaces (or tabs) separate the arguments. Double quotes keep spaces in an argument,
+and `""` is an empty one. Backslashes are plain characters, so Windows paths need no
+escaping; there's no way to put a double quote inside an argument.
 
 Each command prints what it would print on its own (`wrote …`, the derived string,
 diagnostics on stderr), then `exit <code>` on stdout, with the exit code it would
@@ -76,7 +80,7 @@ rp = subprocess.Popen(["out/aot/rubberplant", "batch"], stdin=subprocess.PIPE,
                       stdout=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1)
 
 def run(*args):
-    rp.stdin.write("\t".join(args) + "\n")
+    rp.stdin.write(" ".join(f'"{a}"' for a in args) + "\n")
     rp.stdin.flush()
     out = []
     while not (line := rp.stdout.readline()).startswith("exit "):

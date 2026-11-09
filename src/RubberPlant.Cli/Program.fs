@@ -22,9 +22,10 @@ Commands:
            interpretation rules, as the turtle sees it).
   check    Parse and check the file; report errors and warnings.
   batch    Run many commands in one process, which saves the startup time of
-           each: reads one command per line on stdin, its arguments separated
-           by tabs (e.g. render<TAB>tree.rp<TAB>-o<TAB>tree.svg). Each command
-           prints what it would on its own, then `exit <code>` on stdout.
+           each: reads one command per line on stdin, as you'd type it after
+           `rubberplant` (e.g. render "my tree.rp" -o tree.svg). Double quotes
+           keep spaces in an argument; backslashes are plain characters. Each
+           command prints what it would on its own, then `exit <code>` on stdout.
            Input and output are UTF-8. See the README for details.
 
 Options (override the file's settings):
@@ -399,13 +400,52 @@ let private runCommand (withUsage: bool) (argv: string list) : int =
 
         2
 
-/// `rubberplant batch`: one command per input line, its arguments separated by tabs. After each
-/// command, flushes stderr and prints `exit <code>` on stdout. Returns 0 at the end of the input.
+/// Splits a batch line into arguments, separated by spaces or tabs. Double quotes keep spaces in
+/// an argument (`"a b.rp"`; `""` is an empty argument). Backslashes are plain characters, so
+/// Windows paths need no escaping; an argument can't contain a double quote.
+let splitLine (line: string) : Result<string list, string> =
+    let args = ResizeArray<string>()
+    let current = Text.StringBuilder()
+    let mutable quoted = false
+    // An argument has begun, even if empty (`""`).
+    let mutable started = false
+
+    for c in line do
+        match c with
+        | '"' ->
+            quoted <- not quoted
+            started <- true
+        | ' '
+        | '\t' when not quoted ->
+            if started then
+                args.Add(current.ToString())
+                current.Clear() |> ignore
+                started <- false
+        | c ->
+            current.Append c |> ignore
+            started <- true
+
+    if quoted then
+        Error "unclosed double quote"
+    else
+        if started then
+            args.Add(current.ToString())
+
+        Ok(List.ofSeq args)
+
+/// `rubberplant batch`: one command per input line (see `splitLine`). After each command, flushes
+/// stderr and prints `exit <code>` on stdout. Returns 0 at the end of the input.
 let batch (input: TextReader) : int =
     let mutable line = input.ReadLine()
 
     while not (isNull line) do
-        let code = runCommand false (List.ofArray (line.Split '\t'))
+        let code =
+            match splitLine line with
+            | Ok args -> runCommand false args
+            | Error msg ->
+                eprintfn "rubberplant: %s" msg
+                2
+
         stderr.Flush()
         printfn "exit %s" (string code)
         stdout.Flush()

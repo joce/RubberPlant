@@ -285,7 +285,7 @@ let batchTests =
         "CLI batch"
         [ test "runs each line as a command and ends each with its exit code" {
               withTempDir (fun dir ->
-                  // A space in the path: arguments are separated by tabs only.
+                  // A space in the path: quoted.
                   let sub = Directory.CreateDirectory(Path.Combine(dir, "a b")).FullName
                   let input = Path.Combine(sub, "koch.rp")
                   File.Copy(Path.Combine(dir, "koch.rp"), input)
@@ -294,16 +294,38 @@ let batchTests =
 
                   let code, out, err =
                       batch
-                          [ $"render\t%s{input}\t-o\t%s{svg}"
-                            $"check\t%s{missing}"
-                            $"derive\t%s{input}\t-n\t0"
-                            "render\t--bogus" ]
+                          [ $"render \"%s{input}\" -o \"%s{svg}\""
+                            $"check \"%s{missing}\""
+                            $"derive\t\"%s{input}\"  -n 0"
+                            "render --bogus"
+                            "check \"unclosed.rp" ]
 
                   Expect.equal code 0 "batch's own exit code"
-                  Expect.equal out [| $"wrote %s{svg}"; "exit 0"; "exit 1"; "F-F-F-F"; "exit 0"; "exit 2" |] "stdout"
+                  Expect.equal out [| $"wrote %s{svg}"; "exit 0"; "exit 1"; "F-F-F-F"; "exit 0"; "exit 2"; "exit 2" |] "stdout"
                   Expect.isTrue (File.Exists svg) "the SVG is written"
-                  Expect.equal err.Length 2 "one error each for the missing file and the bad option"
-                  Expect.equal err[1] "rubberplant: --bogus expects a value" "usage error, without the usage text")
+                  Expect.equal err.Length 3 "one error each for the missing file, the bad option and the quote"
+                  Expect.equal err[1] "rubberplant: --bogus expects a value" "usage error, without the usage text"
+                  Expect.equal err[2] "rubberplant: unclosed double quote" "")
+          }
+
+          test "splitting a line into arguments" {
+              let split line =
+                  match Program.splitLine line with
+                  | Ok args -> args
+                  | Error msg -> failwith msg
+
+              Expect.equal (split "render  tree.rp\t-o out.svg ") [ "render"; "tree.rp"; "-o"; "out.svg" ] "spaces and tabs"
+              Expect.equal (split @"check ""C:\my trees\a.rp""") [ "check"; @"C:\my trees\a.rp" ] "quotes; backslashes as typed"
+              Expect.equal (split @"render a.rp -o """"") [ "render"; "a.rp"; "-o"; "" ] "empty argument"
+              Expect.equal (split @"render my"" ""tree.rp") [ "render"; "my tree.rp" ] "quotes inside an argument"
+              Expect.equal (split "   ") [] "blank line"
+              Expect.isError (Program.splitLine @"check ""a.rp") "unclosed quote"
+          }
+
+          test "a blank line is a usage error" {
+              let code, out, err = batch [ "   " ]
+              Expect.equal (code, out) (0, [| "exit 2" |]) "usage error"
+              Expect.equal err[0] "rubberplant: missing command" ""
           }
 
           test "a batch can't run inside a batch" {
