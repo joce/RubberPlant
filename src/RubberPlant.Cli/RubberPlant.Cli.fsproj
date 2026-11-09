@@ -3,6 +3,17 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>rubberplant</AssemblyName>
+    <!-- `dotnet publish -r <rid>` builds a native executable: about 35 ms a run instead of 200,
+         most of which is JIT compilation. Build and test still use the normal JIT build. -->
+    <PublishAot>true</PublishAot>
+    <!-- FSharp.Core and FParsec aren't annotated for AOT, so the AOT compiler sums up their
+         warnings as IL2104 and IL3053. Our own assemblies are IsAotCompatible: their warnings
+         are reported one by one and still fail the build. The goldens check the AOT output.
+         The FSharp.Core warnings are real: printf-style formatting of a number (%d, %g, …) can
+         fail at run time. So src formats only strings that way (a CLI test checks it), and
+         every project is reflection-free (no %A). -->
+    <NoWarn>$(NoWarn);IL2104;IL3053</NoWarn>
+    <OtherFlags>$(OtherFlags) --reflectionfree</OtherFlags>
   </PropertyGroup>
 
   <ItemGroup>

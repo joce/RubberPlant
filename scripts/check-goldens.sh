@@ -6,6 +6,8 @@
 # digest, or a golden or digest without an example.
 # Never rewrites goldens: to accept an intended change, run the Backends tests with
 # RUBBERPLANT_UPDATE_GOLDEN=1 and review the diff.
+# RUBBERPLANT_CLI=<executable> checks that CLI instead of building one (CI uses it for the
+# Native AOT build).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -13,8 +15,12 @@ golden=tests/RubberPlant.Backends.Tests/golden
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 
-dotnet build src/RubberPlant.Cli -c Release --nologo -v q
-cli() { dotnet src/RubberPlant.Cli/bin/Release/net10.0/rubberplant.dll "$@"; }
+if [ -n "${RUBBERPLANT_CLI:-}" ]; then
+  cli() { "$RUBBERPLANT_CLI" "$@"; }
+else
+  dotnet build src/RubberPlant.Cli -c Release --nologo -v q
+  cli() { dotnet src/RubberPlant.Cli/bin/Release/net10.0/rubberplant.dll "$@"; }
+fi
 
 # golden/seeds.txt: `<example> <seed>` lines (run parameters, §4.7); others use seed 0.
 seed_of() { tr -d '\r' < "$golden/seeds.txt" | awk -v n="$1" '$1 !~ /^#/ && $1 == n { print $2 }'; }

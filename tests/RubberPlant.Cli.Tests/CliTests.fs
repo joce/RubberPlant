@@ -258,3 +258,122 @@ let tests =
                   Expect.isFalse (File.Exists out) "nothing written"
                   Expect.equal (run [ "render"; input; "-o"; out; "--width-scale"; "0.001" ]) 0 "explicit is fine")
           } ]
+
+/// Runs `f` with stdout and stderr captured; returns its result and both outputs' lines.
+let private captured (f: unit -> 'a) =
+    let out, err = new StringWriter(), new StringWriter()
+    let oldOut, oldErr = System.Console.Out, System.Console.Error
+    System.Console.SetOut out
+    System.Console.SetError err
+
+    try
+        let r = f ()
+        let lines (w: StringWriter) = w.ToString().Split([| "\r\n"; "\n" |], System.StringSplitOptions.RemoveEmptyEntries)
+        r, lines out, lines err
+    finally
+        System.Console.SetOut oldOut
+        System.Console.SetError oldErr
+
+let private batch (lines: string list) =
+    captured (fun () -> Program.batch (new StringReader(String.concat "\n" lines)))
+
+// Sequenced: these swap the console's writers, which the parallel tests also write to.
+[<Tests>]
+let batchTests =
+    testSequenced
+    <| testList
+        "CLI batch"
+        [ test "runs each line as a command and ends each with its exit code" {
+              withTempDir (fun dir ->
+                  // A space in the path: quoted.
+                  let sub = Directory.CreateDirectory(Path.Combine(dir, "a b")).FullName
+                  let input = Path.Combine(sub, "koch.rp")
+                  File.Copy(Path.Combine(dir, "koch.rp"), input)
+                  let svg = Path.Combine(sub, "koch.svg")
+                  let missing = Path.Combine(sub, "missing.rp")
+
+                  let code, out, err =
+                      batch
+                          [ $"render \"%s{input}\" -o \"%s{svg}\""
+                            $"check \"%s{missing}\""
+                            $"derive\t\"%s{input}\"  -n 0"
+                            "render --bogus"
+                            "check \"unclosed.rp" ]
+
+                  Expect.equal code 0 "batch's own exit code"
+                  Expect.equal out [| $"wrote %s{svg}"; "exit 0"; "exit 1"; "F-F-F-F"; "exit 0"; "exit 2"; "exit 2" |] "stdout"
+                  Expect.isTrue (File.Exists svg) "the SVG is written"
+                  Expect.equal err.Length 3 "one error each for the missing file, the bad option and the quote"
+                  Expect.equal err[1] "rubberplant: --bogus expects a value" "usage error, without the usage text"
+                  Expect.equal err[2] "rubberplant: unclosed double quote" "")
+          }
+
+          test "splitting a line into arguments" {
+              let split line =
+                  match Program.splitLine line with
+                  | Ok args -> args
+                  | Error msg -> failwith msg
+
+              Expect.equal (split "render  tree.rp\t-o out.svg ") [ "render"; "tree.rp"; "-o"; "out.svg" ] "spaces and tabs"
+              Expect.equal (split @"check ""C:\my trees\a.rp""") [ "check"; @"C:\my trees\a.rp" ] "quotes; backslashes as typed"
+              Expect.equal (split @"render a.rp -o """"") [ "render"; "a.rp"; "-o"; "" ] "empty argument"
+              Expect.equal (split @"render my"" ""tree.rp") [ "render"; "my tree.rp" ] "quotes inside an argument"
+              Expect.equal (split "   ") [] "blank line"
+              Expect.isError (Program.splitLine @"check ""a.rp") "unclosed quote"
+          }
+
+          test "a derived string can start with `exit ` but is never an exit line" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "exit.rp")
+                  File.WriteAllText(input, "axiom: exit F;\n")
+                  let _, out, _ = batch [ $"derive \"%s{input}\"" ]
+                  Expect.equal out [| "exit F"; "exit 0" |] "the client must match the whole `exit <code>` line")
+          }
+
+          test "a NUL character is a usage error, and the batch goes on" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+                  let bad = Path.Combine(dir, "bad\000.svg")
+                  let code, out, err = batch [ $"render \"%s{input}\" -o \"%s{bad}\""; $"derive \"%s{input}\" -n 0" ]
+                  Expect.equal (code, out) (0, [| "exit 2"; "F-F-F-F"; "exit 0" |]) "stdout"
+                  Expect.equal err[0] "rubberplant: a batch line can't contain a NUL character" "")
+          }
+
+          test "a blank line is a usage error" {
+              let code, out, err = batch [ "   " ]
+              Expect.equal (code, out) (0, [| "exit 2" |]) "usage error"
+              Expect.equal err[0] "rubberplant: missing command" ""
+          }
+
+          test "a batch can't run inside a batch" {
+              let code, out, err = batch [ "batch" ]
+              Expect.equal (code, out) (0, [| "exit 2" |]) "usage error"
+              Expect.stringContains err[0] "can't run inside a batch" ""
+          }
+
+          test "batch takes no arguments" {
+              let code, _, err = captured (fun () -> Program.main [| "batch"; "x" |])
+              Expect.equal code 2 "usage error"
+              Expect.stringContains err[0] "batch takes no arguments" ""
+          } ]
+
+// Native AOT: F# printf-style formatting of a value type (`%d`, `%g`, `%c`, `%x`, …) builds its
+// formatter by reflection, and the native executable may lack the code for it ("missing native
+// code" at run time). In src, only `%s` is allowed; format numbers with `string` first.
+[<Tests>]
+let aotFormatTests =
+    test "src uses printf-style specifiers for strings only" {
+        let src = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src")
+        let specifier = System.Text.RegularExpressions.Regex @"%[-+0#]*[0-9]*(\.[0-9]+)?[a-rt-zA-Z]"
+
+        let files = Directory.GetFiles(src, "*.fs", SearchOption.AllDirectories)
+
+        let offenders =
+            [ for file in files do
+                  for i, line in Array.indexed (File.ReadAllLines file) do
+                      if specifier.IsMatch line && not (line.TrimStart().StartsWith "//") then
+                          $"%s{file}(%d{i + 1}): %s{line.Trim()}" ]
+
+        Expect.isNonEmpty files "src found"
+        Expect.isEmpty offenders "use %s{string x} instead"
+    }

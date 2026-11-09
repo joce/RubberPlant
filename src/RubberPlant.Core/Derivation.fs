@@ -270,7 +270,7 @@ let private rewrite
                                 Diagnostic.error
                                     code
                                     (Some rule.Pos)
-                                    $"%s{msg} in the rule at line %d{rule.Pos.Line}, %s{what} `%s{modText}`"
+                                    $"%s{msg} in the rule at line %s{string rule.Pos.Line}, %s{what} `%s{modText}`"
                             )
                         )
 
@@ -291,7 +291,7 @@ let deriveSteps (model: Model) : Result<LString list, Diagnostic list> =
     try
         for step in 1 .. model.Settings.Derivations do
             let struct (next, rng') =
-                rewrite index model.Context true $"rewriting (derivation step %d{step})" rng current
+                rewrite index model.Context true $"rewriting (derivation step %s{string step})" rng current
 
             rng <- rng'
             current <- next

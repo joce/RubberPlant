@@ -21,7 +21,7 @@ let num (v: float) =
 let private vec (prefix: string) (v: Vec3) = $"%s{prefix} %s{num v.X} %s{num v.Y} %s{num v.Z}"
 
 /// The material name of a palette entry.
-let materialName (entry: int) = $"color%d{entry}"
+let materialName (entry: int) = $"color%s{string entry}"
 
 let private obj (mtlFileName: string) (mesh: Mesh) =
     let sb = StringBuilder()
@@ -49,7 +49,7 @@ let private obj (mtlFileName: string) (mesh: Mesh) =
             let a, b, c =
                 g.Triangles[3 * t] + offset, g.Triangles[3 * t + 1] + offset, g.Triangles[3 * t + 2] + offset
 
-            line $"f %d{a}//%d{a} %d{b}//%d{b} %d{c}//%d{c}"
+            line $"f %s{string a}//%s{string a} %s{string b}//%s{string b} %s{string c}//%s{string c}"
 
         offset <- offset + g.Positions.Length
 

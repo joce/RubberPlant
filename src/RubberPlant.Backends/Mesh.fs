@@ -74,7 +74,7 @@ let private points (geometry: Geometry) =
 let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<float, string> =
     match options.WidthScale with
     | Some k when Double.IsFinite k && k > 0.0 -> Ok k
-    | Some k -> Error $"the width scale must be a finite number greater than 0, got %g{k}"
+    | Some k -> Error $"the width scale must be a finite number greater than 0, got %s{string k}"
     | None ->
         // Match the SVG that the default options would draw: same extent, same
         // margins, half the widest line reserved on each side.
@@ -93,7 +93,7 @@ let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<floa
 
         if not (denominator > 0.0) then
             Error
-                $"the widest line (%g{widest}) is too wide for the automatic width scale (it wouldn't fit in a %g{svg.Size} px SVG); use --width-scale"
+                $"the widest line (%s{string widest}) is too wide for the automatic width scale (it wouldn't fit in a %s{string svg.Size} px SVG); use --width-scale"
         else
             let pts = points geometry |> Array.ofSeq
 
@@ -304,7 +304,7 @@ let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
 /// in the default SVG).
 let build (options: MeshOptions) (geometry: Geometry) : Result<Mesh, string> =
     if options.Sides < 3 then
-        Error $"a cylinder needs at least 3 sides, got %d{options.Sides}"
+        Error $"a cylinder needs at least 3 sides, got %s{string options.Sides}"
     else
         widthScale options geometry
         |> Result.map (fun k ->

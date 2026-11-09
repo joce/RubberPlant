@@ -13,6 +13,7 @@ let usage =
   rubberplant render <file.rp> [-o <out>] [--format <f>] [render options] [options]
   rubberplant derive <file.rp> [--drawing] [options]
   rubberplant check  <file.rp> [options]
+  rubberplant batch
 
 Commands:
   render   Derive, interpret and draw the L-system, as SVG or as a 3D mesh
@@ -20,6 +21,13 @@ Commands:
   derive   Print the derived string (with --drawing: the string after
            interpretation rules, as the turtle sees it).
   check    Parse and check the file; report errors and warnings.
+  batch    Run many commands in one process, which saves the startup time of
+           each: reads one command per line on stdin, as you'd type it after
+           `rubberplant` (e.g. render "my tree.rp" -o tree.svg). Double quotes
+           keep spaces in an argument; backslashes are plain characters. Each
+           command prints what it would on its own, then `exit <code>` on stdout:
+           match that whole line (a derived string can start with `exit `).
+           Input and output are UTF-8. See the README for details.
 
 Options (override the file's settings):
   -n, --derivations <n>   number of derivation steps
@@ -105,6 +113,7 @@ let private parseArgs (argv: string list) : Args =
         | "render" :: rest -> Render, rest
         | "derive" :: rest -> Derive, rest
         | "check" :: rest -> Check, rest
+        | "batch" :: _ -> raise (UsageError "batch takes no arguments and can't run inside a batch")
         | c :: _ -> raise (UsageError $"unknown command '%s{c}'")
         | [] -> raise (UsageError "missing command")
 
@@ -136,7 +145,7 @@ let private parseArgs (argv: string list) : Args =
             let minSize = 2.0 * Svg.defaultOptions.Margin
 
             if s <= minSize then
-                raise (UsageError $"--size must be greater than %g{minSize} (twice the margin)")
+                raise (UsageError $"--size must be greater than %s{string minSize} (twice the margin)")
 
             go rest { acc with Size = Some s }
         | "--format" :: v :: rest ->
@@ -193,7 +202,9 @@ let private parseArgs (argv: string list) : Args =
             // Integers a float represents exactly (§4.7).
             match Int64.TryParse(v, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) with
             | true, n when abs (float n) <= maxSeed -> go rest { acc with Seed = Some n }
-            | _ -> raise (UsageError $"--seed expects an integer between -%.0f{maxSeed} and %.0f{maxSeed}, got '%s{v}'")
+            | _ ->
+                let max = maxSeed.ToString("F0", CultureInfo.InvariantCulture)
+                raise (UsageError $"--seed expects an integer between -%s{max} and %s{max}, got '%s{v}'")
         | opt :: [] when opt.StartsWith "-" -> raise (UsageError $"%s{opt} expects a value")
         | opt :: _ when opt.StartsWith "-" -> raise (UsageError $"unknown option '%s{opt}'")
         | input :: rest ->
@@ -371,21 +382,89 @@ let private run (args: Args) : int =
                         1
                     | Ok files -> if writeAll files then 0 else 1
 
+/// Runs one command and returns its exit code. A usage error prints the message, and the
+/// usage text too when `withUsage`.
+let private runCommand (withUsage: bool) (argv: string list) : int =
+    try
+        let args = parseArgs argv
+
+        // Format errors are usage errors: report them before doing any work.
+        if args.Command = Render then
+            outputFormat args |> ignore
+
+        run args
+    with UsageError msg ->
+        eprintfn "rubberplant: %s" msg
+
+        if withUsage then
+            eprintf "\n%s" usage
+
+        2
+
+/// Splits a batch line into arguments, separated by spaces or tabs. Double quotes keep spaces in
+/// an argument (`"a b.rp"`; `""` is an empty argument). Backslashes are plain characters, so
+/// Windows paths need no escaping; an argument can't contain a double quote.
+let splitLine (line: string) : Result<string list, string> =
+    let args = ResizeArray<string>()
+    let current = Text.StringBuilder()
+    let mutable quoted = false
+    // An argument has begun, even if empty (`""`).
+    let mutable started = false
+
+    for c in line do
+        match c with
+        | '"' ->
+            quoted <- not quoted
+            started <- true
+        | ' '
+        | '\t' when not quoted ->
+            if started then
+                args.Add(current.ToString())
+                current.Clear() |> ignore
+                started <- false
+        | c ->
+            current.Append c |> ignore
+            started <- true
+
+    // An OS argument can't contain NUL; file APIs throw on it rather than fail with an IOException.
+    if line.Contains '\000' then
+        Error "a batch line can't contain a NUL character"
+    elif quoted then
+        Error "unclosed double quote"
+    else
+        if started then
+            args.Add(current.ToString())
+
+        Ok(List.ofSeq args)
+
+/// `rubberplant batch`: one command per input line (see `splitLine`). After each command, flushes
+/// stderr and prints `exit <code>` on stdout. Returns 0 at the end of the input.
+let batch (input: TextReader) : int =
+    let mutable line = input.ReadLine()
+
+    while not (isNull line) do
+        let code =
+            match splitLine line with
+            | Ok args -> runCommand false args
+            | Error msg ->
+                eprintfn "rubberplant: %s" msg
+                2
+
+        stderr.Flush()
+        printfn "exit %s" (string code)
+        stdout.Flush()
+        line <- input.ReadLine()
+
+    0
+
 [<EntryPoint>]
 let main argv =
     if argv.Length = 0 || argv[0] = "-h" || argv[0] = "--help" then
         printf "%s" usage
         if argv.Length = 0 then 2 else 0
+    elif argv = [| "batch" |] then
+        // UTF-8 both ways, whatever the console's code page, so paths aren't mangled.
+        Console.OutputEncoding <- Text.UTF8Encoding(false)
+        batch (new StreamReader(Console.OpenStandardInput(), Text.UTF8Encoding(false)))
     else
-        try
-            let args = parseArgs (List.ofArray argv)
-
-            // Format errors are usage errors: report them before doing any work.
-            if args.Command = Render then
-                outputFormat args |> ignore
-
-            run args
-        with UsageError msg ->
-            eprintfn "rubberplant: %s\n" msg
-            eprintf "%s" usage
-            2
+        runCommand true (List.ofArray argv)

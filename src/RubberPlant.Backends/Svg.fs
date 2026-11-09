@@ -136,9 +136,9 @@ let render (options: Options) (geometry: Geometry) : Result<string, string> =
     let pad = options.Margin + maxStroke / 2.0
 
     if options.Margin < 0.0 || not (options.Size > 2.0 * options.Margin) then
-        Error $"the image size (%g{options.Size} px) must be greater than twice the margin (%g{options.Margin} px)"
+        Error $"the image size (%s{string options.Size} px) must be greater than twice the margin (%s{string options.Margin} px)"
     elif not (options.Size - 2.0 * pad > 0.0) then
         Error
-            $"the widest line (%g{maxStroke} px) doesn't fit in a %g{options.Size} px image with %g{options.Margin} px margins; use a larger size or thinner lines"
+            $"the widest line (%s{string maxStroke} px) doesn't fit in a %s{string options.Size} px image with %s{string options.Margin} px margins; use a larger size or thinner lines"
     else
         Ok(draw options pad geometry)
