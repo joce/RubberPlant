@@ -43,6 +43,14 @@ jobs:
       - name: Examples match the goldens
         run: bash scripts/check-goldens.sh
 
+      # The released CLI is a Native AOT build: trimming must not change any
+      # output, so it must match the same goldens. Windows only for now.
+      - name: Native AOT build matches the goldens
+        if: runner.os == 'Windows'
+        run: |
+          dotnet publish src/RubberPlant.Cli -c Release -r win-x64 --nologo -o aot
+          RUBBERPLANT_CLI=aot/rubberplant.exe bash scripts/check-goldens.sh
+
       # Every example's .gltf and .glb, and the mesh fixtures, must pass the
       # Khronos glTF Validator without errors.
       - name: glTF output is valid

@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- The CLI is published with Native AOT: report this assembly's AOT warnings one by one. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Include="Diagnostics.fs" />
     <Compile Include="Unicode.fs" />
