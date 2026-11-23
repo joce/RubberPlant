@@ -257,6 +257,51 @@ let tests =
                   Expect.equal (run [ "render"; input; "-o"; out ]) 1 "auto width scale impossible"
                   Expect.isFalse (File.Exists out) "nothing written"
                   Expect.equal (run [ "render"; input; "-o"; out; "--width-scale"; "0.001" ]) 0 "explicit is fine")
+          }
+
+          test "--max-modules and --max-primitives values and command scoping" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+                  let out = Path.Combine(dir, "koch.svg")
+
+                  for bad in [ ""; "0"; "-1"; "abc"; "UNLIMITED"; "1.5"; "2147483648" ] do
+                      Expect.equal (run [ "derive"; input; "--max-modules"; bad ]) 2 $"derive --max-modules %s{bad}"
+                      Expect.equal (run [ "render"; input; "-o"; out; "--max-primitives"; bad ]) 2 $"render --max-primitives %s{bad}"
+
+                  Expect.equal (run [ "derive"; input; "--max-modules" ]) 2 "missing value for --max-modules"
+                  Expect.equal (run [ "render"; input; "--max-primitives" ]) 2 "missing value for --max-primitives"
+
+                  // Strict command scoping
+                  Expect.equal (run [ "check"; input; "--max-modules"; "100" ]) 2 "--max-modules rejected on check"
+                  Expect.equal (run [ "check"; input; "--max-primitives"; "100" ]) 2 "--max-primitives rejected on check"
+                  Expect.equal (run [ "derive"; input; "--max-primitives"; "100" ]) 2 "--max-primitives rejected on derive"
+
+                  // Unlimited and tight limits
+                  Expect.equal (run [ "derive"; input; "--max-modules"; "unlimited" ]) 0 "derive unlimited"
+                  Expect.equal (run [ "render"; input; "-o"; out; "--max-modules"; "unlimited"; "--max-primitives"; "unlimited" ]) 0 "render unlimited")
+          }
+
+          test "render and derive fail cleanly with exit 1 on budget exceeded" {
+              withTempDir (fun dir ->
+                  let explode = Path.Combine(dir, "explode.rp")
+                  File.WriteAllText(explode, "settings { derivations = 40; }\naxiom: F;\nF -> F F;\n")
+                  let out = Path.Combine(dir, "explode.svg")
+
+                  Expect.equal (run [ "derive"; explode ]) 1 "default max-modules stops exploding derive"
+                  Expect.equal (run [ "render"; explode; "-o"; out ]) 1 "default max-modules stops exploding render"
+                  Expect.isFalse (File.Exists out) "nothing written on module limit error"
+
+                  let prims = Path.Combine(dir, "prims.rp")
+                  File.WriteAllText(prims, "axiom: F F F F;\n")
+                  Expect.equal (run [ "render"; prims; "-o"; out; "--max-primitives"; "3" ]) 1 "primitive limit hit"
+                  Expect.isFalse (File.Exists out) "nothing written on primitive limit error"
+                  Expect.equal (run [ "render"; prims; "-o"; out; "--max-primitives"; "4" ]) 0 "exact primitive limit passes"
+                  Expect.isTrue (File.Exists out) "written when within budget"
+
+                  let interp = Path.Combine(dir, "interp.rp")
+                  File.WriteAllText(interp, "axiom: A;\nA as F F F F;\n")
+                  Expect.equal (run [ "derive"; interp; "--max-modules"; "2" ]) 0 "derived string is 1 symbol"
+                  Expect.equal (run [ "derive"; interp; "--drawing"; "--max-modules"; "2" ]) 1 "drawing string exceeds limit")
           } ]
 
 /// Runs `f` with stdout and stderr captured; returns its result and both outputs' lines.
@@ -355,6 +400,28 @@ let batchTests =
               let code, _, err = captured (fun () -> Program.main [| "batch"; "x" |])
               Expect.equal code 2 "usage error"
               Expect.stringContains err[0] "batch takes no arguments" ""
+          }
+
+          test "batch stays healthy after module and primitive budget failures" {
+              withTempDir (fun dir ->
+                  let explode = Path.Combine(dir, "explode.rp")
+                  File.WriteAllText(explode, "settings { derivations = 40; }\naxiom: F;\nF -> F F;\n")
+                  let koch = Path.Combine(dir, "koch.rp")
+                  let svg = Path.Combine(dir, "koch.svg")
+
+                  let code, out, err =
+                      batch
+                          [ $"derive \"%s{explode}\""
+                            $"render \"%s{koch}\" -o \"%s{svg}\" --max-primitives 3"
+                            $"derive \"%s{koch}\" -n 0"
+                            $"render \"%s{koch}\" -o \"%s{svg}\"" ]
+
+                  Expect.equal code 0 "batch exits cleanly"
+                  Expect.equal out [| "exit 1"; "exit 1"; "F-F-F-F"; "exit 0"; $"wrote %s{svg}"; "exit 0" |] "stdout"
+                  Expect.equal err.Length 2 "two budget diagnostics"
+                  Expect.stringContains err[0] "RP0206" "module limit code"
+                  Expect.stringContains err[1] "RP0207" "primitive limit code"
+                  Expect.isTrue (File.Exists svg) "subsequent render succeeded")
           } ]
 
 // Native AOT: F# printf-style formatting of a value type (`%d`, `%g`, `%c`, `%x`, …) builds its

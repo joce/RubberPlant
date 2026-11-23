@@ -39,6 +39,12 @@ Options (override the file's settings):
       --elasticity <e>    how strongly segments bend toward T (0: off)
       --seed <n>          random seed (default 0)
 
+Budget options (guard against runaway grammars):
+      --max-modules <n|unlimited>     max L-string symbols (default 1000000;
+                                      render, derive)
+      --max-primitives <n|unlimited>  max turtle primitives (default 250000;
+                                      render)
+
 Render options:
   -o, --output <file>     output file; its extension (.svg, .obj, .gltf, .glb)
                           picks the format (default: the input file, with the
@@ -98,7 +104,11 @@ type Args =
       Taper: float option
       Tropism: Geometry.Vec3 option
       Elasticity: float option
-      Seed: int64 option }
+      Seed: int64 option
+      /// Some None: unlimited.
+      MaxModules: int option option
+      /// Some None: unlimited.
+      MaxPrimitives: int option option }
 
 exception UsageError of string
 
@@ -106,6 +116,14 @@ let private parseFloat (opt: string) (v: string) =
     match Double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture) with
     | true, x when Double.IsFinite x -> x
     | _ -> raise (UsageError $"%s{opt} expects a number, got '%s{v}'")
+
+let private parseLimit (opt: string) (v: string) =
+    if v = "unlimited" then
+        None
+    else
+        match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
+        | true, n when n >= 1 -> Some n
+        | _ -> raise (UsageError $"%s{opt} expects a positive integer or 'unlimited', got '%s{v}'")
 
 let private parseArgs (argv: string list) : Args =
     let command, rest =
@@ -133,7 +151,9 @@ let private parseArgs (argv: string list) : Args =
           Taper = None
           Tropism = None
           Elasticity = None
-          Seed = None }
+          Seed = None
+          MaxModules = None
+          MaxPrimitives = None }
 
     let rec go args acc =
         match args with
@@ -205,6 +225,8 @@ let private parseArgs (argv: string list) : Args =
             | _ ->
                 let max = maxSeed.ToString("F0", CultureInfo.InvariantCulture)
                 raise (UsageError $"--seed expects an integer between -%s{max} and %s{max}, got '%s{v}'")
+        | "--max-modules" :: v :: rest -> go rest { acc with MaxModules = Some(parseLimit "--max-modules" v) }
+        | "--max-primitives" :: v :: rest -> go rest { acc with MaxPrimitives = Some(parseLimit "--max-primitives" v) }
         | opt :: [] when opt.StartsWith "-" -> raise (UsageError $"%s{opt} expects a value")
         | opt :: _ when opt.StartsWith "-" -> raise (UsageError $"unknown option '%s{opt}'")
         | input :: rest ->
@@ -233,6 +255,12 @@ let private parseArgs (argv: string list) : Args =
 
     if args.Drawing && args.Command <> Derive then
         raise (UsageError "--drawing only applies to derive")
+
+    if args.MaxModules.IsSome && args.Command = Check then
+        raise (UsageError "--max-modules doesn't apply to check")
+
+    if args.MaxPrimitives.IsSome && args.Command <> Render then
+        raise (UsageError "--max-primitives only applies to render")
 
     args
 
@@ -320,14 +348,18 @@ let private run (args: Args) : int =
                 { model with
                     Settings = applyOverrides args model.Settings }
 
+            let limits =
+                { MaxModules = defaultArg args.MaxModules Limits.defaults.MaxModules
+                  MaxPrimitives = defaultArg args.MaxPrimitives Limits.defaults.MaxPrimitives }
+
             match args.Command with
             | Check -> 0
             | Derive ->
                 let result =
-                    Derivation.derive model
+                    Derivation.deriveWith limits model
                     |> Result.bind (fun derived ->
                         if args.Drawing then
-                            Derivation.interpret model derived
+                            Derivation.interpretWith limits model derived
                         else
                             Ok derived)
 
@@ -339,7 +371,7 @@ let private run (args: Args) : int =
                     printfn "%s" (LString.format s)
                     0
             | Render ->
-                match Pipeline.run model with
+                match Pipeline.runWith limits model with
                 | Error diags ->
                     report args.Input diags
                     1

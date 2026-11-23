@@ -27,7 +27,9 @@ The output file's extension picks the format: `.svg` draws a line drawing; `.obj
 glTF is the most portable: one file, colors included, and leaves visible from both
 sides in any viewer. Run `rubberplant --help` for all options. Settings given on the command line
 (`-n`, `--angle`, …) override the file's values. The random seed isn't part of
-the file: set it with `--seed` (default 0).
+the file: set it with `--seed` (default 0). Execution budgets (`--max-modules`,
+default 1,000,000; `--max-primitives`, default 250,000) stop runaway grammars
+cleanly and can be adjusted or set to `unlimited` ([`docs/core-hardening.md`](docs/core-hardening.md)).
 
 ### Native executable
 

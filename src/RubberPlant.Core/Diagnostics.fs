@@ -152,6 +152,12 @@ module Codes =
     [<Literal>]
     let InvalidGeometry = "RP0205"
 
+    [<Literal>]
+    let ModuleLimitExceeded = "RP0206"
+
+    [<Literal>]
+    let PrimitiveLimitExceeded = "RP0207"
+
     // Warnings
     [<Literal>]
     let UnreachableRule = "RP0301"

@@ -119,3 +119,20 @@ type Model =
       Axiom: LString
       Productions: CRule list
       Interpretations: CRule list }
+
+/// Execution budgets guarding against runaway derivation or geometry (core-hardening.md §2).
+/// Budgets never alter the output of a model that stays within them.
+type Limits =
+    { /// Maximum number of symbols (`Sym`) in an L-string (axiom, derivation, interpretation).
+      MaxModules: int option
+      /// Maximum number of primitives (`Segment` + `Polygon`) emitted by the turtle.
+      MaxPrimitives: int option }
+
+module Limits =
+    let defaults =
+        { MaxModules = Some 1_000_000
+          MaxPrimitives = Some 250_000 }
+
+    let unlimited =
+        { MaxModules = None
+          MaxPrimitives = None }

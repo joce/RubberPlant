@@ -617,5 +617,68 @@ let tests =
               Expect.equal (warnings |> List.map _.Code) [ Codes.UnbalancedPolygon; Codes.UnbalancedPolygon ] ""
           }
 
+          testList
+              "budgets"
+              [ test "segment primitive limit boundary" {
+                    let m, _ = compileOk "axiom: F F F;"
+
+                    Expect.isOk (Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 3 } m) "exact limit succeeds"
+
+                    match Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 2 } m with
+                    | Error [ d ] -> Expect.equal d.Code Codes.PrimitiveLimitExceeded "RP0207"
+                    | r -> failtestf "expected RP0207, got %A" r
+                }
+
+                test "polygons count toward primitive limit" {
+                    let m, _ = compileOk "axiom: { f f f } { f f f };"
+
+                    Expect.isOk (Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 2 } m) "2 polygons allowed"
+
+                    match Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 1 } m with
+                    | Error [ d ] -> Expect.equal d.Code Codes.PrimitiveLimitExceeded "RP0207"
+                    | r -> failtestf "expected RP0207, got %A" r
+                }
+
+                test "segments and polygons share the primitive budget" {
+                    // F (1) + { F (2) F (3) } (4) = 4 primitives
+                    let m, _ = compileOk "axiom: F { F F };"
+
+                    Expect.isOk (Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 4 } m) "4 primitives allowed"
+
+                    match Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 3 } m with
+                    | Error [ d ] -> Expect.equal d.Code Codes.PrimitiveLimitExceeded "RP0207"
+                    | r -> failtestf "expected RP0207, got %A" r
+                }
+
+                test "non-drawing symbols do not consume primitive budget" {
+                    let m, _ = compileOk "axiom: + - f f [ + f ] F;"
+
+                    match Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 1 } m with
+                    | Ok o -> Expect.equal o.Geometry.Length 1 "only F emitted a primitive"
+                    | Error ds -> failtestf "unexpected error:\n%s" (formatDiags ds)
+                }
+
+                test "zero and negative primitive limits in Core API" {
+                    let noPrims, _ = compileOk "axiom: + f;"
+                    let oneSeg, _ = compileOk "axiom: F;"
+                    let zeroLimit = { Limits.defaults with MaxPrimitives = Some 0 }
+                    let negLimit = { Limits.defaults with MaxPrimitives = Some -1 }
+
+                    Expect.isOk (Pipeline.runWith zeroLimit noPrims) "0 primitives fits in 0"
+
+                    match Pipeline.runWith zeroLimit oneSeg with
+                    | Error [ d ] -> Expect.equal d.Code Codes.PrimitiveLimitExceeded "segment fails at limit 0"
+                    | r -> failtestf "expected RP0207, got %A" r
+
+                    match Pipeline.runWith negLimit noPrims with
+                    | Error [ d ] -> Expect.equal d.Code Codes.PrimitiveLimitExceeded "negative fails on empty geometry"
+                    | r -> failtestf "expected RP0207, got %A" r
+                }
+
+                test "Limits.unlimited disables primitive budget" {
+                    let m, _ = compileOk "settings { derivations = 4; }\naxiom: F;\nF -> F F;"
+                    Expect.isOk (Pipeline.runWith Limits.unlimited m) "unlimited"
+                } ]
+
           testProperty "rotations keep the frame orthonormal and right-handed" frameStaysOrthonormal
           v02 ]

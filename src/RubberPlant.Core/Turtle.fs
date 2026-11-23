@@ -116,7 +116,9 @@ let private turtleArity =
           "!", 1
           "'", 1 ]
 
-exception private TurtleError of string
+exception private TurtleError of code: string * message: string
+
+let private invalidGeometry msg = raise (TurtleError(Codes.InvalidGeometry, msg))
 
 let private isFinite = Vec3.isFinite
 
@@ -133,10 +135,15 @@ let private normalizeTropism (v: Vec3) =
         let w = Vec3.create (v.X / m) (v.Y / m) (v.Z / m)
         (1.0 / Vec3.length w) * w
 
-/// Interprets a drawing string. Returns the geometry and any warnings, or an
-/// error if the turtle meets a non-finite value or an invalid width: backends
-/// must only ever receive finite geometry.
-let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagnostic list, Diagnostic list> =
+/// Interprets a drawing string under `limits`. Returns the geometry and any
+/// warnings, or an error if the turtle meets a non-finite value, an invalid
+/// width, or exceeds the primitive budget: backends must only ever receive
+/// finite geometry.
+let interpretWith
+    (limits: Limits)
+    (settings: Settings)
+    (drawing: LString)
+    : Result<Geometry * Diagnostic list, Diagnostic list> =
     let out = ResizeArray<Primitive>()
     let warnings = ResizeArray<Diagnostic>()
     let warned = System.Collections.Generic.HashSet<struct (string * int)>()
@@ -148,16 +155,22 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
     let mutable vertexOutside = false
     let tHat = normalizeTropism settings.Tropism
 
+    let addPrimitive (p: Primitive) =
+        match limits.MaxPrimitives with
+        | Some limit when out.Count >= limit ->
+            raise (TurtleError(Codes.PrimitiveLimitExceeded, $"primitive limit of %s{string limit} exceeded"))
+        | _ -> out.Add p
+
     /// `F`, `f` and `G`: emit the segment (`draw`), record the polygon vertex
     /// (`vertex`), then bend toward T (§5.5).
     let move (d: float) draw vertex =
         let p1 = t.P + d * t.H
 
         if not (isFinite p1) then
-            raise (TurtleError "the turtle's position is no longer finite (overflow)")
+            invalidGeometry "the turtle's position is no longer finite (overflow)"
 
         if draw then
-            out.Add(Segment(t.P, p1, t.Width, t.Color))
+            addPrimitive (Segment(t.P, p1, t.Width, t.Color))
 
         if vertex && polygons.Count > 0 then
             polygons.Peek().Add p1
@@ -165,17 +178,20 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
         t <- bend tHat settings.Elasticity { t with P = p1 }
 
     let run () =
+        match limits.MaxPrimitives with
+        | Some limit when limit < 0 ->
+            raise (TurtleError(Codes.PrimitiveLimitExceeded, $"primitive limit of %s{string limit} exceeded"))
+        | _ -> ()
+
         // These can come from CLI overrides, which the checker never saw.
         if not (System.Double.IsFinite settings.Width) || settings.Width < 0.0 then
-            raise (
-                TurtleError $"the initial width must be finite and non-negative, got %s{formatNumber settings.Width}"
-            )
+            invalidGeometry $"the initial width must be finite and non-negative, got %s{formatNumber settings.Width}"
 
         if not (isFinite settings.Tropism) || tHat = Vec3.zero then
-            raise (TurtleError "the tropism vector must have finite components and not be the zero vector")
+            invalidGeometry "the tropism vector must have finite components and not be the zero vector"
 
         if not (System.Double.IsFinite settings.Elasticity) then
-            raise (TurtleError $"the elasticity must be finite, got %s{formatNumber settings.Elasticity}")
+            invalidGeometry $"the elasticity must be finite, got %s{formatNumber settings.Elasticity}"
 
         for sym in drawing do
             match sym with
@@ -202,11 +218,10 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
 
                         if not (System.Double.IsFinite v) then
                             if args.Length > 0 then
-                                raise (TurtleError $"`%s{format [| sym |]}`: turtle parameters must be finite")
+                                invalidGeometry $"`%s{format [| sym |]}`: turtle parameters must be finite"
                             else
-                                raise (
-                                    TurtleError $"`%s{name}` uses `#%s{setting}`, which is not finite (%s{formatNumber v})"
-                                )
+                                invalidGeometry
+                                    $"`%s{name}` uses `#%s{setting}`, which is not finite (%s{formatNumber v})"
 
                         v
 
@@ -233,7 +248,7 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
                                 let w = arg "width" 0.0
 
                                 if w < 0.0 then
-                                    raise (TurtleError $"`%s{format [| sym |]}`: widths must be non-negative")
+                                    invalidGeometry $"`%s{format [| sym |]}`: widths must be non-negative"
 
                                 w
                             else
@@ -256,7 +271,7 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
                     | "{" -> polygons.Push(ResizeArray())
                     | "}" ->
                         if polygons.Count > 0 then
-                            out.Add(Polygon(List.ofSeq (polygons.Pop()), t.Color))
+                            addPrimitive (Polygon(List.ofSeq (polygons.Pop()), t.Color))
                         else
                             unmatchedClose <- true
                     | _ -> ()
@@ -274,5 +289,9 @@ let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagno
             warnings.Add(Diagnostic.warning Codes.VertexOutsidePolygon None "`.` outside a polygon; ignored")
 
         Ok(List.ofSeq out, List.ofSeq warnings)
-    with TurtleError msg ->
-        Error [ Diagnostic.error Codes.InvalidGeometry None msg ]
+    with TurtleError(code, msg) ->
+        Error [ Diagnostic.error code None msg ]
+
+/// Interprets a drawing string under default execution limits.
+let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagnostic list, Diagnostic list> =
+    interpretWith Limits.defaults settings drawing
