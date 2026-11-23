@@ -3,6 +3,8 @@
 - [`language.md`](language.md): the RubberPlant L-system language specification.
 - [`backends.md`](backends.md): geometry in 3D, mesh construction, and the output backends (SVG, OBJ, glTF).
 - [`roadmap.md`](roadmap.md): milestones.
+- [`battle-plan.md`](battle-plan.md): multi-phase plan from core hardening and 3D viewer through AI/ML workflows.
+- [`abop-notes.md`](abop-notes.md): ABOP errata candidates, `cpfg` verification findings, and modeling notes.
 - [`fetch_refs.py`](fetch_refs.py): downloads and extracts the reference material.
 
 ## Reference material
