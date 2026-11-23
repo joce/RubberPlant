@@ -91,12 +91,21 @@ flowchart LR
 
 ### 3C. ABOP Chapter 4 (Phyllotaxis) & Chapter 6 (Animation)
 - Implement remaining Ch 4 & Ch 6 features (timed/developmental stepping), using `RubberPlant.Viewer` to scrub growth steps and export frame sequences.
-- *(ABOP v0.4 Chapters 7–8 — map L-systems and fractals — remain cleanly decoupled; tackle either right after Ch 6 or in parallel with Phase 4 whenever you feel like it.)*
+- **Completes `v0.3` on [`roadmap.md`](roadmap.md).**
 
 ### Exit Criteria
 - Trees have smooth tapered trunks/limbs with no wedge gaps at bends.
 - Leaves, grasses, and petals render cleanly in 3D and can be edited via readable `.rp` parameters.
-- All Ch 4–6 examples are verified in 3D and exported cleanly to glTF/GLB.
+- All Ch 4–6 examples are verified in 3D and exported cleanly to glTF/GLB (`v0.3` release).
+
+---
+
+## Roadmap Milestone: `v0.4` (ABOP Chapters 7–8 — All of ABOP Covered)
+
+Before moving into the AI/ML phases, complete [`roadmap.md`](roadmap.md) `v0.4`:
+- Map L-systems and cellular layers (ABOP Ch 7) and fractal properties of plants (ABOP Ch 8).
+- Closes the full ABOP implementation route cleanly before pivoting to Phase 4 (`BP.4`).
+- *(Note: `v1.0` lpfg-level embedded scripting remains independent and comes later; pure declarative `.rp` is the cleaner, safer target language for `BP.4`–`BP.5`.)*
 
 ---
 
@@ -175,10 +184,11 @@ flowchart LR
 - **`/teamwork`** — Parallel swarm of workers when work splits cleanly into independent tracks.
 - **`/goal`** — Long unattended verification loops (e.g., grinding examples until `cpfg` diffs, glTF validator, and tests all pass).
 
-| Phase | Focus | Key Deliverable | `/boost` | `/teamwork` | Recommended Primary Mode |
-|---|---|---|---|---|---|
-| **1** | Core hardening | Budgets (`--max-modules`/`--max-primitives`) + `rubberplant stats` | No | No | `/grill-me` (spec) → `/plan` (PRs) |
-| **2** | 3D viewer | `RubberPlant.Viewer` (direct `.rp` → GPU, window + headless, 2×2 contact sheet) | **Spec** (GPU stack, headless FBO, Native AOT) | Optional | `/boost` (spec) → `/plan` (implementation) |
-| **3** | ABOP v0.3 + 3D | Generalized cylinders (closed + open contours), `.s` compat, Ch 4 & 6 | **Yes** (frame transport, bicubic normals/stitching) | **Yes** (parallel `.s`, GenCyl, Ch 4/6 examples, cpfg checks) | `/boost` (spec/math) → `/teamwork` or `/goal` (build & verify) |
-| **4** | Zero-training AI | Python agent editor, 40–60 seed families, CMA-ES image fitter, benchmark | **Yes** (CMA-ES loss & eval design) | **Yes — killer fit** (40–60 plant families + harness + CMA-ES in parallel) | `/teamwork` + `/boost` |
-| **5** | Model training | F# AST mutator, RTX 4070 synthetic data, cloud LoRA (+ GRPO) | **Yes** (family splits, leakage prevention, GRPO rewards) | **Yes** (mutator, dataset builder, eval harness) | `/boost` (design) → `/teamwork` (pipeline) |
+| Step | Roadmap Alignment | Focus | Key Deliverable | `/boost` | `/teamwork` | Recommended Primary Mode |
+|---|---|---|---|---|---|---|
+| **BP.1** | `v0.3` (tooling) | Core hardening | Budgets (`--max-modules`/`--max-primitives`) + `rubberplant stats` | No | No | `/grill-me` (spec) → `/plan` (PRs) |
+| **BP.2** | `v0.3` (tooling) | 3D viewer | `RubberPlant.Viewer` (direct `.rp` → GPU, window + headless, 2×2 contact sheet) | **Spec** (GPU stack, headless FBO, Native AOT) | Optional | `/boost` (spec) → `/plan` (implementation) |
+| **BP.3** | `v0.3` (ABOP Ch 4–6) | ABOP v0.3 + 3D | Generalized cylinders (closed + open contours), `.s` compat, Ch 4 & 6 | **Yes** (frame transport, bicubic normals/stitching) | **Yes** (parallel `.s`, GenCyl, Ch 4/6 examples, cpfg checks) | `/boost` (spec/math) → `/teamwork` or `/goal` (build & verify) |
+| **`v0.4`** | `v0.4` (ABOP Ch 7–8) | Finish ABOP | Map L-systems, cellular layers & fractals (**all of ABOP covered**) | **Yes** *(map L-system topology/cell-layer spec)* | Optional *(Ch 7 & Ch 8 examples)* | `/boost` (spec) → `/plan` or `/goal` |
+| **BP.4** | AI/ML track | Zero-training AI | Python agent editor, 40–60 seed families, CMA-ES image fitter, benchmark | **Yes** (CMA-ES loss & eval design) | **Yes — killer fit** (40–60 plant families + harness + CMA-ES in parallel) | `/teamwork` + `/boost` |
+| **BP.5** | AI/ML track | Model training | F# AST mutator, RTX 4070 synthetic data, cloud LoRA (+ GRPO) | **Yes** (family splits, leakage prevention, GRPO rewards) | **Yes** (mutator, dataset builder, eval harness) | `/boost` (design) → `/teamwork` (pipeline) |
