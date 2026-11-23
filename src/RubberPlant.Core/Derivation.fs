@@ -185,16 +185,31 @@ let private choose (body: Body) (binds: float[]) (rng: Rng) : struct (Successor 
 
             struct (Some(pick 0.0 positive), rng)
 
-let private emit (out: ResizeArray<Sym>) (succ: Successor) (binds: float[]) =
-    for t in succ do
-        match t with
-        | TPush -> out.Add Push
-        | TPop -> out.Add Pop
-        | TCut -> out.Add Cut
-        | TMod(name, args) -> out.Add(Mod(name, args |> Array.map (Eval.eval binds)))
-
 /// Raised with a fully formed diagnostic; caught at the API boundary.
 exception private RewriteError of Diagnostic
+
+let private checkLimit (maxModules: int option) (count: int) (stage: string) =
+    match maxModules with
+    | Some limit when count > limit ->
+        raise (
+            RewriteError(
+                Diagnostic.error
+                    Codes.ModuleLimitExceeded
+                    None
+                    $"module limit of %s{string limit} exceeded in %s{stage} (%s{string count} symbols)"
+            )
+        )
+    | _ -> ()
+
+let private emit (addSym: Sym -> unit) (ensureRoom: unit -> unit) (succ: Successor) (binds: float[]) =
+    for t in succ do
+        ensureRoom ()
+
+        match t with
+        | TPush -> addSym Push
+        | TPop -> addSym Pop
+        | TCut -> addSym Cut
+        | TMod(name, args) -> addSym (Mod(name, args |> Array.map (Eval.eval binds)))
 
 /// One parallel rewriting pass over `str` (§4.4).
 /// With `cut`, a `%` drops itself and the rest of its branch, unrewritten
@@ -203,16 +218,49 @@ let private rewrite
     (index: RuleIndex)
     (context: ContextFilter)
     (cut: bool)
+    (maxModules: int option)
+    (stage: string)
     (what: string)
     (rng: Rng)
     (str: LString)
     =
+    checkLimit maxModules 0 stage
+
     let subject =
         { Str = str
           Partner = matchBrackets str
           Context = context }
 
-    let out = ResizeArray<Sym>(str.Length * 2)
+    let initialCapacity =
+        let doubled =
+            if str.Length > System.Array.MaxLength / 2 then
+                System.Array.MaxLength
+            else
+                str.Length * 2
+
+        match maxModules with
+        | Some limit -> min doubled (max 0 limit)
+        | None -> doubled
+
+    let out = ResizeArray<Sym>(initialCapacity)
+
+    let ensureRoom () =
+        match maxModules with
+        | Some limit when out.Count >= limit ->
+            raise (
+                RewriteError(
+                    Diagnostic.error
+                        Codes.ModuleLimitExceeded
+                        None
+                        $"module limit of %s{string limit} exceeded during %s{stage}"
+                )
+            )
+        | _ -> ()
+
+    let addSym sym =
+        ensureRoom ()
+        out.Add sym
+
     let mutable rng = rng
     let mutable next = 0
 
@@ -222,7 +270,7 @@ let private rewrite
 
         match str[i] with
         | Push
-        | Pop -> out.Add str[i]
+        | Pop -> addSym str[i]
         | Cut when cut ->
             // Skip to the `]` that closes the branch (kept), or the end of the string.
             let rec branchEnd j =
@@ -236,10 +284,10 @@ let private rewrite
                     | Mod _ -> branchEnd (j + 1)
 
             next <- branchEnd (i + 1)
-        | Cut -> out.Add Cut
+        | Cut -> addSym Cut
         | Mod(name, args) as m ->
             match index.Rules.TryGetValue(struct (name, args.Length)) with
-            | false, _ -> out.Add m
+            | false, _ -> addSym m
             | true, rules ->
                 let mutable fired = false
                 let mutable r = 0
@@ -259,7 +307,7 @@ let private rewrite
 
                             match succ with
                             | Some succ ->
-                                emit out succ binds
+                                emit out.Add ensureRoom succ binds
                                 fired <- true
                             | None -> ()
                     with Eval.EvalError(code, msg) ->
@@ -277,21 +325,25 @@ let private rewrite
                     r <- r + 1
 
                 if not fired then
-                    out.Add m
+                    addSym m
 
     struct (out.ToArray(), rng)
 
-/// All derivation steps: the axiom, then each derived string (n + 1 strings).
-let deriveSteps (model: Model) : Result<LString list, Diagnostic list> =
+/// All derivation steps under `limits`: the axiom, then each derived string (n + 1 strings).
+let deriveStepsWith (limits: Limits) (model: Model) : Result<LString list, Diagnostic list> =
     let index = buildIndex model.Productions
     let mutable rng = Rng.create model.Settings.Seed
     let mutable current = model.Axiom
-    let steps = ResizeArray [ current ]
 
     try
+        checkLimit limits.MaxModules current.Length "the axiom"
+        let steps = ResizeArray [ current ]
+
         for step in 1 .. model.Settings.Derivations do
+            let stage = $"derivation step %s{string step}"
+
             let struct (next, rng') =
-                rewrite index model.Context true $"rewriting (derivation step %s{string step})" rng current
+                rewrite index model.Context true limits.MaxModules stage $"rewriting (%s{stage})" rng current
 
             rng <- rng'
             current <- next
@@ -301,23 +353,52 @@ let deriveSteps (model: Model) : Result<LString list, Diagnostic list> =
     with RewriteError d ->
         Error [ d ]
 
+/// All derivation steps: the axiom, then each derived string (n + 1 strings).
+let deriveSteps (model: Model) : Result<LString list, Diagnostic list> = deriveStepsWith Limits.defaults model
+
+/// The derived string after `derivations` steps under `limits`, without retaining intermediate strings.
+let deriveWith (limits: Limits) (model: Model) : Result<LString, Diagnostic list> =
+    let index = buildIndex model.Productions
+    let mutable rng = Rng.create model.Settings.Seed
+    let mutable current = model.Axiom
+
+    try
+        checkLimit limits.MaxModules current.Length "the axiom"
+
+        for step in 1 .. model.Settings.Derivations do
+            let stage = $"derivation step %s{string step}"
+
+            let struct (next, rng') =
+                rewrite index model.Context true limits.MaxModules stage $"rewriting (%s{stage})" rng current
+
+            rng <- rng'
+            current <- next
+
+        Ok current
+    with RewriteError d ->
+        Error [ d ]
+
 /// The derived string after `derivations` steps.
-let derive (model: Model) : Result<LString, Diagnostic list> =
-    deriveSteps model |> Result.map List.last
+let derive (model: Model) : Result<LString, Diagnostic list> = deriveWith Limits.defaults model
+
+/// Applies the interpretation (`as`) rules once under `limits`, producing the drawing
+/// string. The derived string is left untouched (§4.6).
+let interpretWith (limits: Limits) (model: Model) (derived: LString) : Result<LString, Diagnostic list> =
+    try
+        if model.Interpretations.IsEmpty then
+            checkLimit limits.MaxModules derived.Length "interpretation"
+            Ok derived
+        else
+            let index = buildIndex model.Interpretations
+            // Interpretation rules have no weights, so the generator is never used.
+            let struct (drawing, _) =
+                rewrite index model.Context false limits.MaxModules "interpretation" "interpreting" (Rng.create 0L) derived
+
+            Ok drawing
+    with RewriteError d ->
+        Error [ d ]
 
 /// Applies the interpretation (`as`) rules once, producing the drawing
 /// string. The derived string is left untouched (§4.6).
 let interpret (model: Model) (derived: LString) : Result<LString, Diagnostic list> =
-    if model.Interpretations.IsEmpty then
-        Ok derived
-    else
-        let index = buildIndex model.Interpretations
-
-        try
-            // Interpretation rules have no weights, so the generator is never used.
-            let struct (drawing, _) =
-                rewrite index model.Context false "interpreting" (Rng.create 0L) derived
-
-            Ok drawing
-        with RewriteError d ->
-            Error [ d ]
+    interpretWith Limits.defaults model derived

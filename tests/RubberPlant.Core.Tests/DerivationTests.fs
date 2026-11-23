@@ -488,6 +488,120 @@ A -> K;
                   ""
           } ]
 
+let budgets =
+    let deriveErr limits src =
+        let m, _ = compileOk src
+
+        match Derivation.deriveWith limits m with
+        | Ok s -> failtestf "expected RP0206, got %s" (LString.format s)
+        | Error [ d ] -> d
+        | Error ds -> failtestf "expected one error, got:\n%s" (formatDiags ds)
+
+    let stepsErr limits src =
+        let m, _ = compileOk src
+
+        match Derivation.deriveStepsWith limits m with
+        | Ok ss -> failtestf "expected RP0206, got %d steps" ss.Length
+        | Error [ d ] -> d
+        | Error ds -> failtestf "expected one error, got:\n%s" (formatDiags ds)
+
+    testList
+        "budgets"
+        [ test "axiom exceeding max-modules fails with RP0206 even at 0 derivations" {
+              let limits = { Limits.defaults with MaxModules = Some 3 }
+              let d1 = deriveErr limits "axiom: F F F F;"
+              Expect.equal d1.Code Codes.ModuleLimitExceeded "deriveWith"
+              Expect.stringContains d1.Message "axiom" "names stage"
+
+              let d2 = stepsErr limits "axiom: F F F F;"
+              Expect.equal d2.Code Codes.ModuleLimitExceeded "deriveStepsWith"
+
+              let m, _ = compileOk "axiom: F F F;"
+              Expect.isOk (Derivation.deriveWith limits m) "exact boundary succeeds"
+              Expect.isOk (Derivation.deriveStepsWith limits m) "exact boundary succeeds (steps)"
+          }
+
+          test "derivation boundary: count == limit succeeds, limit + 1 fails" {
+              let m, _ = compileOk "settings { derivations = 3; }\naxiom: F;\nF -> F F;"
+              // 2^3 = 8 symbols
+              Expect.isOk (Derivation.deriveWith { Limits.defaults with MaxModules = Some 8 } m) "exact limit"
+              Expect.isOk (Derivation.deriveStepsWith { Limits.defaults with MaxModules = Some 8 } m) "exact limit (steps)"
+
+              let d = deriveErr { Limits.defaults with MaxModules = Some 7 } "settings { derivations = 3; }\naxiom: F;\nF -> F F;"
+              Expect.equal d.Code Codes.ModuleLimitExceeded "RP0206"
+              Expect.stringContains d.Message "derivation step 3" "names failing step"
+          }
+
+          test "exponentially exploding grammar fails fast under default limits" {
+              // 2^40 > 1e12 symbols: must abort mid-step, never OOM.
+              let d = deriveErr Limits.defaults "settings { derivations = 40; }\naxiom: F;\nF -> F F;"
+              Expect.equal d.Code Codes.ModuleLimitExceeded "RP0206"
+              Expect.stringContains d.Message "derivation step 20" "aborts at step 20 (2^20 = 1,048,576 > 1,000,000)"
+          }
+
+          test "bracket-only growth counts against max-modules" {
+              // Keeps Mod count = 1 while growing `[` and `]` linearly/exponentially.
+              let src = "settings { derivations = 5; }\naxiom: A;\nA -> [][][][]A;"
+              // After 5 steps: 5*8 + 1 = 41 symbols (1 Mod, 40 brackets).
+              let d = deriveErr { Limits.defaults with MaxModules = Some 20 } src
+              Expect.equal d.Code Codes.ModuleLimitExceeded "brackets are counted"
+          }
+
+          test "as interpretation enforces max-modules" {
+              let m, _ = compileOk "axiom: A;\nA as F F F F;"
+              let derived =
+                  match Derivation.deriveWith Limits.defaults m with
+                  | Ok s -> s
+                  | Error ds -> failtestf "unexpected: %s" (formatDiags ds)
+
+              Expect.isOk (Derivation.interpretWith { Limits.defaults with MaxModules = Some 4 } m derived) "exact limit"
+
+              match Derivation.interpretWith { Limits.defaults with MaxModules = Some 3 } m derived with
+              | Error [ d ] ->
+                  Expect.equal d.Code Codes.ModuleLimitExceeded "RP0206"
+                  Expect.stringContains d.Message "interpretation" "names stage"
+              | r -> failtestf "expected RP0206, got %A" r
+          }
+
+          test "interpretWith enforces max-modules even without as rules" {
+              let m, _ = compileOk "axiom: F F F F;"
+
+              match Derivation.interpretWith { Limits.defaults with MaxModules = Some 3 } m m.Axiom with
+              | Error [ d ] -> Expect.equal d.Code Codes.ModuleLimitExceeded "RP0206"
+              | r -> failtestf "expected RP0206, got %A" r
+          }
+
+          test "cut (%) counts when emitted and dropped symbols do not count on next step" {
+              // Step 1: A -> [% F F F] (6 symbols); step 2: % drops F F F leaving [] (2 symbols).
+              let m, _ = compileOk "settings { derivations = 2; }\naxiom: A;\nA -> [% F F F];"
+              Expect.isOk (Derivation.deriveWith { Limits.defaults with MaxModules = Some 6 } m) "6 symbols at step 1"
+              let d = deriveErr { Limits.defaults with MaxModules = Some 5 } "settings { derivations = 2; }\naxiom: A;\nA -> [% F F F];"
+              Expect.equal d.Code Codes.ModuleLimitExceeded "step 1 hits 6 symbols"
+          }
+
+          test "zero and negative limits in Core API behave consistently" {
+              let emptyModel, _ = compileOk "axiom: empty;"
+              let interpEmpty, _ = compileOk "axiom: A;\nA as empty;"
+              let zeroLimit = { Limits.defaults with MaxModules = Some 0 }
+              let negLimit = { Limits.defaults with MaxModules = Some -1 }
+
+              Expect.isOk (Derivation.deriveWith zeroLimit emptyModel) "empty fits in 0"
+              Expect.equal (deriveErr negLimit "axiom: empty;").Code Codes.ModuleLimitExceeded "negative fails on empty axiom"
+
+              match Derivation.interpretWith negLimit interpEmpty [||] with
+              | Error [ d ] -> Expect.equal d.Code Codes.ModuleLimitExceeded "negative fails in interpretWith with as rules"
+              | r -> failtestf "expected RP0206, got %A" r
+
+              match Derivation.interpretWith negLimit interpEmpty interpEmpty.Axiom with
+              | Error [ d ] -> Expect.equal d.Code Codes.ModuleLimitExceeded "negative fails when as rewrites to empty"
+              | r -> failtestf "expected RP0206, got %A" r
+          }
+
+          test "Limits.unlimited disables module budget" {
+              let m, _ = compileOk "settings { derivations = 4; }\naxiom: F;\nF -> F F;"
+              Expect.isOk (Derivation.deriveWith Limits.unlimited m) "unlimited"
+          } ]
+
 [<Tests>]
 let tests =
-    testList "Derivation" [ d0l; parametric; context; stochastic; runtime; interpretation; format; cut; consider; emptyString; book ]
+    testList "Derivation" [ d0l; parametric; context; stochastic; runtime; interpretation; format; cut; consider; emptyString; book; budgets ]
