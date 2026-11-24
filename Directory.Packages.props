@@ -7,5 +7,7 @@
     <PackageVersion Include="FParsec" Version="1.1.1" />
     <PackageVersion Include="Expecto" Version="11.1.1" />
     <PackageVersion Include="Expecto.FsCheck" Version="11.1.1" />
+    <PackageVersion Include="Silk.NET.GLFW" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.OpenGL" Version="2.23.0" />
   </ItemGroup>
 </Project>

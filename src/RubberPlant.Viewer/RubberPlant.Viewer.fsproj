@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>rubberplant-viewer</AssemblyName>
+    <PublishAot>true</PublishAot>
+    <!-- FSharp.Core, FParsec, and Silk.NET.Core aren't fully AOT-annotated; our own
+         code stays warning-free under reflection-free compilation. -->
+    <NoWarn>$(NoWarn);IL2104;IL3053;IL3000;IL3002</NoWarn>
+    <OtherFlags>$(OtherFlags) --reflectionfree</OtherFlags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Camera.fs" />
+    <Compile Include="Scene.fs" />
+    <Compile Include="Png.fs" />
+    <Compile Include="Protocol.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.GLFW" />
+    <PackageReference Include="Silk.NET.OpenGL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RubberPlant.Core\RubberPlant.Core.fsproj" />
+    <ProjectReference Include="..\RubberPlant.Backends\RubberPlant.Backends.fsproj" />
+  </ItemGroup>
+
+</Project>

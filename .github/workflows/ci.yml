@@ -32,7 +32,7 @@ jobs:
 
       - name: Tests
         run: |
-          for t in Core Backends Cli; do
+          for t in Core Backends Cli Viewer; do
             dotnet run --no-build -c Release --project tests/RubberPlant.$t.Tests
           done
 
