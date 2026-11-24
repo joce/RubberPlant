@@ -38,8 +38,9 @@ jobs:
 
       # Renders every example with the CLI and compares with the committed
       # goldens: SVGs byte for byte (identical SVG text means identical pixels in
-      # any renderer, stricter than comparing rasterized images), and the SHA-256
-      # of every example's OBJ and glTF (golden/mesh-digests.txt).
+      # any renderer, stricter than comparing rasterized images), the SHA-256 of
+      # every example's OBJ and glTF (golden/mesh-digests.txt), and the SHA-256
+      # of every example's compact `stats` JSON (golden/stats-digests.txt).
       - name: Examples match the goldens
         run: bash scripts/check-goldens.sh
 

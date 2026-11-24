@@ -135,31 +135,40 @@ let private normalizeTropism (v: Vec3) =
         let w = Vec3.create (v.X / m) (v.Y / m) (v.Z / m)
         (1.0 / Vec3.length w) * w
 
-/// Interprets a drawing string under `limits`. Returns the geometry and any
-/// warnings, or an error if the turtle meets a non-finite value, an invalid
+type TurtleTrace =
+    { /// Bracket stack depth (`stack.Count`) for each emitted primitive,
+      /// parallel to `Geometry`. For a `Segment`, depth when drawn;
+      /// for a `Polygon`, depth when `{` was opened.
+      PrimitiveDepths: int[] }
+
+/// Interprets a drawing string under `limits`. Returns the geometry, trace, and
+/// any warnings, or an error if the turtle meets a non-finite value, an invalid
 /// width, or exceeds the primitive budget: backends must only ever receive
 /// finite geometry.
-let interpretWith
+let interpretWithTrace
     (limits: Limits)
     (settings: Settings)
     (drawing: LString)
-    : Result<Geometry * Diagnostic list, Diagnostic list> =
+    : Result<Geometry * TurtleTrace * Diagnostic list, Diagnostic list> =
     let out = ResizeArray<Primitive>()
+    let depths = ResizeArray<int>()
     let warnings = ResizeArray<Diagnostic>()
     let warned = System.Collections.Generic.HashSet<struct (string * int)>()
     let stack = System.Collections.Generic.Stack<State>()
-    // One vertex list per open `{` (§5.3).
-    let polygons = System.Collections.Generic.Stack<ResizeArray<Vec3>>()
+    // One (opening bracket depth, vertex list) pair per open `{` (§5.3).
+    let polygons = System.Collections.Generic.Stack<struct (int * ResizeArray<Vec3>)>()
     let mutable t = initialState settings
     let mutable unmatchedClose = false
     let mutable vertexOutside = false
     let tHat = normalizeTropism settings.Tropism
 
-    let addPrimitive (p: Primitive) =
+    let addPrimitive (depth: int) (p: Primitive) =
         match limits.MaxPrimitives with
         | Some limit when out.Count >= limit ->
             raise (TurtleError(Codes.PrimitiveLimitExceeded, $"primitive limit of %s{string limit} exceeded"))
-        | _ -> out.Add p
+        | _ ->
+            out.Add p
+            depths.Add depth
 
     /// `F`, `f` and `G`: emit the segment (`draw`), record the polygon vertex
     /// (`vertex`), then bend toward T (§5.5).
@@ -170,10 +179,11 @@ let interpretWith
             invalidGeometry "the turtle's position is no longer finite (overflow)"
 
         if draw then
-            addPrimitive (Segment(t.P, p1, t.Width, t.Color))
+            addPrimitive stack.Count (Segment(t.P, p1, t.Width, t.Color))
 
         if vertex && polygons.Count > 0 then
-            polygons.Peek().Add p1
+            let struct (_, verts) = polygons.Peek()
+            verts.Add p1
 
         t <- bend tHat settings.Elasticity { t with P = p1 }
 
@@ -231,7 +241,8 @@ let interpretWith
                     | "G" -> move (arg "step" settings.Step) true false
                     | "." ->
                         if polygons.Count > 0 then
-                            polygons.Peek().Add t.P
+                            let struct (_, verts) = polygons.Peek()
+                            verts.Add t.P
                         else
                             vertexOutside <- true
                     | "$" -> t <- rollToHorizontal t
@@ -268,10 +279,11 @@ let interpretWith
 
                         t <- { t with Color = c }
                     // An empty polygon (ABOP p. 127); v0.1 also recorded P here (§5.3).
-                    | "{" -> polygons.Push(ResizeArray())
+                    | "{" -> polygons.Push(struct (stack.Count, ResizeArray()))
                     | "}" ->
                         if polygons.Count > 0 then
-                            addPrimitive (Polygon(List.ofSeq (polygons.Pop()), t.Color))
+                            let struct (openDepth, verts) = polygons.Pop()
+                            addPrimitive openDepth (Polygon(List.ofSeq verts, t.Color))
                         else
                             unmatchedClose <- true
                     | _ -> ()
@@ -288,9 +300,20 @@ let interpretWith
         if vertexOutside then
             warnings.Add(Diagnostic.warning Codes.VertexOutsidePolygon None "`.` outside a polygon; ignored")
 
-        Ok(List.ofSeq out, List.ofSeq warnings)
+        Ok(List.ofSeq out, { PrimitiveDepths = depths.ToArray() }, List.ofSeq warnings)
     with TurtleError(code, msg) ->
         Error [ Diagnostic.error code None msg ]
+
+/// Interprets a drawing string under `limits`. Returns the geometry and any
+/// warnings, or an error if the turtle meets a non-finite value, an invalid
+/// width, or exceeds the primitive budget: backends must only ever receive
+/// finite geometry.
+let interpretWith
+    (limits: Limits)
+    (settings: Settings)
+    (drawing: LString)
+    : Result<Geometry * Diagnostic list, Diagnostic list> =
+    interpretWithTrace limits settings drawing |> Result.map (fun (g, _, ws) -> g, ws)
 
 /// Interprets a drawing string under default execution limits.
 let interpret (settings: Settings) (drawing: LString) : Result<Geometry * Diagnostic list, Diagnostic list> =

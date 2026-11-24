@@ -32,13 +32,16 @@ let names =
     |> Array.sort
     |> Array.toList
 
-/// The geometry of an example, with its seed (a run parameter, §4.7).
-let geometry (name: string) =
+/// Runs an example with its seed (a run parameter, §4.7).
+let run (name: string) : Pipeline.Output =
     let source = File.ReadAllText(Path.Combine(examplesDir, name + ".rp"))
 
     let withSeed (m: Model.Model) =
         { m with Settings = { m.Settings with Seed = seedOf name } }
 
     match Pipeline.compile source |> Result.bind (fst >> withSeed >> Pipeline.run) with
-    | Ok output -> output.Geometry
+    | Ok output -> output
     | Error ds -> failtestf "%s:\n%s" name (ds |> List.map (Diagnostic.format name) |> String.concat "\n")
+
+/// The geometry of an example, with its seed (a run parameter, §4.7).
+let geometry (name: string) = (run name).Geometry
