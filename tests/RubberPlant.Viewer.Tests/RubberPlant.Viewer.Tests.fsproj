@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="CameraTests.fs" />
+    <Compile Include="SceneTests.fs" />
+    <Compile Include="PngTests.fs" />
+    <Compile Include="ProtocolTests.fs" />
+    <Compile Include="Main.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Expecto" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RubberPlant.Viewer\RubberPlant.Viewer.fsproj" />
+    <ProjectReference Include="..\..\src\RubberPlant.Cli\RubberPlant.Cli.fsproj" />
+  </ItemGroup>
+
+</Project>
