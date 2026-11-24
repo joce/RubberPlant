@@ -1,6 +1,6 @@
 # Core hardening and morphology telemetry (BP.1)
 
-Status: **spec draft** (Phase 1 of [`battle-plan.md`](battle-plan.md), targeting `v0.3` tooling).
+Status: **implemented** (Phase 1 of [`battle-plan.md`](battle-plan.md), targeting `v0.3` tooling): execution budgets (§2) and `rubberplant stats` morphology telemetry (§3–§5).
 
 This document specifies execution guardrails (module and primitive budgets) and the `rubberplant stats` morphology analyzer so RubberPlant can be driven safely and deterministically by automated agents, optimizers, and synthetic dataset generators.
 

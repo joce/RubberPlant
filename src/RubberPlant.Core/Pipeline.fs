@@ -4,12 +4,16 @@ module RubberPlant.Pipeline
 open RubberPlant.Model
 open RubberPlant.LString
 open RubberPlant.Geometry
+open RubberPlant.Derivation
+open RubberPlant.Turtle
 
 type Output =
     { Model: Model
       Derived: LString
       Drawing: LString
       Geometry: Geometry
+      DerivationTrace: DerivationTrace
+      TurtleTrace: TurtleTrace
       Warnings: Diagnostic list }
 
 /// Parses and checks a source file. On success, returns the model and warnings.
@@ -18,16 +22,18 @@ let compile (source: string) : Result<Model * Diagnostic list, Diagnostic list> 
 
 /// Derives, interprets and draws a model under `limits`.
 let runWith (limits: Limits) (model: Model) : Result<Output, Diagnostic list> =
-    Derivation.deriveWith limits model
-    |> Result.bind (fun derived ->
+    Derivation.deriveWithTrace limits model
+    |> Result.bind (fun (derived, derivationTrace) ->
         Derivation.interpretWith limits model derived
         |> Result.bind (fun drawing ->
-            Turtle.interpretWith limits model.Settings drawing
-            |> Result.map (fun (geometry, warnings) ->
+            Turtle.interpretWithTrace limits model.Settings drawing
+            |> Result.map (fun (geometry, turtleTrace, warnings) ->
                 { Model = model
                   Derived = derived
                   Drawing = drawing
                   Geometry = geometry
+                  DerivationTrace = derivationTrace
+                  TurtleTrace = turtleTrace
                   Warnings = warnings })))
 
 /// Derives, interprets and draws a model under default execution limits.

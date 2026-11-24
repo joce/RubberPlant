@@ -21,6 +21,7 @@
     <Compile Include="Rng.fs" />
     <Compile Include="Derivation.fs" />
     <Compile Include="Turtle.fs" />
+    <Compile Include="Stats.fs" />
     <Compile Include="Pipeline.fs" />
   </ItemGroup>
 

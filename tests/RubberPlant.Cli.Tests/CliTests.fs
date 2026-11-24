@@ -1,6 +1,7 @@
 module RubberPlant.Cli.Tests.CliTests
 
 open System.IO
+open System.Text.Json
 open Expecto
 open RubberPlant.Cli
 
@@ -201,11 +202,18 @@ let tests =
 
                   for opt, value in [ "-o", "x.svg"; "--format", "obj"; "--size", "100"; "--sides", "6"; "--width-scale", "1" ] do
                       Expect.equal (run [ "derive"; input; opt; value ]) 2 $"derive %s{opt}"
+                      Expect.equal (run [ "stats"; input; opt; value ]) 2 $"stats %s{opt}"
                       Expect.equal (run [ "check"; input; opt; value ]) 2 $"check %s{opt}"
 
                   Expect.equal (run [ "render"; input; "--drawing" ]) 2 "render --drawing"
+                  Expect.equal (run [ "stats"; input; "--drawing" ]) 2 "stats --drawing"
                   Expect.equal (run [ "check"; input; "--drawing" ]) 2 "check --drawing"
-                  Expect.equal (run [ "derive"; input; "--drawing" ]) 0 "derive --drawing")
+                  Expect.equal (run [ "derive"; input; "--drawing" ]) 0 "derive --drawing"
+
+                  Expect.equal (run [ "render"; input; "--pretty" ]) 2 "render --pretty"
+                  Expect.equal (run [ "derive"; input; "--pretty" ]) 2 "derive --pretty"
+                  Expect.equal (run [ "check"; input; "--pretty" ]) 2 "check --pretty"
+                  Expect.equal (run [ "stats"; input; "--pretty" ]) 0 "stats --pretty")
           }
 
           test "--sides and --width-scale values" {
@@ -266,10 +274,14 @@ let tests =
 
                   for bad in [ ""; "0"; "-1"; "abc"; "UNLIMITED"; "1.5"; "2147483648" ] do
                       Expect.equal (run [ "derive"; input; "--max-modules"; bad ]) 2 $"derive --max-modules %s{bad}"
+                      Expect.equal (run [ "stats"; input; "--max-modules"; bad ]) 2 $"stats --max-modules %s{bad}"
                       Expect.equal (run [ "render"; input; "-o"; out; "--max-primitives"; bad ]) 2 $"render --max-primitives %s{bad}"
+                      Expect.equal (run [ "stats"; input; "--max-primitives"; bad ]) 2 $"stats --max-primitives %s{bad}"
 
                   Expect.equal (run [ "derive"; input; "--max-modules" ]) 2 "missing value for --max-modules"
+                  Expect.equal (run [ "stats"; input; "--max-modules" ]) 2 "missing value for stats --max-modules"
                   Expect.equal (run [ "render"; input; "--max-primitives" ]) 2 "missing value for --max-primitives"
+                  Expect.equal (run [ "stats"; input; "--max-primitives" ]) 2 "missing value for stats --max-primitives"
 
                   // Strict command scoping
                   Expect.equal (run [ "check"; input; "--max-modules"; "100" ]) 2 "--max-modules rejected on check"
@@ -278,10 +290,11 @@ let tests =
 
                   // Unlimited and tight limits
                   Expect.equal (run [ "derive"; input; "--max-modules"; "unlimited" ]) 0 "derive unlimited"
-                  Expect.equal (run [ "render"; input; "-o"; out; "--max-modules"; "unlimited"; "--max-primitives"; "unlimited" ]) 0 "render unlimited")
+                  Expect.equal (run [ "render"; input; "-o"; out; "--max-modules"; "unlimited"; "--max-primitives"; "unlimited" ]) 0 "render unlimited"
+                  Expect.equal (run [ "stats"; input; "--max-modules"; "unlimited"; "--max-primitives"; "unlimited" ]) 0 "stats unlimited")
           }
 
-          test "render and derive fail cleanly with exit 1 on budget exceeded" {
+          test "render, derive, and stats fail cleanly with exit 1 on budget exceeded" {
               withTempDir (fun dir ->
                   let explode = Path.Combine(dir, "explode.rp")
                   File.WriteAllText(explode, "settings { derivations = 40; }\naxiom: F;\nF -> F F;\n")
@@ -289,6 +302,7 @@ let tests =
 
                   Expect.equal (run [ "derive"; explode ]) 1 "default max-modules stops exploding derive"
                   Expect.equal (run [ "render"; explode; "-o"; out ]) 1 "default max-modules stops exploding render"
+                  Expect.equal (run [ "stats"; explode ]) 1 "default max-modules stops exploding stats"
                   Expect.isFalse (File.Exists out) "nothing written on module limit error"
 
                   let prims = Path.Combine(dir, "prims.rp")
@@ -298,14 +312,18 @@ let tests =
                   Expect.equal (run [ "render"; prims; "-o"; out; "--max-primitives"; "4" ]) 0 "exact primitive limit passes"
                   Expect.isTrue (File.Exists out) "written when within budget"
 
+                  Expect.equal (run [ "stats"; prims; "--max-primitives"; "3" ]) 1 "stats primitive limit hit"
+                  Expect.equal (run [ "stats"; prims; "--max-primitives"; "4" ]) 0 "stats exact primitive limit passes"
+
                   let interp = Path.Combine(dir, "interp.rp")
                   File.WriteAllText(interp, "axiom: A;\nA as F F F F;\n")
                   Expect.equal (run [ "derive"; interp; "--max-modules"; "2" ]) 0 "derived string is 1 symbol"
-                  Expect.equal (run [ "derive"; interp; "--drawing"; "--max-modules"; "2" ]) 1 "drawing string exceeds limit")
+                  Expect.equal (run [ "derive"; interp; "--drawing"; "--max-modules"; "2" ]) 1 "drawing string exceeds limit"
+                  Expect.equal (run [ "stats"; interp; "--max-modules"; "2" ]) 1 "stats drawing string exceeds limit")
           } ]
 
-/// Runs `f` with stdout and stderr captured; returns its result and both outputs' lines.
-let private captured (f: unit -> 'a) =
+/// Runs `f` with stdout and stderr captured; returns its result and raw strings.
+let private capturedRaw (f: unit -> 'a) =
     let out, err = new StringWriter(), new StringWriter()
     let oldOut, oldErr = System.Console.Out, System.Console.Error
     System.Console.SetOut out
@@ -313,11 +331,16 @@ let private captured (f: unit -> 'a) =
 
     try
         let r = f ()
-        let lines (w: StringWriter) = w.ToString().Split([| "\r\n"; "\n" |], System.StringSplitOptions.RemoveEmptyEntries)
-        r, lines out, lines err
+        r, out.ToString(), err.ToString()
     finally
         System.Console.SetOut oldOut
         System.Console.SetError oldErr
+
+/// Runs `f` with stdout and stderr captured; returns its result and both outputs' lines.
+let private captured (f: unit -> 'a) =
+    let r, out, err = capturedRaw f
+    let lines (s: string) = s.Split([| "\r\n"; "\n" |], System.StringSplitOptions.RemoveEmptyEntries)
+    r, lines out, lines err
 
 let private batch (lines: string list) =
     captured (fun () -> Program.batch (new StringReader(String.concat "\n" lines)))
@@ -422,6 +445,91 @@ let batchTests =
                   Expect.stringContains err[0] "RP0206" "module limit code"
                   Expect.stringContains err[1] "RP0207" "primitive limit code"
                   Expect.isTrue (File.Exists svg) "subsequent render succeeded")
+          }
+
+          test "stats prints compact single-line JSON by default and 2-space LF JSON with --pretty" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "koch.rp")
+
+                  let codeC, rawOutC, rawErrC = capturedRaw (fun () -> run [ "stats"; input; "-n"; "0" ])
+                  Expect.equal codeC 0 "compact exit code"
+                  Expect.equal rawErrC "" "no stderr"
+                  Expect.isTrue (rawOutC.EndsWith "\n") "ends with LF"
+                  Expect.isFalse (rawOutC.Contains "\r") "no CR"
+                  Expect.isFalse ((rawOutC.TrimEnd '\n').Contains "\n") "single line"
+
+                  use docC = JsonDocument.Parse rawOutC
+                  let d = docC.RootElement.GetProperty "derivation"
+                  let g = docC.RootElement.GetProperty "geometry"
+                  Expect.equal (d.GetProperty("steps").GetInt32()) 0 "steps override applied"
+                  Expect.equal (g.GetProperty("segment_count").GetInt32()) 4 "4 segments"
+
+                  let codeP, rawOutP, rawErrP = capturedRaw (fun () -> run [ "stats"; input; "-n"; "0"; "--pretty" ])
+                  Expect.equal codeP 0 "pretty exit code"
+                  Expect.equal rawErrP "" "no stderr"
+                  Expect.isTrue (rawOutP.EndsWith "\n") "pretty ends with LF"
+                  Expect.isFalse (rawOutP.Contains "\r") "pretty has no CR"
+                  Expect.stringContains rawOutP "\n  \"derivation\": {\n" "2-space indented"
+                  use docP = JsonDocument.Parse rawOutP
+                  Expect.equal (docP.RootElement.GetProperty("geometry").GetProperty("segment_count").GetInt32()) 4 "parsed pretty")
+          }
+
+          test "stats sends warnings to stderr and keeps stdout pure JSON" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "warn.rp")
+                  // RP0301 unreachable rule + RP0302 extra turtle parameter + RP0304 vertex outside polygon
+                  File.WriteAllText(input, "axiom: F(1,2) .;\nA -> F;\nA -> G;\n")
+
+                  let code, rawOut, rawErr = capturedRaw (fun () -> run [ "stats"; input ])
+                  Expect.equal code 0 "exit 0 despite warnings"
+                  Expect.stringContains rawErr "RP0301" "checker warning on stderr"
+                  Expect.stringContains rawErr "RP0302" "extra param warning on stderr"
+                  Expect.stringContains rawErr "RP0304" "vertex warning on stderr"
+                  Expect.isFalse ((rawOut.TrimEnd '\n').Contains "\n") "stdout is still single-line JSON"
+                  use doc = JsonDocument.Parse rawOut
+                  Expect.equal (doc.RootElement.GetProperty("geometry").GetProperty("segment_count").GetInt32()) 1 "valid JSON")
+          }
+
+          test "stats reports RP0205 on derived metric overflow with empty stdout" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "overflow.rp")
+                  File.WriteAllText(input, "axiom: F(1e308) | F(1e308);\n")
+
+                  let code, rawOut, rawErr = capturedRaw (fun () -> run [ "stats"; input ])
+                  Expect.equal code 1 "exit 1"
+                  Expect.equal rawOut "" "nothing written to stdout on error"
+                  Expect.stringContains rawErr "RP0205" "RP0205 on stderr")
+          }
+
+          test "stats works inside batch, including budget failure recovery" {
+              withTempDir (fun dir ->
+                  let explode = Path.Combine(dir, "explode.rp")
+                  File.WriteAllText(explode, "settings { derivations = 40; }\naxiom: F;\nF -> F F;\n")
+                  let koch = Path.Combine(dir, "koch.rp")
+
+                  let code, out, err =
+                      batch
+                          [ $"stats \"%s{koch}\" -n 0"
+                            $"stats \"%s{explode}\" --max-modules 1000"
+                            $"stats \"%s{koch}\" --max-primitives 3"
+                            $"stats \"%s{koch}\" -n 1 --step 2" ]
+
+                  Expect.equal code 0 "batch exits cleanly"
+                  Expect.equal out.Length 6 "2 json lines + 4 exit lines"
+                  Expect.equal out[1] "exit 0" "first stats ok"
+                  Expect.equal out[2] "exit 1" "exploding stats failed"
+                  Expect.equal out[3] "exit 1" "primitive limit failed"
+                  Expect.equal out[5] "exit 0" "recovery stats ok"
+
+                  use doc1 = JsonDocument.Parse out[0]
+                  Expect.equal (doc1.RootElement.GetProperty("geometry").GetProperty("segment_count").GetInt32()) 4 "first stats"
+                  use doc2 = JsonDocument.Parse out[4]
+                  Expect.equal (doc2.RootElement.GetProperty("geometry").GetProperty("segment_count").GetInt32()) 32 "second stats"
+                  Expect.floatClose Accuracy.high (doc2.RootElement.GetProperty("geometry").GetProperty("total_segment_length").GetDouble()) 64.0 "--step override"
+
+                  Expect.equal err.Length 2 "two budget diagnostics"
+                  Expect.stringContains err[0] "RP0206" "module limit"
+                  Expect.stringContains err[1] "RP0207" "primitive limit")
           } ]
 
 // Native AOT: F# printf-style formatting of a value type (`%d`, `%g`, `%c`, `%x`, …) builds its

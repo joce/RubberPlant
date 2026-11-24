@@ -19,6 +19,7 @@ dotnet build
 dotnet run --project src/RubberPlant.Cli -- render examples/koch-island.rp -o koch.svg
 dotnet run --project src/RubberPlant.Cli -- render examples/fig2-8b.rp -o tree.glb
 dotnet run --project src/RubberPlant.Cli -- derive examples/dragon.rp -n 3
+dotnet run --project src/RubberPlant.Cli -- stats examples/fig2-8b.rp --pretty
 dotnet run --project src/RubberPlant.Cli -- check examples/fig1-31a.rp
 ```
 
@@ -27,7 +28,9 @@ The output file's extension picks the format: `.svg` draws a line drawing; `.obj
 glTF is the most portable: one file, colors included, and leaves visible from both
 sides in any viewer. Run `rubberplant --help` for all options. Settings given on the command line
 (`-n`, `--angle`, …) override the file's values. The random seed isn't part of
-the file: set it with `--seed` (default 0). Execution budgets (`--max-modules`,
+the file: set it with `--seed` (default 0). `stats` prints deterministic
+derivation and 3D geometry morphology statistics as compact single-line JSON
+(add `--pretty` for indented output). Execution budgets (`--max-modules`,
 default 1,000,000; `--max-primitives`, default 250,000) stop runaway grammars
 cleanly and can be adjusted or set to `unlimited` ([`docs/core-hardening.md`](docs/core-hardening.md)).
 
@@ -58,6 +61,7 @@ line, written as you'd type them after `rubberplant`:
 ```
 render "my trees\tree.rp" -o tree.svg --seed 3
 derive tree.rp -n 5
+stats tree.rp
 ```
 
 Spaces (or tabs) separate the arguments. Double quotes keep spaces in an argument,
@@ -111,8 +115,9 @@ Every `examples/*.rp` has a golden SVG in `tests/RubberPlant.Backends.Tests/gold
 (a missing golden is a test failure). `golden/seeds.txt` lists the examples that
 need a non-default seed. After an intended rendering change, regenerate the
 goldens with `RUBBERPLANT_UPDATE_GOLDEN=1` and review the diff. Small hand-written
-mesh fixtures have full OBJ, MTL and glTF goldens in `golden/mesh`, and
-`golden/mesh-digests.txt` holds the SHA-256 of every example's OBJ and glTF.
+mesh fixtures have full OBJ, MTL and glTF goldens in `golden/mesh`,
+`golden/mesh-digests.txt` holds the SHA-256 of every example's OBJ and glTF, and
+`golden/stats-digests.txt` holds the SHA-256 of every example's compact `stats` JSON.
 
 `scripts/check-goldens.sh` renders every example through the CLI and compares it
 with its goldens and digests (`RUBBERPLANT_CLI=out/aot/rubberplant.exe` checks the
@@ -124,7 +129,7 @@ executable against the goldens on Windows (`.github/workflows/ci.yml`).
 ## Layout
 
 ```
-src/RubberPlant.Core       pure pipeline: parser, checker, derivation, turtle, geometry
+src/RubberPlant.Core       pure pipeline: parser, checker, derivation, turtle, geometry, stats
 src/RubberPlant.Backends   output backends (SVG, OBJ, glTF) and the shared mesh builder
 src/RubberPlant.Cli        command-line tool; all I/O lives here
 tests/                     Expecto test projects

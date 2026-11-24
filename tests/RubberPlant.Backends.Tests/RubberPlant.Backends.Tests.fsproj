@@ -15,6 +15,7 @@
     <Compile Include="ObjTests.fs" />
     <Compile Include="GltfTests.fs" />
     <Compile Include="MeshDigestTests.fs" />
+    <Compile Include="StatsDigestTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 

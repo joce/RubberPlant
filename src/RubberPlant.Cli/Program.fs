@@ -12,6 +12,7 @@ let usage =
     """Usage:
   rubberplant render <file.rp> [-o <out>] [--format <f>] [render options] [options]
   rubberplant derive <file.rp> [--drawing] [options]
+  rubberplant stats  <file.rp> [--pretty] [options]
   rubberplant check  <file.rp> [options]
   rubberplant batch
 
@@ -20,6 +21,8 @@ Commands:
            (OBJ, glTF).
   derive   Print the derived string (with --drawing: the string after
            interpretation rules, as the turtle sees it).
+  stats    Print derivation and 3D geometry morphology statistics as compact
+           single-line JSON (with --pretty: 2-space indented JSON).
   check    Parse and check the file; report errors and warnings.
   batch    Run many commands in one process, which saves the startup time of
            each: reads one command per line on stdin, as you'd type it after
@@ -41,9 +44,9 @@ Options (override the file's settings):
 
 Budget options (guard against runaway grammars):
       --max-modules <n|unlimited>     max L-string symbols (default 1000000;
-                                      render, derive)
+                                      render, derive, stats)
       --max-primitives <n|unlimited>  max turtle primitives (default 250000;
-                                      render)
+                                      render, stats)
 
 Render options:
   -o, --output <file>     output file; its extension (.svg, .obj, .gltf, .glb)
@@ -63,6 +66,7 @@ glTF output is one file: .gltf (JSON, data embedded) or .glb (binary).
 type Command =
     | Render
     | Derive
+    | Stats
     | Check
 
 /// Output formats (backends.md §8).
@@ -97,6 +101,7 @@ type Args =
       /// Some None: auto.
       WidthScale: float option option
       Drawing: bool
+      Pretty: bool
       Derivations: int option
       Angle: float option
       Step: float option
@@ -130,6 +135,7 @@ let private parseArgs (argv: string list) : Args =
         match argv with
         | "render" :: rest -> Render, rest
         | "derive" :: rest -> Derive, rest
+        | "stats" :: rest -> Stats, rest
         | "check" :: rest -> Check, rest
         | "batch" :: _ -> raise (UsageError "batch takes no arguments and can't run inside a batch")
         | c :: _ -> raise (UsageError $"unknown command '%s{c}'")
@@ -144,6 +150,7 @@ let private parseArgs (argv: string list) : Args =
           Sides = None
           WidthScale = None
           Drawing = false
+          Pretty = false
           Derivations = None
           Angle = None
           Step = None
@@ -184,6 +191,7 @@ let private parseArgs (argv: string list) : Args =
                 | true, k when Double.IsFinite k && k > 0.0 -> go rest { acc with WidthScale = Some(Some k) }
                 | _ -> raise (UsageError $"--width-scale expects a number greater than 0 or 'auto', got '%s{v}'")
         | "--drawing" :: rest -> go rest { acc with Drawing = true }
+        | "--pretty" :: rest -> go rest { acc with Pretty = true }
         | ("-n" | "--derivations") :: v :: rest ->
             match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
             | true, n -> go rest { acc with Derivations = Some n }
@@ -256,11 +264,14 @@ let private parseArgs (argv: string list) : Args =
     if args.Drawing && args.Command <> Derive then
         raise (UsageError "--drawing only applies to derive")
 
+    if args.Pretty && args.Command <> Stats then
+        raise (UsageError "--pretty only applies to stats")
+
     if args.MaxModules.IsSome && args.Command = Check then
         raise (UsageError "--max-modules doesn't apply to check")
 
-    if args.MaxPrimitives.IsSome && args.Command <> Render then
-        raise (UsageError "--max-primitives only applies to render")
+    if args.MaxPrimitives.IsSome && args.Command <> Render && args.Command <> Stats then
+        raise (UsageError "--max-primitives only applies to render and stats")
 
     args
 
@@ -370,6 +381,28 @@ let private run (args: Args) : int =
                 | Ok s ->
                     printfn "%s" (LString.format s)
                     0
+            | Stats ->
+                match Pipeline.runWith limits model with
+                | Error diags ->
+                    report args.Input diags
+                    1
+                | Ok output ->
+                    report args.Input output.Warnings
+
+                    match
+                        Stats.analyze
+                            output.Derived
+                            output.Drawing
+                            output.DerivationTrace
+                            output.Geometry
+                            output.TurtleTrace
+                    with
+                    | Error diags ->
+                        report args.Input diags
+                        1
+                    | Ok stats ->
+                        Console.Out.Write(Stats.toJson args.Pretty stats)
+                        0
             | Render ->
                 match Pipeline.runWith limits model with
                 | Error diags ->
@@ -499,4 +532,8 @@ let main argv =
         Console.OutputEncoding <- Text.UTF8Encoding(false)
         batch (new StreamReader(Console.OpenStandardInput(), Text.UTF8Encoding(false)))
     else
+        // UTF-8 on stdout, whatever the console's code page, so Unicode module names aren't mangled.
+        if Console.OutputEncoding.CodePage <> Text.Encoding.UTF8.CodePage || Console.OutputEncoding.GetPreamble().Length <> 0 then
+            Console.OutputEncoding <- Text.UTF8Encoding(false)
+
         runCommand true (List.ofArray argv)

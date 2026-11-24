@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Renders every examples/*.rp with the CLI and compares:
 # - the SVG, byte for byte, with tests/RubberPlant.Backends.Tests/golden/<name>.svg;
-# - the SHA-256 of the OBJ (+ MTL) and of the .gltf with golden/mesh-digests.txt.
+# - the SHA-256 of the OBJ (+ MTL) and of the .gltf with golden/mesh-digests.txt;
+# - the SHA-256 of compact `rubberplant stats` JSON with golden/stats-digests.txt.
 # The goldens are the source of truth. Fails on any difference, on an example without a golden or
 # digest, or a golden or digest without an example.
 # Never rewrites goldens: to accept an intended change, run the Backends tests with
@@ -26,6 +27,8 @@ fi
 seed_of() { tr -d '\r' < "$golden/seeds.txt" | awk -v n="$1" '$1 !~ /^#/ && $1 == n { print $2 }'; }
 # golden/mesh-digests.txt: `<example> <sha256 of obj+mtl> <sha256 of gltf>` lines.
 digests_of() { tr -d '\r' < "$golden/mesh-digests.txt" | awk -v n="$1" '$1 !~ /^#/ && $1 == n { print $2, $3 }'; }
+# golden/stats-digests.txt: `<example> <sha256 of compact stats JSON>` lines.
+stats_digest_of() { tr -d '\r' < "$golden/stats-digests.txt" | awk -v n="$1" '$1 !~ /^#/ && $1 == n { print $2 }'; }
 sha() { sha256sum | cut -d' ' -f1; }
 
 status=0
@@ -60,6 +63,17 @@ for f in examples/*.rp; do
   else
     echo "DIFFERS  $name meshes: expected $expected, got $actual"; status=1
   fi
+
+  expected_stats=$(stats_digest_of "$name")
+  if [ -z "$expected_stats" ]; then
+    echo "MISSING stats digest: $name in $golden/stats-digests.txt"; status=1; continue
+  fi
+  actual_stats="$(cli stats "$f" "${args[@]}" | sha)"
+  if [ "$actual_stats" = "$expected_stats" ]; then
+    echo "ok       $name stats"
+  else
+    echo "DIFFERS  $name stats: expected $expected_stats, got $actual_stats"; status=1
+  fi
 done
 
 for g in "$golden"/*.svg; do
@@ -67,6 +81,9 @@ for g in "$golden"/*.svg; do
 done
 for name in $(tr -d '\r' < "$golden/mesh-digests.txt" | awk '$1 !~ /^#/ && NF { print $1 }'); do
   [ -f "examples/$name.rp" ] || { echo "ORPHAN digests: $name"; status=1; }
+done
+for name in $(tr -d '\r' < "$golden/stats-digests.txt" | awk '$1 !~ /^#/ && NF { print $1 }'); do
+  [ -f "examples/$name.rp" ] || { echo "ORPHAN stats digest: $name"; status=1; }
 done
 
 exit $status

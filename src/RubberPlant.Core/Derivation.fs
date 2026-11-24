@@ -6,18 +6,37 @@ open RubberPlant.Model
 open RubberPlant.LString
 open RubberPlant.Rng
 
+type RuleFiring =
+    { /// 1-based line number of the production rule in the source file.
+      Line: int
+      /// Strict predecessor module name.
+      Predecessor: string
+      /// Strict predecessor parameter count.
+      Arity: int
+      /// Total times this production rule fired across all derivation steps.
+      Count: int }
+
+type DerivationTrace =
+    { Steps: int
+      FixedPointReached: bool
+      TotalRuleFirings: int
+      RuleFirings: RuleFiring list }
+
+type private IndexedRule = { Index: int; Rule: CRule }
+
 /// Rules by strict predecessor (name, parameter count), in the order they're
 /// tried: rules with context first, then rules without; source order within
 /// each group (§4.4).
-type RuleIndex = private { Rules: Dictionary<struct (string * int), CRule[]> }
+type RuleIndex = private { Rules: Dictionary<struct (string * int), IndexedRule[]> }
 
 let buildIndex (rules: CRule list) : RuleIndex =
-    let d = Dictionary<struct (string * int), CRule[]>()
+    let d = Dictionary<struct (string * int), IndexedRule[]>()
 
     rules
-    |> List.groupBy (fun r -> struct (r.Pred.Name, r.Pred.Params.Length))
+    |> List.mapi (fun i r -> { Index = i; Rule = r })
+    |> List.groupBy (fun ir -> struct (ir.Rule.Pred.Name, ir.Rule.Pred.Params.Length))
     |> List.iter (fun (key, rs) ->
-        let withContext, without = rs |> List.partition _.HasContext
+        let withContext, without = rs |> List.partition (fun ir -> ir.Rule.HasContext)
         d[key] <- Array.ofList (withContext @ without))
 
     { Rules = d }
@@ -211,13 +230,52 @@ let private emit (addSym: Sym -> unit) (ensureRoom: unit -> unit) (succ: Success
         | TCut -> addSym Cut
         | TMod(name, args) -> addSym (Mod(name, args |> Array.map (Eval.eval binds)))
 
+let private symEqual (a: Sym) (b: Sym) =
+    match a, b with
+    | Push, Push
+    | Pop, Pop
+    | Cut, Cut -> true
+    | Mod(n1, a1), Mod(n2, a2) ->
+        if n1 <> n2 || a1.Length <> a2.Length then
+            false
+        else
+            let mutable eq = true
+            let mutable i = 0
+
+            while eq && i < a1.Length do
+                if a1[i] <> a2[i] then
+                    eq <- false
+
+                i <- i + 1
+
+            eq
+    | _ -> false
+
+let private lstringEqual (a: LString) (b: LString) =
+    if a.Length <> b.Length then
+        false
+    else
+        let mutable eq = true
+        let mutable i = 0
+
+        while eq && i < a.Length do
+            if not (symEqual a[i] b[i]) then
+                eq <- false
+
+            i <- i + 1
+
+        eq
+
 /// One parallel rewriting pass over `str` (§4.4).
 /// With `cut`, a `%` drops itself and the rest of its branch, unrewritten
 /// (derivation, "Cutting branches"); otherwise it is copied (interpretation).
+/// Returns the rewritten string, updated RNG, and whether any rule fired or
+/// any `%` cut occurred on this pass.
 let private rewrite
     (index: RuleIndex)
     (context: ContextFilter)
     (cut: bool)
+    (counts: int[] voption)
     (maxModules: int option)
     (stage: string)
     (what: string)
@@ -263,6 +321,7 @@ let private rewrite
 
     let mutable rng = rng
     let mutable next = 0
+    let mutable anyChanged = false
 
     while next < str.Length do
         let i = next
@@ -272,6 +331,7 @@ let private rewrite
         | Push
         | Pop -> addSym str[i]
         | Cut when cut ->
+            anyChanged <- true
             // Skip to the `]` that closes the branch (kept), or the end of the string.
             let rec branchEnd j =
                 if j >= str.Length then
@@ -293,7 +353,8 @@ let private rewrite
                 let mutable r = 0
 
                 while not fired && r < rules.Length do
-                    let rule = rules[r]
+                    let indexed = rules[r]
+                    let rule = indexed.Rule
                     let binds = Array.zeroCreate rule.Slots
 
                     try
@@ -309,6 +370,11 @@ let private rewrite
                             | Some succ ->
                                 emit out.Add ensureRoom succ binds
                                 fired <- true
+                                anyChanged <- true
+
+                                match counts with
+                                | ValueSome cs -> cs[indexed.Index] <- cs[indexed.Index] + 1
+                                | ValueNone -> ()
                             | None -> ()
                     with Eval.EvalError(code, msg) ->
                         let modText = format [| m |]
@@ -327,7 +393,7 @@ let private rewrite
                 if not fired then
                     addSym m
 
-    struct (out.ToArray(), rng)
+    struct (out.ToArray(), rng, anyChanged)
 
 /// All derivation steps under `limits`: the axiom, then each derived string (n + 1 strings).
 let deriveStepsWith (limits: Limits) (model: Model) : Result<LString list, Diagnostic list> =
@@ -342,8 +408,8 @@ let deriveStepsWith (limits: Limits) (model: Model) : Result<LString list, Diagn
         for step in 1 .. model.Settings.Derivations do
             let stage = $"derivation step %s{string step}"
 
-            let struct (next, rng') =
-                rewrite index model.Context true limits.MaxModules stage $"rewriting (%s{stage})" rng current
+            let struct (next, rng', _) =
+                rewrite index model.Context true ValueNone limits.MaxModules stage $"rewriting (%s{stage})" rng current
 
             rng <- rng'
             current <- next
@@ -356,11 +422,14 @@ let deriveStepsWith (limits: Limits) (model: Model) : Result<LString list, Diagn
 /// All derivation steps: the axiom, then each derived string (n + 1 strings).
 let deriveSteps (model: Model) : Result<LString list, Diagnostic list> = deriveStepsWith Limits.defaults model
 
-/// The derived string after `derivations` steps under `limits`, without retaining intermediate strings.
-let deriveWith (limits: Limits) (model: Model) : Result<LString, Diagnostic list> =
+/// The derived string and telemetry trace after `derivations` steps under `limits`,
+/// without retaining intermediate strings.
+let deriveWithTrace (limits: Limits) (model: Model) : Result<LString * DerivationTrace, Diagnostic list> =
     let index = buildIndex model.Productions
     let mutable rng = Rng.create model.Settings.Seed
     let mutable current = model.Axiom
+    let counts = Array.zeroCreate<int> model.Productions.Length
+    let mutable fixedPointReached = false
 
     try
         checkLimit limits.MaxModules current.Length "the axiom"
@@ -368,15 +437,45 @@ let deriveWith (limits: Limits) (model: Model) : Result<LString, Diagnostic list
         for step in 1 .. model.Settings.Derivations do
             let stage = $"derivation step %s{string step}"
 
-            let struct (next, rng') =
-                rewrite index model.Context true limits.MaxModules stage $"rewriting (%s{stage})" rng current
+            let struct (next, rng', anyChanged) =
+                rewrite
+                    index
+                    model.Context
+                    true
+                    (ValueSome counts)
+                    limits.MaxModules
+                    stage
+                    $"rewriting (%s{stage})"
+                    rng
+                    current
+
+            if step = model.Settings.Derivations then
+                fixedPointReached <- not anyChanged || lstringEqual current next
 
             rng <- rng'
             current <- next
 
-        Ok current
+        let ruleFirings =
+            model.Productions
+            |> List.mapi (fun i r ->
+                { Line = r.Pos.Line
+                  Predecessor = r.Pred.Name
+                  Arity = r.Pred.Params.Length
+                  Count = counts[i] })
+
+        let trace =
+            { Steps = model.Settings.Derivations
+              FixedPointReached = fixedPointReached
+              TotalRuleFirings = Array.sum counts
+              RuleFirings = ruleFirings }
+
+        Ok(current, trace)
     with RewriteError d ->
         Error [ d ]
+
+/// The derived string after `derivations` steps under `limits`, without retaining intermediate strings.
+let deriveWith (limits: Limits) (model: Model) : Result<LString, Diagnostic list> =
+    deriveWithTrace limits model |> Result.map fst
 
 /// The derived string after `derivations` steps.
 let derive (model: Model) : Result<LString, Diagnostic list> = deriveWith Limits.defaults model
@@ -391,8 +490,17 @@ let interpretWith (limits: Limits) (model: Model) (derived: LString) : Result<LS
         else
             let index = buildIndex model.Interpretations
             // Interpretation rules have no weights, so the generator is never used.
-            let struct (drawing, _) =
-                rewrite index model.Context false limits.MaxModules "interpretation" "interpreting" (Rng.create 0L) derived
+            let struct (drawing, _, _) =
+                rewrite
+                    index
+                    model.Context
+                    false
+                    ValueNone
+                    limits.MaxModules
+                    "interpretation"
+                    "interpreting"
+                    (Rng.create 0L)
+                    derived
 
             Ok drawing
     with RewriteError d ->
