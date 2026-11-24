@@ -21,7 +21,7 @@ Architecture preserves the repository's **pure core, thin I/O shell** boundary:
 
 - **`RubberPlant.Core` and `RubberPlant.Backends` are unchanged** (no GPU dependencies, no new I/O).
 - **`RubberPlant.Cli` stays GPU-free.** `RubberPlant.Viewer` is a separate executable referencing `RubberPlant.Core` and `RubberPlant.Backends`.
-- **Inside `RubberPlant.Viewer`, all math, geometry packing, PNG encoding, and command parsing are pure F#** and unit-tested without an OpenGL context. Only `GlContext.fs`, `Shaders.fs`, `Renderer.fs`, and `Program.fs` touch GLFW, OpenGL, or the filesystem.
+- **Inside `RubberPlant.Viewer`, all math, geometry packing, PNG encoding, and command parsing are pure F#** and unit-tested without an OpenGL context. All GLFW and OpenGL types and calls are confined strictly to `GlContext.fs`, `Shaders.fs`, and `Renderer.fs` behind a narrow API-agnostic boundary (§2.4); `Program.fs` handles CLI/batch/filesystem I/O and never imports `Silk.NET.*` directly.
 - **Repository build invariants apply to `src/RubberPlant.Viewer`:** `net10.0`, `TreatWarningsAsErrors`, `WarnOn 3390;1182`, `--reflectionfree`, and the string-only `%s` printf rule checked by `CliTests.aotFormatTests`.
 
 ```
@@ -69,13 +69,21 @@ Architecture preserves the repository's **pure core, thin I/O shell** boundary:
 
 `Silk.NET.Core`'s default native library loader uses `Assembly.Location` / `DependencyContext`, which triggers `IL3000` and `IL3002` under `<PublishAot>true</PublishAot>` (and with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` requires `<NoWarn>IL2104;IL3053;IL3000;IL3002</NoWarn>` plus verification that `glfw3.dll` loads from `AppContext.BaseDirectory`).
 
-**Gate at the start of PR 2:** build and run a minimal Native AOT smoke binary (`Glfw.GetApi()` + `GL.GetApi` + hidden context creation + `glfw3.dll` next to the published `.exe`). If `Silk.NET.Core` introduces blocking AOT runtime failures or unacceptable publish overhead, fall back immediately to **direct P/Invoke over `Ultz.Native.GLFW`** (~25 GLFW functions + ~45 OpenGL 3.3 Core function pointers loaded via `glfwGetProcAddress`), which requires zero managed GL dependencies and produces zero AOT warnings.
+**Gate at the start of PR 2 (passed):** verified with a minimal Windows Native AOT smoke binary (`dotnet publish -c Release -r win-x64`, 3.84 MB `.exe` + `glfw3.dll`, hidden OpenGL 3.3 Core context creation and `GL.GetApi` query exiting `0` with 0 warnings beyond `IL2104;IL3053;IL3000;IL3002`), locking in `Silk.NET.GLFW` + `Silk.NET.OpenGL` (`2.23.0`). *(Fallback — not needed — would have been direct P/Invoke over `Ultz.Native.GLFW`.)*
 
 ### 2.3 Headless rendering across environments
 
 - **Local Windows (RTX 4070 Laptop):** GLFW hidden window (`GLFW_VISIBLE = GLFW_FALSE`) creates a hardware-accelerated OpenGL 3.3 Core context with no visible window or taskbar entry.
 - **`ubuntu-latest` CI:** run under `xvfb-run -a` with Mesa `llvmpipe`. *(Upstream GLFW 3.4's `GLFW_PLATFORM_NULL` only supports `GLFW_OSMESA_CONTEXT_API`, not `GLFW_EGL_CONTEXT_API`, so Xvfb + Mesa is the clean Linux headless baseline.)*
 - **`windows-latest` CI:** install Mesa software `opengl32.dll` via `ssciwr/setup-mesa-dist-win@v3` so both `RubberPlant.Viewer.Tests` and the published Windows Native AOT `rubberplant-viewer.exe` execute real OpenGL renders on GitHub-hosted runners.
+
+### 2.4 Backend isolation boundary (future GPU backend portability)
+
+Because OpenGL 3.3 Core is a legacy API (chosen here for low complexity, small Native AOT footprint, and simple CPU-only Mesa CI), the graphics surface must stay as small and isolated as possible so a future migration (e.g., to **WebGPU / `wgpu-native`** or **SDL3 GPU**, which dispatch natively to D3D12 on Windows, Vulkan on Linux, and Metal on macOS from a single codebase) requires minimal localized changes:
+
+- **Strict confinement:** Only `GlContext.fs`, `Shaders.fs`, and `Renderer.fs` may open `Silk.NET.*` or reference OpenGL/GLFW types. `Camera.fs`, `Scene.fs`, `Png.fs`, `Protocol.fs`, and `Program.fs` stay completely graphics-API-free.
+- **Narrow backend surface:** Expose a minimal API-agnostic renderer boundary (scene upload, offscreen shaded render returning packed RGB24, offscreen silhouette render returning packed Gray8, interactive window frame + input/wakeup loop, and disposal) consuming `Scene.MeshScene`, `Scene.GridGeometry option`, and `Camera.Camera`.
+- **Single cross-platform backend preferred over hand-rolled per-OS backends:** If we later migrate off OpenGL, prefer a unified native-dispatch layer (`wgpu-native` or SDL3 GPU) behind this boundary rather than maintaining separate D3D/Vulkan/Metal implementations and multiple shader languages.
 
 ---
 
