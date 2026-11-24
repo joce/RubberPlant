@@ -114,7 +114,7 @@ Verification at canonical orientations:
      $$x_i = c_i \cdot \text{right}, \quad y_i = c_i \cdot \text{up}, \quad z_i = c_i \cdot \text{dir}$$
   2. Solve for the tightest distance that keeps every corner inside the padded frustum:
      $$d = \max_{i=0..7} \left( z_i + \max\!\left( \frac{\text{pad} \cdot |y_i|}{t_y},\; \frac{\text{pad} \cdot |x_i|}{a \cdot t_y},\; \epsilon_{\text{clear}} \right) \right)$$
-     where $\epsilon_{\text{clear}} = 10^{-3} \cdot R$ ensures a degenerate 1D stick viewed end-on ($x_i = y_i = 0$) never places the camera directly on top of the geometry while staying homogeneous of degree 1 across arbitrary model scales.
+     where $\epsilon_{\text{clear}} = 0.02 \cdot R$ ensures even a slender or degenerate 1D stick viewed end-on ($x_i = y_i = 0$) keeps at least $2\%$ of $R$ clearance in front of the camera (which guarantees $0.5 \cdot \text{frontDepth} \ge d / 102 \approx 0.0098 \cdot d$ for every AABB, orientation, and aspect ratio) while staying homogeneous of degree 1 across arbitrary model scales.
 - **Empty / zero-extent fallback:** when `mesh.Groups` is empty or $R = 0$, `fit` uses a unit bounding box centered at `(0, 0, 0)` with $R = 1$.
 
 ### 3.3 Canonical views and shared-scale contact sheet
@@ -129,21 +129,25 @@ Verification at canonical orientations:
 - Default interactive camera on `load`: **`3/4 ISO` (`35°, 25°`)**, auto-fitted to the viewport.
 - **Contact-sheet shared physical scale:** compute `fit` distance $d_k$ (at square aspect $a = 1$, centered `target = (0, 0, 0)`) for each of the four canonical views and render all four quadrants using $d_{\text{sheet}} = \max(d_1, d_2, d_3, d_4)$. This guarantees that the plant's height and crown width are directly visually comparable across Front, Side, Iso, and Top-Down tiles.
 
-### 3.4 Scale-invariant, continuous clip planes
+### 3.4 Scale-invariant clip planes
 
-To prevent near-plane clipping of the ground grid on shallow wide models, keep the pivot target visible on extreme close-ups, and maintain 24-bit depth precision across huge models (e.g., `fig2-8c.rp` with $R \approx 18{,}740$) and panned views:
+To keep every auto-fitted mesh corner strictly behind the near plane (even slender models viewed end-on), prevent near-plane clipping of the ground grid on shallow wide models, keep the pivot target visible on extreme close-ups, and maintain 24-bit depth precision across huge models (e.g., `fig2-8c.rp` with $R \approx 18{,}740$) and panned views:
 
 - Let `modelRadius` be the mesh AABB half-diagonal (`1.0` if empty or zero-extent), and `effectiveRadius = modelRadius + |target|`.
 - Let `gridExtentIfVisible` be the maximum Euclidean distance from local `(0, 0, 0)` to the four corners of the rendered ground grid (accounting for `y_local = -center.Y`), or `0.0` when the grid is disabled or omitted.
 - `maxExtent = max(effectiveRadius, gridExtentIfVisible + |target|)`
 - `far = max(distance + 2.0 * maxExtent, distance * 2.0)`
-- `safeNear = min(distance * 0.1, max(distance * 0.01, far / 10000.0))`
-- With grid visible:
-  `near = max(min(distance - 1.1 * effectiveRadius, distance * 0.05), safeNear)`
-- Without grid:
-  `near = max(distance - 1.1 * effectiveRadius, safeNear)`
+- Compute the exact signed depth of the closest mesh AABB corner from the camera:
+  `frontDepth = distance - max_{i=0..7} ((c_i - target) · dir)` (or `distance` when `mesh.Groups` is empty).
+- When `frontDepth > 0` (the mesh AABB is strictly in front of the camera):
+  - `meshNear = 0.5 * frontDepth`
+  - `baseNear = min(meshNear, distance * 0.05)` with grid visible, or `meshNear` without grid
+  - `autoSafeFloor = min(distance * 0.005, max(distance * 0.001, far / 10000.0))`
+  - `near = max(baseNear, autoSafeFloor)`
+- When `frontDepth <= 0` (camera is inside or on the mesh AABB):
+  - `near = min(distance * 0.1, max(distance * 0.005, far / 10000.0))`
 
-This formula is continuous everywhere (zero jump when crossing the bounding sphere), guarantees `0 < near <= 0.1 * distance < far`, keeps `far / near <= 10,000` whenever `distance >= 0.001 * far`, and scales homogeneously of degree 1 with world units.
+Because $\epsilon_{\text{clear}} = 0.02 \cdot R$ guarantees `meshNear >= distance / 102` ($\approx 0.0098 \cdot \text{distance}$) for every auto-fitted view and every contact-sheet tile while `autoSafeFloor <= 0.005 * distance`, this guarantees `0 < near <= meshNear < frontDepth < far` on all auto-fitted geometry (both with and without the grid), `0 < near <= 0.1 * distance < far` when zoomed inside the mesh, and homogeneous scaling of degree 1 with world units.
 
 ---
 
@@ -361,7 +365,7 @@ Uses the exact same line splitter (`splitLine`: whitespace-separated, `"..."` qu
 ### 7.1 Three-layer verification
 
 1. **Layer 1 — Pure Expecto unit tests (`tests/RubberPlant.Viewer.Tests`, zero GPU):**
-   - `Camera`: pole-free basis orthonormality and right-handedness across `az ∈ [-360, 360]` and `el ∈ {-90, -45, 0, 25, 90}`, aspect-aware 8-corner `fit` (tall, wide, square, 2D planar, degenerate 1D stick, empty scene), shared-scale contact-sheet distance, bounded-ratio `near`/`far` (`far / near <= 10,000`) including grid visibility and deep zoom-in.
+   - `Camera`: pole-free basis orthonormality and right-handedness across `az ∈ [-360, 360]` and `el ∈ {-90, -45, 0, 25, 90}`, aspect-aware 8-corner `fit` (tall, wide, square, 2D planar, degenerate 1D stick, empty scene), shared-scale contact-sheet distance, scale-invariant `near`/`far` (including grid visibility, deep zoom-in, and slender end-on geometry such as half-extents `(0.001, 0.001, 1)` at `(0, 0)` asserting `near < frontDepth` both with and without the grid).
    - `Scene`: double-precision origin centering, `uint32` index offsetting across multiple `MeshGroup`s, `float32` span overflow error, empty mesh & degenerate-only mesh handling, ground grid step selection and local-frame shift (including `y < 0` models and huge `|center.Y|` omission).
    - `Png`: pure-F# PNG decoder round-trip verifying signature, `IHDR`, CRC-32, `IDAT` decompression, vertical flip, RGB24 & Gray8 pixel exactness, odd widths, and 2×2 contact-sheet divider/label composition.
    - `Protocol`: `splitLine` parity with `RubberPlant.Cli`, CLI dispatch (`view`, `.rp` shorthand, unknown commands, empty args), strict flag scoping (`--pretty`, `--wireframe`, `--no-grid`), domain validation (`el`, `dist`, even contact-sheet `--size`), pre-`load` errors, and transactional `load`/`reload` state preservation.
