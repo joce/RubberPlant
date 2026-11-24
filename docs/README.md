@@ -3,6 +3,7 @@
 - [`language.md`](language.md): the RubberPlant L-system language specification.
 - [`backends.md`](backends.md): geometry in 3D, mesh construction, and the output backends (SVG, OBJ, glTF).
 - [`core-hardening.md`](core-hardening.md): execution budgets (`--max-modules`, `--max-primitives`) and `rubberplant stats` morphology telemetry (BP.1).
+- [`viewer.md`](viewer.md): direct-from-`.rp` 3D GPU viewer, headless contact sheets/silhouettes, and batch protocol (BP.2).
 - [`roadmap.md`](roadmap.md): milestones.
 - [`battle-plan.md`](battle-plan.md): multi-phase plan from core hardening and 3D viewer through AI/ML workflows.
 - [`abop-notes.md`](abop-notes.md): ABOP errata candidates, `cpfg` verification findings, and modeling notes.
