@@ -6,7 +6,7 @@ open System.IO.Compression
 open Expecto
 open RubberPlant.Viewer.Png
 
-type private DecodedPng =
+type internal DecodedPng =
     { Width: int
       Height: int
       BitDepth: byte
@@ -22,7 +22,7 @@ let private readU32BE (bytes: byte[]) (offset: int) : uint32 =
 
 /// Pure-F# PNG decoder verifying signature, IHDR, every chunk CRC-32, IDAT zlib
 /// decompression, filter bytes, and IEND termination.
-let private decodePng (bytes: byte[]) : DecodedPng =
+let internal decodePng (bytes: byte[]) : DecodedPng =
     let sigBytes = [| 0x89uy; 0x50uy; 0x4Euy; 0x47uy; 0x0Duy; 0x0Auy; 0x1Auy; 0x0Auy |]
     Expect.isGreaterThanOrEqual bytes.Length 8 "has signature"
     Expect.equal bytes[0..7] sigBytes "PNG signature exact"

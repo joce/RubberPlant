@@ -27,14 +27,29 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install headless OpenGL dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1 libglx-mesa0 libgl1-mesa-dri libx11-6 libxcursor1 libxinerama1 libxrandr2 libxi6
+
+      - name: Setup Mesa software OpenGL (Windows)
+        if: runner.os == 'Windows'
+        uses: ssciwr/setup-mesa-dist-win@v3
+
       - name: Build
         run: dotnet build -c Release --nologo
 
       - name: Tests
         run: |
-          for t in Core Backends Cli Viewer; do
+          for t in Core Backends Cli; do
             dotnet run --no-build -c Release --project tests/RubberPlant.$t.Tests
           done
+          if [ "${RUNNER_OS:-}" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1280x1024x24" env LIBGL_ALWAYS_SOFTWARE=1 dotnet run --no-build -c Release --project tests/RubberPlant.Viewer.Tests
+          else
+            GALLIUM_DRIVER=llvmpipe dotnet run --no-build -c Release --project tests/RubberPlant.Viewer.Tests
+          fi
 
       # Renders every example with the CLI and compares with the committed
       # goldens: SVGs byte for byte (identical SVG text means identical pixels in
@@ -51,6 +66,16 @@ jobs:
         run: |
           dotnet publish src/RubberPlant.Cli -c Release -r win-x64 --nologo -o aot
           RUBBERPLANT_CLI=aot/rubberplant.exe bash scripts/check-goldens.sh
+
+      # The viewer is also Native AOT compiled and runs headless OpenGL renders
+      # under Mesa software rendering on Windows CI.
+      - name: Native AOT viewer smoke test
+        if: runner.os == 'Windows'
+        env:
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          dotnet publish src/RubberPlant.Viewer -c Release -r win-x64 --nologo -o aot-viewer
+          RUBBERPLANT_VIEWER=aot-viewer/rubberplant-viewer.exe bash scripts/check-viewer-aot.sh
 
       # Every example's .gltf and .glb, and the mesh fixtures, must pass the
       # Khronos glTF Validator without errors.

@@ -11,10 +11,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="RubberPlant.Viewer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="Camera.fs" />
     <Compile Include="Scene.fs" />
     <Compile Include="Png.fs" />
     <Compile Include="Protocol.fs" />
+    <Compile Include="GlContext.fs" />
+    <Compile Include="Shaders.fs" />
+    <Compile Include="Renderer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
