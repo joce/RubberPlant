@@ -5,8 +5,11 @@ module internal RubberPlant.Viewer.GlContext
 #nowarn "9"
 
 open System
+open System.Collections.Generic
+open System.IO
 open System.Runtime.InteropServices
 open Microsoft.FSharp.NativeInterop
+open Silk.NET.Core.Loader
 open Silk.NET.GLFW
 open Silk.NET.OpenGL
 
@@ -72,10 +75,50 @@ let private formatGlfwError (glfw: Glfw) : string =
     else
         "unknown GLFW error"
 
+// `Silk.NET.GLFW` asks for `libglfw.so.3.3` on Linux whereas `Ultz.Native.GLFW`
+// ships `runtimes/linux-*/native/libglfw.so.3` (and flat `libglfw.so.3` on publish),
+// and `DefaultPathResolver` doesn't probe `runtimes/` for the stripped `.3` name.
+let private linuxGlfwResolverRegistered =
+    lazy (
+        if OperatingSystem.IsLinux() then
+            match PathResolver.Default with
+            | :? DefaultPathResolver as resolver ->
+                let rid =
+                    match RuntimeInformation.OSArchitecture with
+                    | Architecture.Arm64 -> Some "linux-arm64"
+                    | Architecture.Arm -> Some "linux-arm"
+                    | Architecture.X64 -> Some "linux-x64"
+                    | _ -> None
+
+                resolver.Resolvers.Add(
+                    Func<string, IEnumerable<string>>(fun name ->
+                        if name.StartsWith("libglfw", StringComparison.Ordinal) then
+                            seq {
+                                let flat = Path.Combine(AppContext.BaseDirectory, "libglfw.so.3")
+
+                                if File.Exists flat then
+                                    yield flat
+
+                                match rid with
+                                | Some r ->
+                                    let nested =
+                                        Path.Combine(AppContext.BaseDirectory, "runtimes", r, "native", "libglfw.so.3")
+
+                                    if File.Exists nested then
+                                        yield nested
+                                | None -> ()
+                            }
+                        else
+                            Seq.empty)
+                )
+            | _ -> ()
+    )
+
 /// Initializes GLFW and creates an offscreen hidden OpenGL 3.3 Core context (§2.1–§2.3).
 let createHeadless () : Result<GlContext, string> =
     let glfwRes =
         try
+            linuxGlfwResolverRegistered.Force()
             Ok(Glfw.GetApi())
         with ex ->
             Error $"failed to initialize GLFW: %s{ex.Message}"
