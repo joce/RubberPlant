@@ -20,41 +20,92 @@ type GlContext =
           GlApi: GL
           MaxRbSize: int
           MaxSampleCount: int
+          WindowSampleCount: int
+          LifecycleLock: obj
           mutable Disposed: bool }
 
     member this.Gl = this.GlApi
+    member this.GlfwApi = this.Glfw
+    member this.WindowHandle = this.Window
     member this.MaxRenderbufferSize = this.MaxRbSize
     member this.MaxSamples = this.MaxSampleCount
+    member this.WindowSamples = this.WindowSampleCount
+
+    member this.SetTitle(title: string) =
+        if not this.Disposed then
+            this.Glfw.SetWindowTitle(this.Window, title)
+
+    member this.GetFramebufferSize() : struct (int * int) =
+        if this.Disposed then
+            struct (0, 0)
+        else
+            let mutable w = 0
+            let mutable h = 0
+            this.Glfw.GetFramebufferSize(this.Window, &w, &h)
+            struct (w, h)
+
+    member this.GetWindowSize() : struct (int * int) =
+        if this.Disposed then
+            struct (0, 0)
+        else
+            let mutable w = 0
+            let mutable h = 0
+            this.Glfw.GetWindowSize(this.Window, &w, &h)
+            struct (w, h)
+
+    member this.ShouldClose() : bool =
+        this.Disposed || this.Glfw.WindowShouldClose(this.Window)
+
+    member this.SetShouldClose(value: bool) =
+        if not this.Disposed then
+            this.Glfw.SetWindowShouldClose(this.Window, value)
+
+    member this.SwapBuffers() =
+        if not this.Disposed then
+            this.Glfw.SwapBuffers(this.Window)
+
+    member this.WaitEvents() =
+        if not this.Disposed then
+            this.Glfw.WaitEvents()
+
+    member this.PostEmptyEvent() =
+        lock this.LifecycleLock (fun () ->
+            if not this.Disposed then
+                try
+                    this.Glfw.PostEmptyEvent()
+                with _ ->
+                    ())
 
     interface IDisposable with
         member this.Dispose() =
-            if not this.Disposed then
-                this.Disposed <- true
+            lock this.LifecycleLock (fun () ->
+                if not this.Disposed then
+                    this.Disposed <- true
 
-                try
-                    this.GlApi.Dispose()
-                with _ ->
-                    ()
+                    try
+                        this.GlApi.Dispose()
+                    with _ ->
+                        ()
 
-                try
-                    this.Glfw.MakeContextCurrent(NativePtr.nullPtr<WindowHandle>)
-                with _ ->
-                    ()
+                    try
+                        this.Glfw.MakeContextCurrent(NativePtr.nullPtr<WindowHandle>)
+                    with _ ->
+                        ()
 
-                try
-                    this.Glfw.DestroyWindow(this.Window)
-                with _ ->
-                    ()
+                    try
+                        this.Glfw.DestroyWindow(this.Window)
+                    with _ ->
+                        ()
 
-                try
-                    this.Glfw.Terminate()
-                with _ ->
-                    ()
+                    try
+                        this.Glfw.Terminate()
+                    with _ ->
+                        ()
 
-                try
-                    this.Glfw.Dispose()
-                with _ ->
-                    ()
+                    try
+                        this.Glfw.Dispose()
+                    with _ ->
+                        ())
 
 let private formatGlfwError (glfw: Glfw) : string =
     let mutable ptr = NativePtr.nullPtr<byte>
@@ -114,8 +165,58 @@ let private linuxGlfwResolverRegistered =
             | _ -> ()
     )
 
-/// Initializes GLFW and creates an offscreen hidden OpenGL 3.3 Core context (§2.1–§2.3).
-let createHeadless () : Result<GlContext, string> =
+let private applyWindowHints (glfw: Glfw) (visible: bool) (windowed: bool) (samples: int) =
+    glfw.DefaultWindowHints()
+    glfw.WindowHint(WindowHintInt.ContextVersionMajor, 3)
+    glfw.WindowHint(WindowHintInt.ContextVersionMinor, 3)
+    glfw.WindowHint(WindowHintOpenGlProfile.OpenGlProfile, OpenGlProfile.Core)
+    glfw.WindowHint(WindowHintBool.OpenGLForwardCompat, true)
+    glfw.WindowHint(WindowHintBool.Visible, visible)
+
+    if windowed then
+        glfw.WindowHint(WindowHintBool.Resizable, true)
+        glfw.WindowHint(WindowHintBool.DoubleBuffer, true)
+
+    if samples > 0 then
+        glfw.WindowHint(WindowHintInt.Samples, samples)
+
+let private cleanupFailedWindow (glfw: Glfw) (glOpt: GL option) (window: nativeptr<WindowHandle>) =
+    match glOpt with
+    | Some gl ->
+        try
+            gl.Dispose()
+        with _ ->
+            ()
+    | None -> ()
+
+    try
+        glfw.MakeContextCurrent(NativePtr.nullPtr<WindowHandle>)
+    with _ ->
+        ()
+
+    if NativePtr.toNativeInt window <> 0n then
+        try
+            glfw.DestroyWindow(window)
+        with _ ->
+            ()
+
+    try
+        glfw.Terminate()
+    with _ ->
+        ()
+
+    try
+        glfw.Dispose()
+    with _ ->
+        ()
+
+let private createInternal
+    (width: int)
+    (height: int)
+    (title: string)
+    (visible: bool)
+    (windowed: bool)
+    : Result<GlContext, string> =
     let glfwRes =
         try
             linuxGlfwResolverRegistered.Force()
@@ -137,39 +238,42 @@ let createHeadless () : Result<GlContext, string> =
 
         Error $"failed to initialize GLFW: %s{msg}"
     else
-        glfw.DefaultWindowHints()
-        glfw.WindowHint(WindowHintInt.ContextVersionMajor, 3)
-        glfw.WindowHint(WindowHintInt.ContextVersionMinor, 3)
-        glfw.WindowHint(WindowHintOpenGlProfile.OpenGlProfile, OpenGlProfile.Core)
-        glfw.WindowHint(WindowHintBool.OpenGLForwardCompat, true)
-        glfw.WindowHint(WindowHintBool.Visible, false)
+        let createWin samples =
+            applyWindowHints glfw visible windowed samples
 
-        let window =
             glfw.CreateWindow(
-                1,
-                1,
-                "rubberplant-viewer",
+                width,
+                height,
+                title,
                 NativePtr.nullPtr<Monitor>,
                 NativePtr.nullPtr<WindowHandle>
             )
 
+        let window, requestedSamples =
+            if windowed then
+                let msaaWin = createWin 4
+
+                if NativePtr.toNativeInt msaaWin <> 0n then
+                    msaaWin, 4
+                else
+                    // Clear any GLFW error from the 4x MSAA attempt before falling back to 0 samples.
+                    let mutable dummyPtr = NativePtr.nullPtr<byte>
+                    glfw.GetError(&dummyPtr) |> ignore
+                    createWin 0, 0
+            else
+                createWin 0, 0
+
         if NativePtr.toNativeInt window = 0n then
             let msg = formatGlfwError glfw
-
-            try
-                glfw.Terminate()
-            with _ ->
-                ()
-
-            try
-                glfw.Dispose()
-            with _ ->
-                ()
-
+            cleanupFailedWindow glfw None window
             Error $"failed to create OpenGL 3.3 Core context: %s{msg}"
         else
             try
                 glfw.MakeContextCurrent(window)
+
+                if windowed then
+                    glfw.SwapInterval(1)
+
                 let gl = GL.GetApi(Func<string, nativeint>(fun name -> glfw.GetProcAddress name))
 
                 // Clear any benign pre-existing error state before querying limits.
@@ -191,31 +295,7 @@ let createHeadless () : Result<GlContext, string> =
                     maxS <- 1
 
                 if maxRb <= 0 then
-                    try
-                        gl.Dispose()
-                    with _ ->
-                        ()
-
-                    try
-                        glfw.MakeContextCurrent(NativePtr.nullPtr<WindowHandle>)
-                    with _ ->
-                        ()
-
-                    try
-                        glfw.DestroyWindow(window)
-                    with _ ->
-                        ()
-
-                    try
-                        glfw.Terminate()
-                    with _ ->
-                        ()
-
-                    try
-                        glfw.Dispose()
-                    with _ ->
-                        ()
-
+                    cleanupFailedWindow glfw (Some gl) window
                     Error "OpenGL context did not report a valid GL_MAX_RENDERBUFFER_SIZE"
                 else
                     Ok
@@ -224,26 +304,17 @@ let createHeadless () : Result<GlContext, string> =
                           GlApi = gl
                           MaxRbSize = maxRb
                           MaxSampleCount = max 1 maxS
+                          WindowSampleCount = requestedSamples
+                          LifecycleLock = obj ()
                           Disposed = false }
             with ex ->
-                try
-                    glfw.MakeContextCurrent(NativePtr.nullPtr<WindowHandle>)
-                with _ ->
-                    ()
-
-                try
-                    glfw.DestroyWindow(window)
-                with _ ->
-                    ()
-
-                try
-                    glfw.Terminate()
-                with _ ->
-                    ()
-
-                try
-                    glfw.Dispose()
-                with _ ->
-                    ()
-
+                cleanupFailedWindow glfw None window
                 Error $"failed to load OpenGL 3.3 Core functions: %s{ex.Message}"
+
+/// Initializes GLFW and creates an offscreen hidden OpenGL 3.3 Core context (§2.1–§2.3).
+let createHeadless () : Result<GlContext, string> =
+    createInternal 1 1 "rubberplant-viewer" false false
+
+/// Initializes GLFW and creates an OpenGL 3.3 Core window context (§2.1, §6.4).
+let createWindow (width: int) (height: int) (title: string) (visible: bool) : Result<GlContext, string> =
+    createInternal (max 1 width) (max 1 height) title visible true

@@ -52,6 +52,7 @@ Viewer & render options:
       --camera <az,el[,dist|fit]> camera orbit angles and optional distance or fit
       --wireframe                 draw wireframe overlay (view, one-shot contact-sheet/snapshot)
       --no-grid                   hide ground grid (view, one-shot contact-sheet/snapshot)
+      --watch                     auto-reload the current .rp file on disk changes (view)
       --stats                     write Stats JSON to stdout instead of `wrote <path>`
       --stats-out <file.json>     write Stats JSON atomically to file
       --pretty                    2-space indented JSON (with --stats, --stats-out, or batch stats)
@@ -150,7 +151,8 @@ type ViewArgs =
       WindowSize: int * int
       Camera: CameraSpec option
       Wireframe: bool
-      Grid: bool }
+      Grid: bool
+      Watch: bool }
 
 type ContactSheetArgs =
     { Base: HeadlessRenderSpec
@@ -398,7 +400,7 @@ let private validateStatsOutput (stats: StatsOutput) =
 // ------------------------------------------------------------------ CLI parser
 
 let private parseViewArgs (rest: string list) : ViewArgs =
-    let rec go args input load size cam wireframe grid =
+    let rec go args input load size cam wireframe grid watch =
         match args with
         | [] ->
             if input = None && hasAnyLoadOption load then
@@ -409,15 +411,17 @@ let private parseViewArgs (rest: string list) : ViewArgs =
               WindowSize = defaultArg size defaultWindowSize
               Camera = cam
               Wireframe = wireframe
-              Grid = grid }
-        | "--size" :: v :: tail -> go tail input load (Some(parseSize "--size" v)) cam wireframe grid
-        | "--camera" :: v :: tail -> go tail input load size (Some(parseCameraFlag v)) wireframe grid
-        | "--wireframe" :: tail -> go tail input load size cam true grid
-        | "--no-grid" :: tail -> go tail input load size cam wireframe false
+              Grid = grid
+              Watch = watch }
+        | "--size" :: v :: tail -> go tail input load (Some(parseSize "--size" v)) cam wireframe grid watch
+        | "--camera" :: v :: tail -> go tail input load size (Some(parseCameraFlag v)) wireframe grid watch
+        | "--wireframe" :: tail -> go tail input load size cam true grid watch
+        | "--no-grid" :: tail -> go tail input load size cam wireframe false watch
+        | "--watch" :: tail -> go tail input load size cam wireframe grid true
         | ("--size" | "--camera") as opt :: [] -> fail $"%s{opt} expects a value"
         | _ ->
             match tryParseLoadOption args load with
-            | Some(load', tail) -> go tail input load' size cam wireframe grid
+            | Some(load', tail) -> go tail input load' size cam wireframe grid watch
             | None ->
                 match args with
                 | opt :: _ when opt.StartsWith "-" -> fail $"unknown option '%s{opt}'"
@@ -427,10 +431,10 @@ let private parseViewArgs (rest: string list) : ViewArgs =
                     if input.IsSome then
                         fail $"unexpected argument '%s{file}'"
 
-                    go tail (Some file) load size cam wireframe grid
+                    go tail (Some file) load size cam wireframe grid watch
                 | [] -> fail "unexpected end of arguments"
 
-    go rest None emptyLoadOptions None None false true
+    go rest None emptyLoadOptions None None false true false
 
 type private HeadlessKind =
     | KindContactSheet
@@ -509,6 +513,7 @@ let private parseHeadlessCli (kind: HeadlessKind) (rest: string list) : CliComma
                 fail "--no-grid doesn't apply to silhouette"
 
             go tail input output load sheetSize snapSize cam wireframe true statsStdout statsOut pretty
+        | "--watch" :: _ -> fail "--watch only applies to view"
         | "--stats" :: tail -> go tail input output load sheetSize snapSize cam wireframe noGrid true statsOut pretty
         | "--stats-out" :: v :: tail ->
             validateNonEmptyPath "--stats-out" v
@@ -561,6 +566,7 @@ let private parseBatchLoad (rest: string list) : BatchCommand =
             | Some file -> Load(file, load, keepCam)
             | None -> fail "missing input file"
         | "--keep-camera" :: tail -> go tail input load true
+        | "--watch" :: _ -> fail "--watch only applies to view"
         | _ ->
             match tryParseLoadOption args load with
             | Some(load', tail) -> go tail input load' keepCam
@@ -583,6 +589,7 @@ let private parseBatchReload (rest: string list) : BatchCommand =
     | [] -> Reload false
     | [ "--keep-camera" ] -> Reload true
     | "--keep-camera" :: arg :: _ -> fail $"unexpected argument '%s{arg}'"
+    | "--watch" :: _ -> fail "--watch only applies to view"
     | opt :: _ when opt.StartsWith "-" -> fail $"unknown option '%s{opt}'"
     | arg :: _ -> fail $"unexpected argument '%s{arg}'"
 
@@ -645,6 +652,7 @@ let private parseBatchRender (kind: HeadlessKind) (rest: string list) : BatchCom
                       Stats = stats }
         | "--wireframe" :: _ -> fail "--wireframe is not allowed here; use `wireframe on|off`"
         | "--no-grid" :: _ -> fail "--no-grid is not allowed here; use `grid on|off`"
+        | "--watch" :: _ -> fail "--watch only applies to view"
         | "--camera" :: _ when kind = KindContactSheet ->
             fail "--camera doesn't apply to contact-sheet"
         | "--camera" :: v :: tail ->

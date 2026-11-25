@@ -101,6 +101,30 @@ def run(*args):
 code, out = run("derive", "examples/dragon.rp", "-n", "2")
 ```
 
+## 3D Viewer (`rubberplant-viewer`)
+
+`RubberPlant.Viewer` renders `.rp` models directly on the GPU (OpenGL 3.3 Core) with no OBJ/glTF round-trip ([`docs/viewer.md`](docs/viewer.md)):
+
+```
+dotnet run --project src/RubberPlant.Viewer -- examples/fig2-8b.rp
+dotnet run --project src/RubberPlant.Viewer -- contact-sheet examples/fig2-8b.rp -o sheet.png --stats
+dotnet run --project src/RubberPlant.Viewer -- snapshot examples/fig2-8b.rp -o snap.png --camera 35,25
+dotnet run --project src/RubberPlant.Viewer -- silhouette examples/fig2-8b.rp -o mask.png --size 512
+```
+
+- **Interactive `view` window** (`rubberplant-viewer view [file.rp] [--watch]` or `<file.rp>` shorthand):
+  - **Mouse:** left-drag to orbit, right-drag / middle-drag / `Shift` + left-drag to pan, scroll wheel to zoom.
+  - **Shortcuts:** `1` Front, `2` Side +90°, `3` 3/4 Iso, `4` Top-Down, `F` fit, `W` wireframe, `G` ground grid, `R` reload from disk, `Esc` / `Q` quit.
+  - **Auto-reload (`--watch`):** opt-in file watcher that automatically reloads the `.rp` file when saved on disk (keeping your camera and preserving the previous valid scene on errors).
+  - **Live stdin bridge:** while the window is open, send `batch` commands (`load`, `reload`, `camera`, `fit`, `wireframe on|off`, `grid on|off`, `snapshot`, `contact-sheet`, `silhouette`, `stats`, `quit`) over stdin with `exit <code>` framing.
+- **Headless & `batch` modes:** `contact-sheet` (2×2 shared-scale PNG), `snapshot`, `silhouette` (binary `{0, 255}` 8-bit grayscale mask), `--stats` / `--stats-out` (byte-identical to `rubberplant stats`), and stateful `batch` over stdin/stdout.
+- **Native AOT executable:** publish alongside `glfw3.dll` (Windows) or `libglfw.so.3` (Linux):
+
+```
+dotnet publish src/RubberPlant.Viewer -c Release -r win-x64 -o out/aot-viewer
+out/aot-viewer/rubberplant-viewer examples/fig2-8b.rp
+```
+
 ## Tests
 
 Tests use [Expecto](https://github.com/haf/expecto) and run as executables:
@@ -109,6 +133,7 @@ Tests use [Expecto](https://github.com/haf/expecto) and run as executables:
 dotnet run --project tests/RubberPlant.Core.Tests
 dotnet run --project tests/RubberPlant.Backends.Tests
 dotnet run --project tests/RubberPlant.Cli.Tests
+dotnet run --project tests/RubberPlant.Viewer.Tests
 ```
 
 Every `examples/*.rp` has a golden SVG in `tests/RubberPlant.Backends.Tests/golden`
@@ -121,10 +146,12 @@ mesh fixtures have full OBJ, MTL and glTF goldens in `golden/mesh`,
 
 `scripts/check-goldens.sh` renders every example through the CLI and compares it
 with its goldens and digests (`RUBBERPLANT_CLI=out/aot/rubberplant.exe` checks the
-native executable instead). `scripts/validate-examples.sh` runs the Khronos glTF
+native executable instead). `scripts/check-viewer-aot.sh` smoke-tests `rubberplant-viewer`
+headless and interactive stdin rendering (`RUBBERPLANT_VIEWER=out/aot-viewer/rubberplant-viewer.exe`
+checks the native executable). `scripts/validate-examples.sh` runs the Khronos glTF
 Validator on every example's glTF (needs Node: `npm ci --prefix scripts/validate-gltf`
-once). CI runs both, plus all tests, on Linux and Windows, and checks the native
-executable against the goldens on Windows (`.github/workflows/ci.yml`).
+once). CI runs all of these, plus all tests (under Xvfb + Mesa on Linux and Mesa on Windows),
+on Linux and Windows, and checks both native executables on Windows (`.github/workflows/ci.yml`).
 
 ## Layout
 
@@ -132,6 +159,7 @@ executable against the goldens on Windows (`.github/workflows/ci.yml`).
 src/RubberPlant.Core       pure pipeline: parser, checker, derivation, turtle, geometry, stats
 src/RubberPlant.Backends   output backends (SVG, OBJ, glTF) and the shared mesh builder
 src/RubberPlant.Cli        command-line tool; all I/O lives here
+src/RubberPlant.Viewer     direct-from-.rp OpenGL 3.3 Core 3D viewer (window + headless + batch)
 tests/                     Expecto test projects
 examples/                  ABOP figures written in RubberPlant
 docs/                      language spec, roadmap; reference material (see docs/README.md)

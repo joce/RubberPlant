@@ -11,6 +11,7 @@
     <Compile Include="SceneTests.fs" />
     <Compile Include="PngTests.fs" />
     <Compile Include="ProtocolTests.fs" />
+    <Compile Include="InteractionTests.fs" />
     <Compile Include="RendererTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
