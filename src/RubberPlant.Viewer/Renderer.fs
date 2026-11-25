@@ -1,11 +1,14 @@
-/// OpenGL 3.3 Core offscreen renderer behind an API-agnostic boundary (docs/viewer.md §2.4, §5).
-/// Only `GlContext.fs`, `Shaders.fs`, and this module touch `Silk.NET.*`.
+/// OpenGL 3.3 Core offscreen and windowed renderer behind an API-agnostic boundary
+/// (docs/viewer.md §2.4, §5, §6.4). Only `GlContext.fs`, `Shaders.fs`, and this module
+/// touch `Silk.NET.*`.
 module RubberPlant.Viewer.Renderer
 
 #nowarn "9"
 
 open System
+open System.Collections.Concurrent
 open Microsoft.FSharp.NativeInterop
+open Silk.NET.GLFW
 open Silk.NET.OpenGL
 open RubberPlant.Backends
 open RubberPlant.Viewer.GlContext
@@ -20,6 +23,25 @@ type IOffscreenRenderer =
         width: int -> height: int -> camera: Camera.Camera -> showGrid: bool -> wireframe: bool -> Result<byte[], string>
 
     abstract RenderSilhouette: width: int -> height: int -> camera: Camera.Camera -> Result<byte[], string>
+
+/// Window creation parameters for interactive mode (§6.2, §6.4).
+type WindowOptions =
+    { Width: int
+      Height: int
+      Title: string
+      Visible: bool }
+
+/// Narrow graphics-API-agnostic interactive window renderer boundary (§2.4, §6.4).
+type IInteractiveRenderer =
+    inherit IOffscreenRenderer
+    abstract ShouldClose: bool
+    abstract RequestClose: unit -> unit
+    abstract SetTitle: string -> unit
+    abstract FramebufferSize: unit -> struct (int * int)
+    abstract WaitEvents: unit -> unit
+    abstract PostWakeup: unit -> unit
+    abstract DrainEvents: unit -> Interaction.WindowEvent list
+    abstract RenderToWindow: camera: Camera.Camera -> showGrid: bool -> wireframe: bool -> unit
 
 type private ShadedTarget =
     { Width: int
@@ -205,7 +227,7 @@ let private setMat4 (gl: GL) (loc: int) (m: float32[]) =
 let private indexByteOffsetPtr (firstIndex: int) : voidptr =
     NativePtr.toVoidPtr (NativePtr.ofNativeInt<byte> (nativeint (int64 firstIndex * 4L)))
 
-type private GlOffscreenRenderer(ctx: GlContext, shaders: ShaderSet) =
+type private GlRendererCore(ctx: GlContext, shaders: ShaderSet, isInteractive: bool) =
     let gl = ctx.Gl
 
     let mutable meshVao = 0u
@@ -290,279 +312,447 @@ type private GlOffscreenRenderer(ctx: GlContext, shaders: ShaderSet) =
                 Ok t
             | Error e -> Error e
 
-    interface IOffscreenRenderer with
-        member _.UploadScene (scene: Scene.MeshScene) (grid: Scene.GridGeometry option) =
-            if not disposed then
+    let drawShadedPass (w: int) (h: int) (camera: Camera.Camera) (showGrid: bool) (wireframe: bool) =
+        gl.Enable(EnableCap.DepthTest)
+        gl.Disable(EnableCap.CullFace)
+
+        // Background #f2f2f0 (§5.2).
+        gl.ClearColor(242.0f / 255.0f, 242.0f / 255.0f, 240.0f / 255.0f, 1.0f)
+        gl.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
+
+        let effectiveGridExtent = if showGrid then gridExtent else None
+        let aspect = float w / float h
+        let vp = Camera.viewProjectionMatrix bounds camera aspect effectiveGridExtent
+
+        if showGrid && gridVertexCount > 0 && gridVao <> 0u then
+            gl.UseProgram(shaders.Line.Program)
+            setMat4 gl shaders.Line.ViewProjLoc vp
+            gl.BindVertexArray(gridVao)
+            gl.DrawArrays(PrimitiveType.Lines, 0, uint32 gridVertexCount)
+
+        if totalIndices > 0 && not ranges.IsEmpty && meshVao <> 0u then
+            if wireframe then
+                gl.Enable(EnableCap.PolygonOffsetFill)
+                gl.PolygonOffset(1.0f, 1.0f)
+
+            let basis = Camera.basis camera
+            gl.UseProgram(shaders.Lit.Program)
+            setMat4 gl shaders.Lit.ViewProjLoc vp
+
+            gl.Uniform3(
+                shaders.Lit.EyePosLoc,
+                float32 basis.Pos.X,
+                float32 basis.Pos.Y,
+                float32 basis.Pos.Z
+            )
+
+            gl.BindVertexArray(meshVao)
+
+            for r in ranges do
+                let lr, lg, lb = Palette.linear[Palette.entry r.Color]
+                gl.Uniform3(shaders.Lit.AlbedoLoc, float32 lr, float32 lg, float32 lb)
+
+                gl.DrawElements(
+                    PrimitiveType.Triangles,
+                    uint32 r.IndexCount,
+                    DrawElementsType.UnsignedInt,
+                    indexByteOffsetPtr r.FirstIndex
+                )
+
+            if wireframe then
+                gl.Disable(EnableCap.PolygonOffsetFill)
+                gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line)
+                gl.UseProgram(shaders.Flat.Program)
+                setMat4 gl shaders.Flat.ViewProjLoc vp
+                gl.Uniform3(shaders.Flat.ColorLoc, 48.0f / 255.0f, 48.0f / 255.0f, 48.0f / 255.0f)
+
+                gl.DrawElements(
+                    PrimitiveType.Triangles,
+                    uint32 totalIndices,
+                    DrawElementsType.UnsignedInt,
+                    indexByteOffsetPtr 0
+                )
+
+                gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+
+    let restoreDefaultFramebuffer () =
+        gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+        gl.Disable(EnableCap.PolygonOffsetFill)
+        gl.BindVertexArray(0u)
+        gl.UseProgram(0u)
+        gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0u)
+
+        if isInteractive then
+            let struct (fbW, fbH) = ctx.GetFramebufferSize()
+
+            if fbW > 0 && fbH > 0 then
+                gl.Viewport(0, 0, uint32 fbW, uint32 fbH)
+
+    member _.UploadScene (scene: Scene.MeshScene) (grid: Scene.GridGeometry option) =
+        if not disposed then
+            deleteMeshBuffers ()
+            deleteGridBuffers ()
+
+            bounds <- scene.Bounds
+
+            if not scene.IsEmpty && scene.Vertices.Length > 0 && scene.Indices.Length > 0 then
+                let vao = gl.GenVertexArray()
+                let vbo = gl.GenBuffer()
+                let ebo = gl.GenBuffer()
+                meshVao <- vao
+                meshVbo <- vbo
+                meshEbo <- ebo
+                ranges <- scene.Ranges
+                totalIndices <- scene.Indices.Length
+
+                gl.BindVertexArray(vao)
+
+                gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo)
+                use vPtr = fixed scene.Vertices
+
+                gl.BufferData(
+                    BufferTargetARB.ArrayBuffer,
+                    unativeint (int64 scene.Vertices.Length * 4L),
+                    NativePtr.toVoidPtr vPtr,
+                    BufferUsageARB.StaticDraw
+                )
+
+                gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, ebo)
+                use iPtr = fixed scene.Indices
+
+                gl.BufferData(
+                    BufferTargetARB.ElementArrayBuffer,
+                    unativeint (int64 scene.Indices.Length * 4L),
+                    NativePtr.toVoidPtr iPtr,
+                    BufferUsageARB.StaticDraw
+                )
+
+                gl.EnableVertexAttribArray(0u)
+                gl.VertexAttribPointer(0u, 3, VertexAttribPointerType.Float, false, 24u, 0n)
+                gl.EnableVertexAttribArray(1u)
+                gl.VertexAttribPointer(1u, 3, VertexAttribPointerType.Float, false, 24u, 12n)
+
+                gl.BindVertexArray(0u)
+                gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0u)
+
+            match grid with
+            | Some g when g.VertexCount > 0 && g.Vertices.Length > 0 ->
+                let vao = gl.GenVertexArray()
+                let vbo = gl.GenBuffer()
+                gridVao <- vao
+                gridVbo <- vbo
+                gridVertexCount <- g.VertexCount
+                gridExtent <- Some g.Extent
+
+                gl.BindVertexArray(vao)
+                gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo)
+                use gPtr = fixed g.Vertices
+
+                gl.BufferData(
+                    BufferTargetARB.ArrayBuffer,
+                    unativeint (int64 g.Vertices.Length * 4L),
+                    NativePtr.toVoidPtr gPtr,
+                    BufferUsageARB.StaticDraw
+                )
+
+                gl.EnableVertexAttribArray(0u)
+                gl.VertexAttribPointer(0u, 3, VertexAttribPointerType.Float, false, 24u, 0n)
+                gl.EnableVertexAttribArray(1u)
+                gl.VertexAttribPointer(1u, 3, VertexAttribPointerType.Float, false, 24u, 12n)
+
+                gl.BindVertexArray(0u)
+                gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0u)
+            | _ -> ()
+
+    member _.RenderShaded (w: int) (h: int) (camera: Camera.Camera) (showGrid: bool) (wireframe: bool) =
+        if disposed then
+            Error "renderer has been disposed"
+        else
+            match validateSize w h 3 with
+            | Error e -> Error e
+            | Ok() ->
+                match ensureShadedTarget w h with
+                | Error e -> Error e
+                | Ok target ->
+                    try
+                        let drawFbo =
+                            if target.Samples >= 2 then target.MsaaFbo else target.ResolveFbo
+
+                        gl.BindFramebuffer(FramebufferTarget.Framebuffer, drawFbo)
+                        gl.Viewport(0, 0, uint32 w, uint32 h)
+
+                        if target.Samples >= 2 then
+                            gl.Enable(EnableCap.Multisample)
+                        else
+                            gl.Disable(EnableCap.Multisample)
+
+                        drawShadedPass w h camera showGrid wireframe
+
+                        if target.Samples >= 2 then
+                            gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, target.MsaaFbo)
+                            gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, target.ResolveFbo)
+
+                            gl.BlitFramebuffer(
+                                0,
+                                0,
+                                w,
+                                h,
+                                0,
+                                0,
+                                w,
+                                h,
+                                ClearBufferMask.ColorBufferBit,
+                                BlitFramebufferFilter.Nearest
+                            )
+
+                            gl.BindFramebuffer(FramebufferTarget.Framebuffer, target.ResolveFbo)
+
+                        let pixels = Array.zeroCreate<byte> (w * h * 3)
+                        gl.PixelStore(PixelStoreParameter.PackAlignment, 1)
+                        gl.ReadBuffer(ReadBufferMode.ColorAttachment0)
+                        use pPtr = fixed pixels
+
+                        gl.ReadPixels(
+                            0,
+                            0,
+                            uint32 w,
+                            uint32 h,
+                            PixelFormat.Rgb,
+                            PixelType.UnsignedByte,
+                            NativePtr.toVoidPtr pPtr
+                        )
+
+                        Ok pixels
+                    finally
+                        restoreDefaultFramebuffer ()
+
+    member _.RenderSilhouette (w: int) (h: int) (camera: Camera.Camera) =
+        if disposed then
+            Error "renderer has been disposed"
+        else
+            match validateSize w h 1 with
+            | Error e -> Error e
+            | Ok() ->
+                match ensureSilhouetteTarget w h with
+                | Error e -> Error e
+                | Ok target ->
+                    try
+                        gl.BindFramebuffer(FramebufferTarget.Framebuffer, target.Fbo)
+                        gl.Viewport(0, 0, uint32 w, uint32 h)
+                        gl.Disable(EnableCap.Multisample)
+                        gl.Enable(EnableCap.DepthTest)
+                        gl.Disable(EnableCap.CullFace)
+
+                        gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f)
+                        gl.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
+
+                        if totalIndices > 0 && meshVao <> 0u then
+                            let aspect = float w / float h
+                            let vp = Camera.viewProjectionMatrix bounds camera aspect None
+                            gl.UseProgram(shaders.Flat.Program)
+                            setMat4 gl shaders.Flat.ViewProjLoc vp
+                            gl.Uniform3(shaders.Flat.ColorLoc, 1.0f, 1.0f, 1.0f)
+                            gl.BindVertexArray(meshVao)
+
+                            gl.DrawElements(
+                                PrimitiveType.Triangles,
+                                uint32 totalIndices,
+                                DrawElementsType.UnsignedInt,
+                                indexByteOffsetPtr 0
+                            )
+
+                        let pixels = Array.zeroCreate<byte> (w * h)
+                        gl.PixelStore(PixelStoreParameter.PackAlignment, 1)
+                        gl.ReadBuffer(ReadBufferMode.ColorAttachment0)
+                        use pPtr = fixed pixels
+
+                        gl.ReadPixels(
+                            0,
+                            0,
+                            uint32 w,
+                            uint32 h,
+                            PixelFormat.Red,
+                            PixelType.UnsignedByte,
+                            NativePtr.toVoidPtr pPtr
+                        )
+
+                        Ok pixels
+                    finally
+                        restoreDefaultFramebuffer ()
+
+    member _.RenderToWindow (camera: Camera.Camera) (showGrid: bool) (wireframe: bool) =
+        if not disposed then
+            let struct (fbW, fbH) = ctx.GetFramebufferSize()
+
+            if fbW > 0 && fbH > 0 then
+                try
+                    gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0u)
+                    gl.Viewport(0, 0, uint32 fbW, uint32 fbH)
+
+                    if ctx.WindowSamples >= 2 then
+                        gl.Enable(EnableCap.Multisample)
+                    else
+                        gl.Disable(EnableCap.Multisample)
+
+                    drawShadedPass fbW fbH camera showGrid wireframe
+                finally
+                    gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+                    gl.Disable(EnableCap.PolygonOffsetFill)
+                    gl.BindVertexArray(0u)
+                    gl.UseProgram(0u)
+
+                ctx.SwapBuffers()
+
+    member _.Dispose() =
+        if not disposed then
+            disposed <- true
+
+            try
                 deleteMeshBuffers ()
                 deleteGridBuffers ()
+                shadedTarget |> Option.iter (deleteShadedTarget gl)
+                shadedTarget <- None
+                silhouetteTarget |> Option.iter (deleteSilhouetteTarget gl)
+                silhouetteTarget <- None
+                (shaders :> IDisposable).Dispose()
+            finally
+                (ctx :> IDisposable).Dispose()
 
-                bounds <- scene.Bounds
+    interface IOffscreenRenderer with
+        member this.UploadScene scene grid = this.UploadScene scene grid
+        member this.RenderShaded w h cam showGrid wireframe = this.RenderShaded w h cam showGrid wireframe
+        member this.RenderSilhouette w h cam = this.RenderSilhouette w h cam
+        member this.Dispose() = this.Dispose()
 
-                if not scene.IsEmpty && scene.Vertices.Length > 0 && scene.Indices.Length > 0 then
-                    let vao = gl.GenVertexArray()
-                    let vbo = gl.GenBuffer()
-                    let ebo = gl.GenBuffer()
-                    meshVao <- vao
-                    meshVbo <- vbo
-                    meshEbo <- ebo
-                    ranges <- scene.Ranges
-                    totalIndices <- scene.Indices.Length
+let private mapShortcut (key: Keys) : Interaction.ShortcutKey option =
+    match key with
+    | Keys.Number1
+    | Keys.Keypad1 -> Some Interaction.ViewFront
+    | Keys.Number2
+    | Keys.Keypad2 -> Some Interaction.ViewSide
+    | Keys.Number3
+    | Keys.Keypad3 -> Some Interaction.ViewIso
+    | Keys.Number4
+    | Keys.Keypad4 -> Some Interaction.ViewTop
+    | Keys.F -> Some Interaction.FitCamera
+    | Keys.W -> Some Interaction.ToggleWireframe
+    | Keys.G -> Some Interaction.ToggleGrid
+    | Keys.R -> Some Interaction.ReloadModel
+    | Keys.Escape
+    | Keys.Q -> Some Interaction.CloseWindow
+    | _ -> None
 
-                    gl.BindVertexArray(vao)
+type private GlInteractiveRenderer(ctx: GlContext, shaders: ShaderSet) =
+    let core = new GlRendererCore(ctx, shaders, true)
+    let glfw = ctx.GlfwApi
+    let window = ctx.WindowHandle
+    let events = ConcurrentQueue<Interaction.WindowEvent>()
+    let mutable disposed = false
 
-                    gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo)
-                    use vPtr = fixed scene.Vertices
+    // Root every callback delegate in instance fields so GC/Native AOT never collects them
+    // while GLFW holds the native function pointers.
+    let mouseButtonCb =
+        GlfwCallbacks.MouseButtonCallback(fun win btn action mods ->
+            let buttonOpt =
+                match btn with
+                | MouseButton.Left -> Some Interaction.Left
+                | MouseButton.Right -> Some Interaction.Right
+                | MouseButton.Middle -> Some Interaction.Middle
+                | _ -> None
 
-                    gl.BufferData(
-                        BufferTargetARB.ArrayBuffer,
-                        unativeint (int64 scene.Vertices.Length * 4L),
-                        NativePtr.toVoidPtr vPtr,
-                        BufferUsageARB.StaticDraw
-                    )
+            match buttonOpt with
+            | Some mapped when action = InputAction.Press || action = InputAction.Release ->
+                let pressed = action = InputAction.Press
+                let shift = (mods &&& KeyModifiers.Shift) <> enum 0
+                let mutable cx = 0.0
+                let mutable cy = 0.0
+                glfw.GetCursorPos(win, &cx, &cy)
+                events.Enqueue(Interaction.MouseButton(mapped, pressed, shift, cx, cy))
+            | _ -> ())
 
-                    gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, ebo)
-                    use iPtr = fixed scene.Indices
+    let cursorPosCb =
+        GlfwCallbacks.CursorPosCallback(fun win x y ->
+            let mutable winW = 0
+            let mutable winH = 0
+            glfw.GetWindowSize(win, &winW, &winH)
+            events.Enqueue(Interaction.CursorMove(x, y, winW, winH)))
 
-                    gl.BufferData(
-                        BufferTargetARB.ElementArrayBuffer,
-                        unativeint (int64 scene.Indices.Length * 4L),
-                        NativePtr.toVoidPtr iPtr,
-                        BufferUsageARB.StaticDraw
-                    )
+    let scrollCb =
+        GlfwCallbacks.ScrollCallback(fun _ _offsetX offsetY -> events.Enqueue(Interaction.Scroll offsetY))
 
-                    gl.EnableVertexAttribArray(0u)
-                    gl.VertexAttribPointer(0u, 3, VertexAttribPointerType.Float, false, 24u, 0n)
-                    gl.EnableVertexAttribArray(1u)
-                    gl.VertexAttribPointer(1u, 3, VertexAttribPointerType.Float, false, 24u, 12n)
+    let keyCb =
+        GlfwCallbacks.KeyCallback(fun _ key _ action mods ->
+            let unsupportedMods =
+                mods &&& (KeyModifiers.Control ||| KeyModifiers.Alt ||| KeyModifiers.Super)
 
-                    gl.BindVertexArray(0u)
-                    gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0u)
+            if action = InputAction.Press && unsupportedMods = enum 0 then
+                match mapShortcut key with
+                | Some k -> events.Enqueue(Interaction.KeyPress k)
+                | None -> ())
 
-                match grid with
-                | Some g when g.VertexCount > 0 && g.Vertices.Length > 0 ->
-                    let vao = gl.GenVertexArray()
-                    let vbo = gl.GenBuffer()
-                    gridVao <- vao
-                    gridVbo <- vbo
-                    gridVertexCount <- g.VertexCount
-                    gridExtent <- Some g.Extent
+    let fbSizeCb =
+        GlfwCallbacks.FramebufferSizeCallback(fun _ w h -> events.Enqueue(Interaction.FramebufferResized(w, h)))
 
-                    gl.BindVertexArray(vao)
-                    gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo)
-                    use gPtr = fixed g.Vertices
+    let refreshCb =
+        GlfwCallbacks.WindowRefreshCallback(fun _ -> events.Enqueue(Interaction.WindowRefresh))
 
-                    gl.BufferData(
-                        BufferTargetARB.ArrayBuffer,
-                        unativeint (int64 g.Vertices.Length * 4L),
-                        NativePtr.toVoidPtr gPtr,
-                        BufferUsageARB.StaticDraw
-                    )
+    // Referenced in Dispose() so F# emits an instance field rather than eliding constructor locals.
+    let rootedCallbacks: Delegate[] =
+        [| mouseButtonCb
+           cursorPosCb
+           scrollCb
+           keyCb
+           fbSizeCb
+           refreshCb |]
 
-                    gl.EnableVertexAttribArray(0u)
-                    gl.VertexAttribPointer(0u, 3, VertexAttribPointerType.Float, false, 24u, 0n)
-                    gl.EnableVertexAttribArray(1u)
-                    gl.VertexAttribPointer(1u, 3, VertexAttribPointerType.Float, false, 24u, 12n)
+    do
+        glfw.SetMouseButtonCallback(window, mouseButtonCb) |> ignore
+        glfw.SetCursorPosCallback(window, cursorPosCb) |> ignore
+        glfw.SetScrollCallback(window, scrollCb) |> ignore
+        glfw.SetKeyCallback(window, keyCb) |> ignore
+        glfw.SetFramebufferSizeCallback(window, fbSizeCb) |> ignore
+        glfw.SetWindowRefreshCallback(window, refreshCb) |> ignore
 
-                    gl.BindVertexArray(0u)
-                    gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0u)
-                | _ -> ()
+    interface IInteractiveRenderer with
+        member _.UploadScene scene grid = core.UploadScene scene grid
+        member _.RenderShaded w h cam showGrid wireframe = core.RenderShaded w h cam showGrid wireframe
+        member _.RenderSilhouette w h cam = core.RenderSilhouette w h cam
+        member _.ShouldClose = disposed || ctx.ShouldClose()
+        member _.RequestClose() = ctx.SetShouldClose(true)
+        member _.SetTitle title = ctx.SetTitle(title)
+        member _.FramebufferSize() = ctx.GetFramebufferSize()
+        member _.WaitEvents() = ctx.WaitEvents()
+        member _.PostWakeup() = ctx.PostEmptyEvent()
 
-        member _.RenderShaded (w: int) (h: int) (camera: Camera.Camera) (showGrid: bool) (wireframe: bool) =
-            if disposed then
-                Error "renderer has been disposed"
-            else
-                match validateSize w h 3 with
-                | Error e -> Error e
-                | Ok() ->
-                    match ensureShadedTarget w h with
-                    | Error e -> Error e
-                    | Ok target ->
-                        try
-                            let drawFbo =
-                                if target.Samples >= 2 then target.MsaaFbo else target.ResolveFbo
+        member _.DrainEvents() =
+            let items = ResizeArray<Interaction.WindowEvent>()
+            let mutable ev = Unchecked.defaultof<Interaction.WindowEvent>
 
-                            gl.BindFramebuffer(FramebufferTarget.Framebuffer, drawFbo)
-                            gl.Viewport(0, 0, uint32 w, uint32 h)
+            while events.TryDequeue(&ev) do
+                items.Add(ev)
 
-                            if target.Samples >= 2 then
-                                gl.Enable(EnableCap.Multisample)
-                            else
-                                gl.Disable(EnableCap.Multisample)
+            List.ofSeq items
 
-                            gl.Enable(EnableCap.DepthTest)
-                            gl.Disable(EnableCap.CullFace)
-
-                            // Background #f2f2f0 (§5.2).
-                            gl.ClearColor(242.0f / 255.0f, 242.0f / 255.0f, 240.0f / 255.0f, 1.0f)
-                            gl.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
-
-                            let effectiveGridExtent = if showGrid then gridExtent else None
-                            let aspect = float w / float h
-                            let vp = Camera.viewProjectionMatrix bounds camera aspect effectiveGridExtent
-
-                            if showGrid && gridVertexCount > 0 && gridVao <> 0u then
-                                gl.UseProgram(shaders.Line.Program)
-                                setMat4 gl shaders.Line.ViewProjLoc vp
-                                gl.BindVertexArray(gridVao)
-                                gl.DrawArrays(PrimitiveType.Lines, 0, uint32 gridVertexCount)
-
-                            if totalIndices > 0 && not ranges.IsEmpty && meshVao <> 0u then
-                                if wireframe then
-                                    gl.Enable(EnableCap.PolygonOffsetFill)
-                                    gl.PolygonOffset(1.0f, 1.0f)
-
-                                let basis = Camera.basis camera
-                                gl.UseProgram(shaders.Lit.Program)
-                                setMat4 gl shaders.Lit.ViewProjLoc vp
-
-                                gl.Uniform3(
-                                    shaders.Lit.EyePosLoc,
-                                    float32 basis.Pos.X,
-                                    float32 basis.Pos.Y,
-                                    float32 basis.Pos.Z
-                                )
-
-                                gl.BindVertexArray(meshVao)
-
-                                for r in ranges do
-                                    let lr, lg, lb = Palette.linear[Palette.entry r.Color]
-                                    gl.Uniform3(shaders.Lit.AlbedoLoc, float32 lr, float32 lg, float32 lb)
-
-                                    gl.DrawElements(
-                                        PrimitiveType.Triangles,
-                                        uint32 r.IndexCount,
-                                        DrawElementsType.UnsignedInt,
-                                        indexByteOffsetPtr r.FirstIndex
-                                    )
-
-                                if wireframe then
-                                    gl.Disable(EnableCap.PolygonOffsetFill)
-                                    gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line)
-                                    gl.UseProgram(shaders.Flat.Program)
-                                    setMat4 gl shaders.Flat.ViewProjLoc vp
-                                    gl.Uniform3(shaders.Flat.ColorLoc, 48.0f / 255.0f, 48.0f / 255.0f, 48.0f / 255.0f)
-
-                                    gl.DrawElements(
-                                        PrimitiveType.Triangles,
-                                        uint32 totalIndices,
-                                        DrawElementsType.UnsignedInt,
-                                        indexByteOffsetPtr 0
-                                    )
-
-                                    gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
-
-                            if target.Samples >= 2 then
-                                gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, target.MsaaFbo)
-                                gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, target.ResolveFbo)
-
-                                gl.BlitFramebuffer(
-                                    0,
-                                    0,
-                                    w,
-                                    h,
-                                    0,
-                                    0,
-                                    w,
-                                    h,
-                                    ClearBufferMask.ColorBufferBit,
-                                    BlitFramebufferFilter.Nearest
-                                )
-
-                                gl.BindFramebuffer(FramebufferTarget.Framebuffer, target.ResolveFbo)
-
-                            let pixels = Array.zeroCreate<byte> (w * h * 3)
-                            gl.PixelStore(PixelStoreParameter.PackAlignment, 1)
-                            gl.ReadBuffer(ReadBufferMode.ColorAttachment0)
-                            use pPtr = fixed pixels
-
-                            gl.ReadPixels(
-                                0,
-                                0,
-                                uint32 w,
-                                uint32 h,
-                                PixelFormat.Rgb,
-                                PixelType.UnsignedByte,
-                                NativePtr.toVoidPtr pPtr
-                            )
-
-                            Ok pixels
-                        finally
-                            gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
-                            gl.Disable(EnableCap.PolygonOffsetFill)
-                            gl.BindVertexArray(0u)
-                            gl.UseProgram(0u)
-                            gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0u)
-
-        member _.RenderSilhouette (w: int) (h: int) (camera: Camera.Camera) =
-            if disposed then
-                Error "renderer has been disposed"
-            else
-                match validateSize w h 1 with
-                | Error e -> Error e
-                | Ok() ->
-                    match ensureSilhouetteTarget w h with
-                    | Error e -> Error e
-                    | Ok target ->
-                        try
-                            gl.BindFramebuffer(FramebufferTarget.Framebuffer, target.Fbo)
-                            gl.Viewport(0, 0, uint32 w, uint32 h)
-                            gl.Disable(EnableCap.Multisample)
-                            gl.Enable(EnableCap.DepthTest)
-                            gl.Disable(EnableCap.CullFace)
-
-                            gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f)
-                            gl.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
-
-                            if totalIndices > 0 && meshVao <> 0u then
-                                let aspect = float w / float h
-                                let vp = Camera.viewProjectionMatrix bounds camera aspect None
-                                gl.UseProgram(shaders.Flat.Program)
-                                setMat4 gl shaders.Flat.ViewProjLoc vp
-                                gl.Uniform3(shaders.Flat.ColorLoc, 1.0f, 1.0f, 1.0f)
-                                gl.BindVertexArray(meshVao)
-
-                                gl.DrawElements(
-                                    PrimitiveType.Triangles,
-                                    uint32 totalIndices,
-                                    DrawElementsType.UnsignedInt,
-                                    indexByteOffsetPtr 0
-                                )
-
-                            let pixels = Array.zeroCreate<byte> (w * h)
-                            gl.PixelStore(PixelStoreParameter.PackAlignment, 1)
-                            gl.ReadBuffer(ReadBufferMode.ColorAttachment0)
-                            use pPtr = fixed pixels
-
-                            gl.ReadPixels(
-                                0,
-                                0,
-                                uint32 w,
-                                uint32 h,
-                                PixelFormat.Red,
-                                PixelType.UnsignedByte,
-                                NativePtr.toVoidPtr pPtr
-                            )
-
-                            Ok pixels
-                        finally
-                            gl.BindVertexArray(0u)
-                            gl.UseProgram(0u)
-                            gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0u)
+        member _.RenderToWindow cam showGrid wireframe =
+            if not disposed then
+                core.RenderToWindow cam showGrid wireframe
 
         member _.Dispose() =
             if not disposed then
                 disposed <- true
 
                 try
-                    deleteMeshBuffers ()
-                    deleteGridBuffers ()
-                    shadedTarget |> Option.iter (deleteShadedTarget gl)
-                    shadedTarget <- None
-                    silhouetteTarget |> Option.iter (deleteSilhouetteTarget gl)
-                    silhouetteTarget <- None
-                    (shaders :> IDisposable).Dispose()
-                finally
-                    (ctx :> IDisposable).Dispose()
+                    glfw.SetMouseButtonCallback(window, null) |> ignore
+                    glfw.SetCursorPosCallback(window, null) |> ignore
+                    glfw.SetScrollCallback(window, null) |> ignore
+                    glfw.SetKeyCallback(window, null) |> ignore
+                    glfw.SetFramebufferSizeCallback(window, null) |> ignore
+                    glfw.SetWindowRefreshCallback(window, null) |> ignore
+                with _ ->
+                    ()
+
+                GC.KeepAlive(rootedCallbacks)
+                core.Dispose()
 
 /// Creates a headless OpenGL 3.3 Core offscreen renderer (§2.1–§2.4).
 let createHeadless () : Result<IOffscreenRenderer, string> =
@@ -573,4 +763,15 @@ let createHeadless () : Result<IOffscreenRenderer, string> =
         | Error e ->
             (ctx :> IDisposable).Dispose()
             Error e
-        | Ok shaders -> Ok(new GlOffscreenRenderer(ctx, shaders) :> IOffscreenRenderer)
+        | Ok shaders -> Ok(new GlRendererCore(ctx, shaders, false) :> IOffscreenRenderer)
+
+/// Creates an interactive OpenGL 3.3 Core window renderer (§2.4, §6.4).
+let createWindow (opts: WindowOptions) : Result<IInteractiveRenderer, string> =
+    match GlContext.createWindow opts.Width opts.Height opts.Title opts.Visible with
+    | Error e -> Error e
+    | Ok ctx ->
+        match Shaders.create ctx.Gl with
+        | Error e ->
+            (ctx :> IDisposable).Dispose()
+            Error e
+        | Ok shaders -> Ok(new GlInteractiveRenderer(ctx, shaders) :> IInteractiveRenderer)

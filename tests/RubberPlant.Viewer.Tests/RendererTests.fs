@@ -1,10 +1,12 @@
 module RubberPlant.Viewer.Tests.RendererTests
 
 open System
+open System.Collections.Concurrent
 open System.IO
 open System.Security.Cryptography
 open System.Text
 open System.Text.Json
+open System.Threading
 open Expecto
 open RubberPlant.Viewer
 
@@ -36,6 +38,42 @@ let private runBatch (lines: string list) =
     use stderr = new StringWriter()
     let code = Program.executeBatch stdin stdout stderr
     code, stdout.ToString(), stderr.ToString()
+
+type private AsyncQueueTextReader(lines: BlockingCollection<string>) =
+    inherit TextReader()
+
+    override _.ReadLine() =
+        try
+            lines.Take()
+        with
+        | :? InvalidOperationException -> null
+        | :? OperationCanceledException -> null
+
+type private SignallingTextWriter(onLine: string -> unit) =
+    inherit TextWriter()
+    let sb = StringBuilder()
+    let all = StringBuilder()
+    let gate = obj ()
+
+    override _.Encoding = Encoding.UTF8
+
+    override _.Write(value: char) =
+        lock gate (fun () ->
+            all.Append(value) |> ignore
+
+            if value = '\n' then
+                let line = sb.ToString().TrimEnd('\r')
+                sb.Clear() |> ignore
+                onLine line
+            else
+                sb.Append(value) |> ignore)
+
+    override this.Write(value: string) =
+        if not (isNull value) then
+            for ch in value do
+                this.Write(ch)
+
+    member _.AllText() = lock gate (fun () -> all.ToString())
 
 let private sha256Hex (text: string) =
     let bytes = UTF8Encoding(false).GetBytes(text)
@@ -518,9 +556,9 @@ let gpuTests =
               Expect.equal codeBad 2 "unknown command exits 2"
               Expect.stringContains errBad "unknown command" "unknown command message"
 
-              let codeView, _, errView = runCli [ "view" ]
-              Expect.equal codeView 1 "view stub exits 1 before PR 4"
-              Expect.stringContains errView "PR 4" "view mentions PR 4"
+              let codeMissing, _, errMissing = runCli [ "view"; "does-not-exist-pr4.rp" ]
+              Expect.equal codeMissing 1 "view with missing file fails before opening window"
+              Expect.isNonEmpty errMissing "missing file diagnostic emitted"
 
               withTempDir (fun dir ->
                   let fig26a = examplePath "fig2-6a.rp"
@@ -547,4 +585,263 @@ let gpuTests =
               r.Dispose() // idempotent
               Expect.isError (r.RenderShaded 64 64 cam false false) "RenderShaded after Dispose returns Error"
               Expect.isError (r.RenderSilhouette 64 64 cam) "RenderSilhouette after Dispose returns Error"
+          }
+
+          test "interactive view with streamed stdin wakes WaitEvents via PostWakeup and executes all commands" {
+              withTempDir (fun dir ->
+                  let fig26a = examplePath "fig2-6a.rp"
+                  let snapPath = Path.Combine(dir, "view-snap.png")
+                  let maskPath = Path.Combine(dir, "view-mask.png")
+
+                  let viewArgs =
+                      match Expect.wantOk (Protocol.parseCli [ "view"; fig26a; "--size"; "320x240" ]) "parse view" with
+                      | Protocol.View v -> v
+                      | other -> failwith $"expected View, got %A{other}"
+
+                  use incoming = new BlockingCollection<string>()
+                  use exitSem = new SemaphoreSlim(0)
+
+                  use stdout =
+                      new SignallingTextWriter(fun line ->
+                          if line.StartsWith("exit ", StringComparison.Ordinal) then
+                              exitSem.Release() |> ignore)
+
+                  use stdin = new AsyncQueueTextReader(incoming)
+                  use stderr = new StringWriter()
+
+                  let mutable timedOutCmd: string option = None
+
+                  let sendAndWait (cmd: string) =
+                      if timedOutCmd.IsNone then
+                          incoming.Add(cmd)
+
+                          if not (exitSem.Wait(15000)) then
+                              timedOutCmd <- Some cmd
+
+                  let producer =
+                      Thread(
+                          ThreadStart(fun () ->
+                              sendAndWait "camera 90 0"
+                              sendAndWait "wireframe on"
+                              sendAndWait "grid off"
+                              sendAndWait $"snapshot \"%s{snapPath}\" --size 200"
+                              sendAndWait $"silhouette \"%s{maskPath}\" --size 128"
+                              sendAndWait "stats"
+                              sendAndWait $"load \"%s{fig26a}\" --max-modules 5"
+                              sendAndWait "reload --keep-camera"
+                              sendAndWait "quit"
+                              incoming.CompleteAdding())
+                      )
+
+                  producer.IsBackground <- true
+                  producer.Start()
+
+                  let exitCode = Program.executeViewWithVisibility false viewArgs stdin stdout stderr
+                  producer.Join(5000) |> ignore
+
+                  Expect.isNone timedOutCmd $"timed out waiting for exit line after %A{timedOutCmd}"
+                  Expect.equal exitCode 0 $"view exits 0 (stderr: %s{stderr.ToString()})"
+                  Expect.stringContains (stderr.ToString()) "RP0206" "budget error reported"
+
+                  let lines = splitNonEmptyLines (stdout.AllText())
+                  Expect.equal lines.Length 12 $"expected 12 stdout lines, got %d{lines.Length}: %A{lines}"
+                  Expect.equal lines[0] "exit 0" "camera 90 0"
+                  Expect.equal lines[1] "exit 0" "wireframe on"
+                  Expect.equal lines[2] "exit 0" "grid off"
+                  Expect.equal lines[3] $"wrote %s{snapPath}" "snapshot wrote"
+                  Expect.equal lines[4] "exit 0" "snapshot exit"
+                  Expect.equal lines[5] $"wrote %s{maskPath}" "silhouette wrote"
+                  Expect.equal lines[6] "exit 0" "silhouette exit"
+                  Expect.equal lines[8] "exit 0" "stats exit"
+                  Expect.equal lines[9] "exit 1" "RP0206 failed load exit"
+                  Expect.equal lines[10] "exit 0" "reload --keep-camera exit"
+                  Expect.equal lines[11] "exit 0" "quit exit"
+
+                  let expectedDigest =
+                      File.ReadAllLines(Path.Combine(repoRoot, "tests", "RubberPlant.Backends.Tests", "golden", "stats-digests.txt"))
+                      |> Array.pick (fun line ->
+                          let parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          if parts.Length >= 2 && parts[0] = "fig2-6a" then Some parts[1] else None)
+
+                  Expect.equal (sha256Hex (lines[7] + "\n")) expectedDigest "view stats matches golden"
+
+                  let decSnap = PngTests.decodePng (File.ReadAllBytes snapPath)
+                  Expect.equal (decSnap.Width, decSnap.Height, decSnap.ColorType) (200, 200, 2uy) "snap PNG"
+                  Expect.isGreaterThan (countNonBackgroundRgb decSnap) 100 "snap has foreground"
+
+                  let decMask = PngTests.decodePng (File.ReadAllBytes maskPath)
+                  Expect.equal (decMask.Width, decMask.Height, decMask.ColorType) (128, 128, 0uy) "mask PNG"
+                  Expect.isTrue (decMask.TopDownPixels |> Array.forall (fun p -> p = 0uy || p = 255uy)) "strictly binary")
+          }
+
+          test "bare view without initial file handles pre-load stats, live load, and contact-sheet" {
+              withTempDir (fun dir ->
+                  let fig26a = examplePath "fig2-6a.rp"
+                  let sheetPath = Path.Combine(dir, "bare-sheet.png")
+
+                  let viewArgs =
+                      match Expect.wantOk (Protocol.parseCli [ "view"; "--camera"; "90,0"; "--no-grid"; "--size"; "256" ]) "parse bare view" with
+                      | Protocol.View v -> v
+                      | other -> failwith $"expected View, got %A{other}"
+
+                  let cmds =
+                      [ "stats"
+                        $"load \"%s{fig26a}\""
+                        $"contact-sheet \"%s{sheetPath}\" --size 128"
+                        "quit" ]
+
+                  use stdin = new StringReader(String.concat "\n" cmds + "\n")
+                  use stdout = new StringWriter()
+                  use stderr = new StringWriter()
+
+                  let exitCode = Program.executeViewWithVisibility false viewArgs stdin stdout stderr
+                  Expect.equal exitCode 0 "bare view exits 0"
+                  Expect.stringContains (stderr.ToString()) "no model loaded" "pre-load stats diagnostic"
+
+                  let lines = splitNonEmptyLines (stdout.ToString())
+
+                  Expect.equal
+                      lines
+                      [| "exit 1"
+                         "exit 0"
+                         $"wrote %s{sheetPath}"
+                         "exit 0"
+                         "exit 0" |]
+                      "bare view stdout framing"
+
+                  let decSheet = PngTests.decodePng (File.ReadAllBytes sheetPath)
+                  Expect.equal (decSheet.Width, decSheet.Height, decSheet.ColorType) (128, 128, 2uy) "sheet PNG")
+          }
+
+          test "IInteractiveRenderer restores default framebuffer after offscreen renders and safely ignores post-dispose wakeups" {
+              let opts: Renderer.WindowOptions =
+                  { Width = 240
+                    Height = 180
+                    Title = "RubberPlant — test"
+                    Visible = false }
+
+              let r = Expect.wantOk (Renderer.createWindow opts) "createWindow"
+
+              let callbackFields =
+                  r.GetType().GetFields(
+                      System.Reflection.BindingFlags.Instance
+                      ||| System.Reflection.BindingFlags.NonPublic
+                      ||| System.Reflection.BindingFlags.Public
+                  )
+                  |> Array.filter (fun f -> f.FieldType = typeof<Delegate[]>)
+
+              Expect.isNonEmpty callbackFields "GlInteractiveRenderer roots callback delegates in an instance field"
+
+              r.UploadScene Scene.emptyScene (Scene.buildGrid Scene.emptyScene)
+              r.SetTitle("RubberPlant — updated")
+              let cam = Camera.fit Camera.emptyBounds 35.0 25.0 1.0
+              r.RenderToWindow cam true false
+              GC.Collect()
+              GC.WaitForPendingFinalizers()
+              GC.Collect()
+              let offscreen = Expect.wantOk (r.RenderShaded 96 64 cam true false) "offscreen shaded inside window"
+              Expect.equal offscreen.Length (96 * 64 * 3) "offscreen buffer size"
+              r.RenderToWindow cam true true
+              r.Dispose()
+              r.Dispose()
+              r.PostWakeup()
+          }
+
+          test "interactive view --watch auto-reloads in-place edits and atomic renames while preserving valid scene on syntax errors" {
+              withTempDir (fun dir ->
+                  let watched = Path.Combine(dir, "watched.rp")
+                  File.WriteAllText(watched, "axiom: F;\n")
+
+                  let viewArgs =
+                      match Expect.wantOk (Protocol.parseCli [ "view"; watched; "--watch"; "--size"; "240x180" ]) "parse view --watch" with
+                      | Protocol.View v -> v
+                      | other -> failwith $"expected View, got %A{other}"
+
+                  use incoming = new BlockingCollection<string>()
+                  use lineSem = new SemaphoreSlim(0)
+                  let outLines = ConcurrentQueue<string>()
+
+                  use stdout =
+                      new SignallingTextWriter(fun line ->
+                          outLines.Enqueue(line)
+                          lineSem.Release() |> ignore)
+
+                  use stdin = new AsyncQueueTextReader(incoming)
+                  use errSem = new SemaphoreSlim(0)
+
+                  use stderr =
+                      new SignallingTextWriter(fun line ->
+                          if line.Contains("error", StringComparison.OrdinalIgnoreCase) then
+                              errSem.Release() |> ignore)
+
+                  let drainNextLine (timeoutMs: int) =
+                      if lineSem.Wait(timeoutMs) then
+                          let mutable line = ""
+                          if outLines.TryDequeue(&line) then Some line else None
+                      else
+                          None
+
+                  let querySegmentCount () =
+                      incoming.Add("stats")
+
+                      match drainNextLine 15000, drainNextLine 15000 with
+                      | Some jsonLine, Some "exit 0" ->
+                          use doc = JsonDocument.Parse(jsonLine)
+                          doc.RootElement.GetProperty("geometry").GetProperty("segment_count").GetInt32()
+                      | a, b -> failwith $"unexpected stats response: %A{a}, %A{b}"
+
+                  let waitForSegmentCount (expected: int) =
+                      let deadline = DateTime.UtcNow.AddSeconds(5.0)
+                      let mutable current = querySegmentCount ()
+
+                      while current <> expected && DateTime.UtcNow < deadline do
+                          Thread.Sleep(40)
+                          current <- querySegmentCount ()
+
+                      Expect.equal current expected $"watched model auto-reloaded to segment_count=%d{expected}"
+
+                  let mutable failure: exn option = None
+
+                  let driver =
+                      Thread(
+                          ThreadStart(fun () ->
+                              try
+                                  Expect.equal (querySegmentCount ()) 1 "initial segment_count = 1"
+
+                                  // 1. In-place edit -> auto-reloads to 3 segments.
+                                  File.WriteAllText(watched, "axiom: F F F;\n")
+                                  waitForSegmentCount 3
+
+                                  // 2. Atomic temp-file rename -> auto-reloads to 5 segments.
+                                  let tmp = Path.Combine(dir, "watched.tmp")
+                                  File.WriteAllText(tmp, "axiom: F F F F F;\n")
+                                  File.Move(tmp, watched, true)
+                                  waitForSegmentCount 5
+
+                                  // 3. Broken syntax -> preserves 5 segments and emits diagnostic to stderr.
+                                  File.WriteAllText(watched, "axiom: ;\n")
+                                  Expect.isTrue (errSem.Wait(5000)) "broken syntax emitted error to stderr"
+                                  Expect.equal (querySegmentCount ()) 5 "syntax error preserves last valid scene"
+
+                                  incoming.Add("quit")
+                                  drainNextLine 15000 |> ignore
+                                  incoming.CompleteAdding()
+                              with ex ->
+                                  failure <- Some ex
+                                  incoming.Add("quit")
+                                  incoming.CompleteAdding())
+                      )
+
+                  driver.IsBackground <- true
+                  driver.Start()
+
+                  let exitCode = Program.executeViewWithVisibility false viewArgs stdin stdout stderr
+                  driver.Join(5000) |> ignore
+
+                  match failure with
+                  | Some ex -> raise ex
+                  | None -> ()
+
+                  Expect.equal exitCode 0 $"view --watch exits 0 (stderr: %s{stderr.AllText()})"
+                  Expect.isNonEmpty (stderr.AllText()) "broken syntax emitted error to stderr")
           } ]

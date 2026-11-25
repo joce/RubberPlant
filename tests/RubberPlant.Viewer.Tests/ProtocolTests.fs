@@ -54,27 +54,37 @@ let tests =
               Expect.isError (parseCli [ "snaphsot"; "a.rp" ]) "unknown command rejected"
 
               // Shorthand .rp (case-insensitive) dispatches to view
-              match Expect.wantOk (parseCli [ "examples/tree.RP"; "--wireframe"; "-n"; "3" ]) ".rp shorthand" with
+              match Expect.wantOk (parseCli [ "examples/tree.RP"; "--wireframe"; "--watch"; "-n"; "3" ]) ".rp shorthand" with
               | View v ->
                   Expect.equal v.Input (Some "examples/tree.RP") "input"
                   Expect.equal v.Load.Derivations (Some 3) "load option"
                   Expect.isTrue v.Wireframe "wireframe"
                   Expect.isTrue v.Grid "grid default true"
+                  Expect.isTrue v.Watch "watch flag"
                   Expect.equal v.WindowSize (1024, 768) "default window size"
               | other -> failwith $"expected View, got %A{other}"
 
               // Bare view without file is allowed with viewer options, rejected with load options.
-              match Expect.wantOk (parseCli [ "view"; "--size"; "800x600"; "--no-grid" ]) "bare view" with
+              match Expect.wantOk (parseCli [ "view"; "--size"; "800x600"; "--no-grid"; "--watch" ]) "bare view" with
               | View v ->
                   Expect.equal v.Input None "no file"
                   Expect.equal v.WindowSize (800, 600) "window size"
                   Expect.isFalse v.Grid "no-grid"
+                  Expect.isTrue v.Watch "bare view watch"
+              | other -> failwith $"expected View, got %A{other}"
+
+              match Expect.wantOk (parseCli [ "view"; "a.rp" ]) "default view" with
+              | View v -> Expect.isFalse v.Watch "watch defaults to false"
               | other -> failwith $"expected View, got %A{other}"
 
               Expect.isError (parseCli [ "view"; "-n"; "2" ]) "load options without file rejected"
               Expect.isError (parseCli [ "view"; "--sides"; "8" ]) "mesh load option without file rejected"
               Expect.isError (parseCli [ "view"; "a.rp"; "-o"; "out.png" ]) "-o rejected on view"
               Expect.isError (parseCli [ "view"; "a.rp"; "--stats" ]) "--stats rejected on view"
+              Expect.isError (parseCli [ "contact-sheet"; "a.rp"; "-o"; "c.png"; "--watch" ]) "--watch rejected on contact-sheet"
+              Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "s.png"; "--watch" ]) "--watch rejected on snapshot"
+              Expect.isError (parseCli [ "silhouette"; "a.rp"; "-o"; "m.png"; "--watch" ]) "--watch rejected on silhouette"
+              Expect.isError (parseCli [ "batch"; "--watch" ]) "--watch rejected on batch"
           }
 
           test "CLI strict flag scoping for contact-sheet, snapshot, and silhouette" {
@@ -202,6 +212,9 @@ let tests =
               Expect.isError (parseBatchLine "view a.rp") "view rejected inside batch"
               Expect.isError (parseBatchLine "snapshot out.png --wireframe") "--wireframe rejected in batch snapshot"
               Expect.isError (parseBatchLine "snapshot out.png --no-grid") "--no-grid rejected in batch snapshot"
+              Expect.isError (parseBatchLine "snapshot out.png --watch") "--watch rejected in batch snapshot"
+              Expect.isError (parseBatchLine "load a.rp --watch") "--watch rejected in batch load"
+              Expect.isError (parseBatchLine "reload --watch") "--watch rejected in batch reload"
               Expect.isError (parseBatchLine "contact-sheet out.png --no-grid") "--no-grid rejected in batch contact-sheet"
               Expect.isError (parseBatchLine "silhouette out.png --pretty") "--pretty without stats rejected"
               Expect.isError (parseBatchLine "wireframe maybe") "wireframe expects on|off"

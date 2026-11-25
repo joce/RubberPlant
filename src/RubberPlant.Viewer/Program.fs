@@ -3,9 +3,11 @@
 module RubberPlant.Viewer.Program
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 open System.Text
+open System.Threading
 open RubberPlant
 open RubberPlant.Backends
 
@@ -25,18 +27,31 @@ let private report (file: string) (diags: Diagnostic list) (stderr: TextWriter) 
     for d in diags do
         stderr.WriteLine(Diagnostic.format file d)
 
-let private loadModel
+let private readSourceWithRetry (retries: int) (delayMs: int) (path: string) : Result<string, string> =
+    let rec attempt remaining =
+        try
+            Ok(File.ReadAllText path)
+        with
+        | :? FileNotFoundException as ex -> Error ex.Message
+        | :? DirectoryNotFoundException as ex -> Error ex.Message
+        | :? IOException when remaining > 0 ->
+            Thread.Sleep(delayMs)
+            attempt (remaining - 1)
+        | :? UnauthorizedAccessException when remaining > 0 ->
+            Thread.Sleep(delayMs)
+            attempt (remaining - 1)
+        | ex -> Error ex.Message
+
+    attempt retries
+
+let private loadModelWithRetries
+    (retries: int)
+    (delayMs: int)
     (input: string)
     (opts: Protocol.LoadOptions)
     (stderr: TextWriter)
     : Result<LoadedViewerModel, unit> =
-    let source =
-        try
-            Ok(File.ReadAllText input)
-        with ex ->
-            Error ex.Message
-
-    match source with
+    match readSourceWithRetry retries delayMs input with
     | Error msg ->
         stderr.WriteLine($"%s{input}: error: %s{msg}")
         Error()
@@ -91,6 +106,13 @@ let private loadModel
                                   Bounds = scene.Bounds
                                   Stats = stats
                                   Scene = (scene, grid) }
+
+let private loadModel
+    (input: string)
+    (opts: Protocol.LoadOptions)
+    (stderr: TextWriter)
+    : Result<LoadedViewerModel, unit> =
+    loadModelWithRetries 0 0 input opts stderr
 
 let private checkWritable (path: string) =
     using (new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None)) ignore
@@ -264,17 +286,17 @@ let private runHeadlessOneShot
 
 let private runBatchCmd
     (renderer: Renderer.IOffscreenRenderer)
+    (fitAspect: float)
     (state: Protocol.SessionState<Scene.MeshScene * Scene.GridGeometry option> byref)
     (cmd: Protocol.BatchCommand)
     (stdout: TextWriter)
     (stderr: TextWriter)
     : int =
     let loader path opts = loadModel path opts stderr
-    let aspect = Protocol.sessionAspect state
 
     match cmd with
     | Protocol.Load(input, opts, keepCamera) ->
-        match Protocol.tryLoad loader aspect input opts keepCamera state with
+        match Protocol.tryLoad loader fitAspect input opts keepCamera state with
         | Error() -> 1
         | Ok nextState ->
             let scene, grid = nextState.Loaded.Value.Scene
@@ -282,7 +304,7 @@ let private runBatchCmd
             state <- nextState
             0
     | Protocol.Reload keepCamera ->
-        match Protocol.tryReload loader aspect keepCamera state with
+        match Protocol.tryReload loader fitAspect keepCamera state with
         | Error(Choice1Of2 msg) ->
             stderr.WriteLine($"rubberplant-viewer: %s{msg}")
             1
@@ -293,10 +315,10 @@ let private runBatchCmd
             state <- nextState
             0
     | Protocol.SetCamera spec ->
-        state <- Protocol.applySetCamera aspect spec state
+        state <- Protocol.applySetCamera fitAspect spec state
         0
     | Protocol.Fit ->
-        match Protocol.applyFit aspect state with
+        match Protocol.applyFit fitAspect state with
         | Error msg ->
             stderr.WriteLine($"rubberplant-viewer: %s{msg}")
             1
@@ -397,10 +419,348 @@ let internal executeBatch (stdin: TextReader) (stdout: TextWriter) (stderr: Text
                     writeExit 0
                     keepRunning <- false
                 | Ok cmd ->
-                    let code = runBatchCmd r &state cmd stdout stderr
+                    let code = runBatchCmd r (Protocol.sessionAspect state) &state cmd stdout stderr
                     writeExit code
 
         0
+
+/// Watches the parent directory of a target `.rp` file (handling in-place writes and
+/// atomic renames) and debounces rapid filesystem events (§6.4).
+type private FileWatcher(onDebouncedChange: unit -> unit, stderr: TextWriter) =
+    let gate = obj ()
+    let mutable watcher: FileSystemWatcher option = None
+    let mutable targetFullPath: string option = None
+    let mutable disposed = false
+
+    let timer =
+        new Timer(
+            TimerCallback(fun _ ->
+                let shouldFire = lock gate (fun () -> not disposed && watcher.IsSome)
+
+                if shouldFire then
+                    onDebouncedChange ()),
+            null,
+            Timeout.Infinite,
+            Timeout.Infinite
+        )
+
+    let pathComparison =
+        if OperatingSystem.IsWindows() then
+            StringComparison.OrdinalIgnoreCase
+        else
+            StringComparison.Ordinal
+
+    let isTargetPath (candidate: string) =
+        if String.IsNullOrEmpty candidate then
+            false
+        else
+            lock gate (fun () ->
+                match targetFullPath with
+                | None -> false
+                | Some target ->
+                    try
+                        String.Equals(Path.GetFullPath candidate, target, pathComparison)
+                    with _ ->
+                        false)
+
+    let scheduleReload () =
+        lock gate (fun () ->
+            if not disposed && watcher.IsSome then
+                try
+                    timer.Change(60, Timeout.Infinite) |> ignore
+                with _ ->
+                    ())
+
+    member _.SetTarget(pathOpt: string option) =
+        lock gate (fun () ->
+            if not disposed then
+                watcher
+                |> Option.iter (fun w ->
+                    try
+                        w.EnableRaisingEvents <- false
+                        w.Dispose()
+                    with _ ->
+                        ())
+
+                watcher <- None
+                targetFullPath <- None
+
+                try
+                    timer.Change(Timeout.Infinite, Timeout.Infinite) |> ignore
+                with _ ->
+                    ()
+
+                match pathOpt with
+                | None -> ()
+                | Some path ->
+                    try
+                        let fullPath = Path.GetFullPath path
+                        let dir = Path.GetDirectoryName fullPath
+
+                        if not (String.IsNullOrEmpty dir) && Directory.Exists dir then
+                            targetFullPath <- Some fullPath
+                            let fsw = new FileSystemWatcher(dir)
+                            fsw.IncludeSubdirectories <- false
+
+                            fsw.NotifyFilter <-
+                                NotifyFilters.LastWrite
+                                ||| NotifyFilters.FileName
+                                ||| NotifyFilters.Size
+                                ||| NotifyFilters.CreationTime
+
+                            fsw.Changed.Add(fun e -> if isTargetPath e.FullPath then scheduleReload ())
+                            fsw.Created.Add(fun e -> if isTargetPath e.FullPath then scheduleReload ())
+                            fsw.Renamed.Add(fun e -> if isTargetPath e.FullPath then scheduleReload ())
+                            fsw.EnableRaisingEvents <- true
+                            watcher <- Some fsw
+                    with ex ->
+                        targetFullPath <- None
+                        stderr.WriteLine($"rubberplant-viewer: warning: cannot watch '%s{path}': %s{ex.Message}")
+                        stderr.Flush())
+
+    interface IDisposable with
+        member _.Dispose() =
+            let shouldDisposeTimer =
+                lock gate (fun () ->
+                    if not disposed then
+                        disposed <- true
+
+                        watcher
+                        |> Option.iter (fun w ->
+                            try
+                                w.EnableRaisingEvents <- false
+                                w.Dispose()
+                            with _ ->
+                                ())
+
+                        watcher <- None
+                        targetFullPath <- None
+                        true
+                    else
+                        false)
+
+            if shouldDisposeTimer then
+                try
+                    use doneWait = new ManualResetEvent(false)
+
+                    if timer.Dispose(doneWait) then
+                        doneWait.WaitOne(1000) |> ignore
+                with _ ->
+                    try
+                        timer.Dispose()
+                    with _ ->
+                        ()
+
+/// Runs interactive `view` mode with configurable window visibility (used headless in GPU tests).
+let internal executeViewWithVisibility
+    (visible: bool)
+    (args: Protocol.ViewArgs)
+    (stdin: TextReader)
+    (stdout: TextWriter)
+    (stderr: TextWriter)
+    : int =
+    let initialLoadedRes =
+        match args.Input with
+        | None -> Ok None
+        | Some path -> loadModel path args.Load stderr |> Result.map Some
+
+    match initialLoadedRes with
+    | Error() ->
+        stderr.Flush()
+        1
+    | Ok initialLoaded ->
+        let winW, winH = args.WindowSize
+
+        let winOpts: Renderer.WindowOptions =
+            { Width = winW
+              Height = winH
+              Title = Interaction.windowTitle initialLoaded
+              Visible = visible }
+
+        match Renderer.createWindow winOpts with
+        | Error msg ->
+            stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+            stderr.Flush()
+            1
+        | Ok renderer ->
+            use r = renderer
+            let struct (fbW, fbH) = r.FramebufferSize()
+
+            let initAspect =
+                if fbW > 0 && fbH > 0 then
+                    float fbW / float fbH
+                else
+                    float (max 1 winW) / float (max 1 winH)
+
+            let mutable state =
+                { Protocol.initialSession<Scene.MeshScene * Scene.GridGeometry option> with
+                    Wireframe = args.Wireframe
+                    Grid = args.Grid
+                    PendingCamera = args.Camera }
+
+            let mutable interactive = Interaction.createInitialState initAspect args.Camera
+
+            match initialLoaded with
+            | Some loaded ->
+                state <- Protocol.applyLoad initAspect false loaded state
+                let scene, grid = loaded.Scene
+                r.UploadScene scene grid
+            | None ->
+                r.UploadScene Scene.emptyScene (Scene.buildGrid Scene.emptyScene)
+
+            let cmdQueue = ConcurrentQueue<string>()
+            let mutable stopping = false
+            let mutable watchReloadPending = 0
+
+            let watcher =
+                if args.Watch then
+                    let w =
+                        new FileWatcher(
+                            (fun () ->
+                                Interlocked.Exchange(&watchReloadPending, 1) |> ignore
+                                r.PostWakeup()),
+                            stderr
+                        )
+
+                    initialLoaded |> Option.iter (fun loaded -> w.SetTarget(Some loaded.Input))
+                    Some w
+                else
+                    None
+
+            let readerThread =
+                Thread(
+                    ThreadStart(fun () ->
+                        try
+                            let mutable doneReading = false
+
+                            while not doneReading && not (Volatile.Read(&stopping)) do
+                                let line = stdin.ReadLine()
+
+                                if isNull line then
+                                    doneReading <- true
+                                elif not (Volatile.Read(&stopping)) then
+                                    cmdQueue.Enqueue(line)
+                                    r.PostWakeup()
+                        with
+                        | :? ObjectDisposedException -> ()
+                        | :? IOException -> ())
+                )
+
+            readerThread.IsBackground <- true
+            readerThread.Name <- "rubberplant-viewer-stdin"
+            readerThread.Start()
+
+            let writeExit code =
+                stderr.Flush()
+                stdout.WriteLine($"exit %s{string code}")
+                stdout.Flush()
+
+            let loader path opts = loadModel path opts stderr
+            let watchLoader path opts = loadModelWithRetries 4 25 path opts stderr
+
+            let mutable dirty = true
+            let mutable keepRunning = true
+
+            try
+                while keepRunning && not r.ShouldClose do
+                    for ev in r.DrainEvents() do
+                        if keepRunning && not r.ShouldClose then
+                            let nextSession, nextInteractive, effect = Interaction.handleEvent ev state interactive
+                            state <- nextSession
+                            interactive <- nextInteractive
+
+                            match effect with
+                            | Interaction.NoEffect -> ()
+                            | Interaction.Redraw -> dirty <- true
+                            | Interaction.Close ->
+                                keepRunning <- false
+                                r.RequestClose()
+                            | Interaction.Reload ->
+                                match Protocol.tryReload loader interactive.LastValidAspect true state with
+                                | Ok nextState ->
+                                    stderr.Flush()
+                                    let scene, grid = nextState.Loaded.Value.Scene
+                                    r.UploadScene scene grid
+                                    state <- nextState
+                                    dirty <- true
+                                | Error(Choice1Of2 _) -> ()
+                                | Error(Choice2Of2()) -> stderr.Flush()
+
+                    if
+                        keepRunning
+                        && not r.ShouldClose
+                        && Interlocked.Exchange(&watchReloadPending, 0) = 1
+                    then
+                        match Protocol.tryReload watchLoader interactive.LastValidAspect true state with
+                        | Ok nextState ->
+                            stderr.Flush()
+                            let scene, grid = nextState.Loaded.Value.Scene
+                            r.UploadScene scene grid
+                            state <- nextState
+                            dirty <- true
+                        | Error(Choice1Of2 _) -> ()
+                        | Error(Choice2Of2()) -> stderr.Flush()
+
+                    let mutable line = null
+
+                    while keepRunning && not r.ShouldClose && cmdQueue.TryDequeue(&line) do
+                        match Protocol.parseBatchLine line with
+                        | Error msg ->
+                            stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                            writeExit 2
+                        | Ok Protocol.Quit ->
+                            writeExit 0
+                            keepRunning <- false
+                            r.RequestClose()
+                        | Ok cmd ->
+                            let code = runBatchCmd r interactive.LastValidAspect &state cmd stdout stderr
+
+                            if code = 0 then
+                                match cmd with
+                                | Protocol.Load _ ->
+                                    r.SetTitle(Interaction.windowTitle state.Loaded)
+                                    watcher |> Option.iter (fun w -> w.SetTarget(state.Loaded |> Option.map _.Input))
+                                    dirty <- true
+                                | Protocol.Reload _
+                                | Protocol.Fit
+                                | Protocol.SetWireframe _
+                                | Protocol.SetGrid _ -> dirty <- true
+                                | Protocol.SetCamera _ ->
+                                    interactive <- Interaction.syncPreviewCamera state interactive
+                                    dirty <- true
+                                | Protocol.SetSize _
+                                | Protocol.BatchSnapshot _
+                                | Protocol.BatchContactSheet _
+                                | Protocol.BatchSilhouette _
+                                | Protocol.BatchStats _
+                                | Protocol.Quit -> ()
+
+                            writeExit code
+
+                    if keepRunning && not r.ShouldClose && dirty then
+                        let struct (curW, curH) = r.FramebufferSize()
+
+                        if curW > 0 && curH > 0 then
+                            interactive <-
+                                { interactive with
+                                    LastValidAspect = float curW / float curH }
+
+                            r.RenderToWindow (Interaction.effectiveCamera state interactive) state.Grid state.Wireframe
+
+                        dirty <- false
+
+                    if
+                        keepRunning
+                        && not r.ShouldClose
+                        && cmdQueue.IsEmpty
+                        && Volatile.Read(&watchReloadPending) = 0
+                    then
+                        r.WaitEvents()
+            finally
+                Volatile.Write(&stopping, true)
+                watcher |> Option.iter (fun w -> (w :> IDisposable).Dispose())
+
+            0
 
 /// Runs the CLI against arbitrary readers/writers.
 let internal executeCli (argv: string list) (stdin: TextReader) (stdout: TextWriter) (stderr: TextWriter) : int =
@@ -442,18 +802,36 @@ let internal executeCli (argv: string list) (stdin: TextReader) (stdout: TextWri
                 r.RenderSilhouette w h cam |> Result.map (Png.encodeGray8 w h))
             stdout
             stderr
-    | Ok(Protocol.View _) ->
-        stderr.WriteLine("rubberplant-viewer: interactive `view` window lands in BP.2 PR 4")
-        stderr.Flush()
-        1
+    | Ok(Protocol.View args) -> executeViewWithVisibility true args stdin stdout stderr
 
 [<EntryPoint>]
 let main argv =
     ensureUtf8Stdout ()
 
+    let isBatch = argv = [| "batch" |]
+
+    let isView =
+        argv.Length > 0
+        && (argv[0] = "view" || argv[0].EndsWith(".rp", StringComparison.OrdinalIgnoreCase))
+
     let stdin =
-        match argv with
-        | [| "batch" |] -> new StreamReader(Console.OpenStandardInput(), utf8NoBom) :> TextReader
-        | _ -> Console.In
+        if isBatch then
+            new StreamReader(Console.OpenStandardInput(), utf8NoBom) :> TextReader
+        elif isView then
+            if Console.IsInputRedirected then
+                new StreamReader(Console.OpenStandardInput(), utf8NoBom) :> TextReader
+            else
+                try
+                    if
+                        Console.InputEncoding.CodePage <> Encoding.UTF8.CodePage
+                        || Console.InputEncoding.GetPreamble().Length <> 0
+                    then
+                        Console.InputEncoding <- utf8NoBom
+                with _ ->
+                    ()
+
+                Console.In
+        else
+            Console.In
 
     executeCli (List.ofArray argv) stdin Console.Out Console.Error

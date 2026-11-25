@@ -1,6 +1,6 @@
 # Direct-from-`.rp` 3D viewer (BP.2)
 
-Status: **spec** (Phase 2 of [`battle-plan.md`](battle-plan.md), targeting `v0.3` tooling): a direct `.rp` → GPU 3D viewer (`RubberPlant.Viewer`) with headless offscreen PNG/silhouette rendering, `batch` mode, and an interactive inspection window.
+Status: **implemented** (Phase 2 of [`battle-plan.md`](battle-plan.md), targeting `v0.3` tooling): a direct `.rp` → GPU 3D viewer (`RubberPlant.Viewer`) with headless offscreen PNG/silhouette rendering, `batch` mode, and an interactive inspection window.
 
 This document specifies the GPU stack, pure camera/scene/PNG core, rendering pipeline, unified command protocol, CLI and interactive UX, and CI verification strategy so both humans and automated agents can inspect `.rp` models in 3D without an OBJ/glTF round-trip.
 
@@ -13,8 +13,8 @@ This document specifies the GPU stack, pure camera/scene/PNG core, rendering pip
 | Separate `rubberplant-viewer` executable (`src/RubberPlant.Viewer`) | Embedding GPU/GLFW dependencies into `rubberplant` (`RubberPlant.Cli`) |
 | Direct in-memory pipeline: `.rp` → `Pipeline` → `Stats` & `Mesh.build` → OpenGL 3.3 Core | Generalized cylinders or `.s` surfaces (Phase 3) |
 | Headless offscreen PNGs: `snapshot`, 2×2 `contact-sheet`, binary `silhouette` | Textures, shadows, PBR materials, or custom shader authoring |
-| Stateful `batch` mode (`exit <code>` framing) and one-shot CLI (`--stats` JSON) | File-watching auto-reload (`--watch`); `R` / `reload` cover BP.2 |
-| Interactive window (orbit, pan, zoom, shortcuts) with live stdin command bridge | Orthographic camera toggle (can be added later for exact SVG/ABOP comparison) |
+| Stateful `batch` mode (`exit <code>` framing) and one-shot CLI (`--stats` JSON) | Auto-watching in `batch` / headless modes (agents use explicit `load`/`reload`) |
+| Interactive window (orbit, pan, zoom, shortcuts, opt-in `--watch` auto-reload) with live stdin command bridge | Orthographic camera toggle (can be added later for exact SVG/ABOP comparison) |
 | Cross-platform CI with software OpenGL (Mesa) + Windows Native AOT build | Direct EGL surfaceless Linux GPU context without Xvfb (defer to Phase 4/5 if needed) |
 
 Architecture preserves the repository's **pure core, thin I/O shell** boundary:
@@ -81,7 +81,7 @@ Architecture preserves the repository's **pure core, thin I/O shell** boundary:
 
 Because OpenGL 3.3 Core is a legacy API (chosen here for low complexity, small Native AOT footprint, and simple CPU-only Mesa CI), the graphics surface must stay as small and isolated as possible so a future migration (e.g., to **WebGPU / `wgpu-native`** or **SDL3 GPU**, which dispatch natively to D3D12 on Windows, Vulkan on Linux, and Metal on macOS from a single codebase) requires minimal localized changes:
 
-- **Strict confinement:** Only `GlContext.fs`, `Shaders.fs`, and `Renderer.fs` may open `Silk.NET.*` or reference OpenGL/GLFW types. `Camera.fs`, `Scene.fs`, `Png.fs`, `Protocol.fs`, and `Program.fs` stay completely graphics-API-free.
+- **Strict confinement:** Only `GlContext.fs`, `Shaders.fs`, and `Renderer.fs` may open `Silk.NET.*` or reference OpenGL/GLFW types. `Camera.fs`, `Scene.fs`, `Png.fs`, `Protocol.fs`, `Interaction.fs`, and `Program.fs` stay completely graphics-API-free.
 - **Narrow backend surface:** Expose a minimal API-agnostic renderer boundary (scene upload, offscreen shaded render returning packed RGB24, offscreen silhouette render returning packed Gray8, interactive window frame + input/wakeup loop, and disposal) consuming `Scene.MeshScene`, `Scene.GridGeometry option`, and `Camera.Camera`.
 - **Single cross-platform backend preferred over hand-rolled per-OS backends:** If we later migrate off OpenGL, prefer a unified native-dispatch layer (`wgpu-native` or SDL3 GPU) behind this boundary rather than maintaining separate D3D/Vulkan/Metal implementations and multiple shader languages.
 
@@ -315,6 +315,7 @@ Exact flag and domain parity with `rubberplant` ([`Program.fs`](../src/RubberPla
 | `--camera <az,el[,dist\|fit]>` | `el ∈ [-90, 90]`, `dist > 0` | `snapshot`, `silhouette` (CLI & batch), `view` | In one-shot CLI (`snapshot`, `silhouette`, `view`), omitting `dist` auto-fits for `(az, el)`. In `batch`/interactive `snapshot`/`silhouette`, omitting `dist` keeps the current session distance (or auto-fits if unset), while `fit` auto-fits non-mutatingly. Default `35,25` auto-fitted. |
 | `--wireframe` | flag | `view`, one-shot `contact-sheet`, one-shot `snapshot` | Rejected (`exit 2`) on `silhouette` and on `batch` render commands (use `wireframe on\|off` in `batch`). |
 | `--no-grid` | flag | `view`, one-shot `contact-sheet`, one-shot `snapshot` | Rejected (`exit 2`) on `silhouette` and on `batch` render commands (use `grid on\|off` in `batch`). |
+| `--watch` | flag | `view` (and `.rp` shorthand) | Auto-reloads the currently loaded `.rp` file on disk changes (keeping camera). Rejected (`exit 2`) on headless commands and in `batch`/stdin. |
 | `--stats` | flag | `contact-sheet`, `snapshot`, `silhouette` (CLI & batch) | Suppresses `wrote <path>` on `stdout` and writes `Stats.toJson` verbatim to `stdout` (compact by default, or 2-space indented with `--pretty`) so `json.loads(stdout)` works directly. |
 | `--stats-out <file.json>` | file path | `contact-sheet`, `snapshot`, `silhouette` (CLI & batch) | Writes `Stats.toJson` verbatim (UTF-8 without BOM) atomically to `<file.json>`. Can be combined with or used without `--stats`. |
 | `--pretty` | flag | `batch`/interactive `stats`, or alongside `--stats` / `--stats-out` | 2-space indented JSON; rejected (`exit 2`) otherwise. |
@@ -365,6 +366,10 @@ Uses the exact same line splitter (`splitLine`: whitespace-separated, `"..."` qu
   - Main thread owns the GLFW window and OpenGL context and blocks in `glfwWaitEvents()` (zero CPU when idle), redrawing only when marked dirty (input event, resize, or command execution).
   - A background reader thread (`IsBackground = true`, so closing the window from a terminal never hangs waiting on `Console.In.ReadLine()`) reads UTF-8 lines from `stdin`, enqueues them onto a `ConcurrentQueue<string>`, and calls `glfwPostEmptyEvent()` to wake the main thread immediately.
   - On each wakeup, the main thread drains the queue, executes each command on the OpenGL thread (printing output + `exit <code>` to `stdout`), restores the default framebuffer and physical HiDPI viewport (`glfwGetFramebufferSize`), and redraws if `fbW > 0 && fbH > 0`.
+- **`--watch` auto-reload (opt-in on `view`):**
+  - Watches the parent directory of the currently loaded `.rp` file (handling both in-place writes and atomic temp-file renames), debounces rapid filesystem events (~60 ms), and wakes the main loop via `glfwPostEmptyEvent()`.
+  - Retries briefly on transient sharing-violation `IOException` / `UnauthorizedAccessException` while editors finish saving, then reloads with `keepCamera = true` (matching `R`, without writing `exit <code>` to `stdout`).
+  - On compile/budget/mesh error, prints diagnostics to `stderr` and preserves the previous valid GPU scene and camera; when a live stdin `load` opens a different file, the watcher re-targets automatically.
 
 ---
 

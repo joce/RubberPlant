@@ -107,3 +107,25 @@ recovered_stats=$(printf '%s\n' "${batch_lines[6]}" | sha)
 [ "${batch_lines[7]}" = "exit 0" ] || { echo "FAIL line 7: ${batch_lines[7]}" >&2; exit 1; }
 [ "${batch_lines[8]}" = "exit 0" ] || { echo "FAIL line 8: ${batch_lines[8]}" >&2; exit 1; }
 echo "ok       batch protocol, PNG outputs, and budget recovery"
+
+# 3. Interactive view mode with --watch and live stdin bridge (snapshot, stats, quit)
+viewer view examples/fig2-6a.rp --watch --size 320x240 > "$raw_out/view.out" 2> "$raw_out/view.err" <<EOF
+snapshot "$out/view-snap.png" --size 128
+stats
+quit
+EOF
+
+check_png "$out/view-snap.png" "interactive view snapshot"
+mapfile -t view_lines < <(tr -d '\r' < "$raw_out/view.out")
+if [ "${#view_lines[@]}" -ne 5 ]; then
+  echo "FAIL: expected 5 lines on view stdout, got ${#view_lines[@]}" >&2
+  printf '%s\n' "${view_lines[@]}" >&2
+  exit 1
+fi
+[ "${view_lines[0]}" = "wrote $out/view-snap.png" ] || { echo "FAIL view line 0: ${view_lines[0]}" >&2; exit 1; }
+[ "${view_lines[1]}" = "exit 0" ] || { echo "FAIL view line 1: ${view_lines[1]}" >&2; exit 1; }
+view_stats=$(printf '%s\n' "${view_lines[2]}" | sha)
+[ "$view_stats" = "$expected_stats" ] || { echo "FAIL view stats digest: $view_stats" >&2; exit 1; }
+[ "${view_lines[3]}" = "exit 0" ] || { echo "FAIL view line 3: ${view_lines[3]}" >&2; exit 1; }
+[ "${view_lines[4]}" = "exit 0" ] || { echo "FAIL view line 4: ${view_lines[4]}" >&2; exit 1; }
+echo "ok       interactive view live stdin bridge, snapshot, and stats"

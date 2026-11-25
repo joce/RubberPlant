@@ -19,6 +19,7 @@
     <Compile Include="Scene.fs" />
     <Compile Include="Png.fs" />
     <Compile Include="Protocol.fs" />
+    <Compile Include="Interaction.fs" />
     <Compile Include="GlContext.fs" />
     <Compile Include="Shaders.fs" />
     <Compile Include="Renderer.fs" />
