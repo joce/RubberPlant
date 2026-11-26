@@ -22,7 +22,13 @@ let compile (source: string) : Result<Model * Diagnostic list, Diagnostic list> 
 
 /// Derives, interprets and draws a model under `limits`.
 let runWith (limits: Limits) (model: Model) : Result<Output, Diagnostic list> =
-    Derivation.deriveWithTrace limits model
+    let deriveResult =
+        if Model.isTimed model then
+            TimedDerivation.deriveWithTrace limits model
+        else
+            Derivation.deriveWithTrace limits model
+
+    deriveResult
     |> Result.bind (fun (derived, derivationTrace) ->
         Derivation.interpretWith limits model derived
         |> Result.bind (fun drawing ->

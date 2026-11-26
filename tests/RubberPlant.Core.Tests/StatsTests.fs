@@ -842,6 +842,47 @@ let geometryTests =
               match Stats.analyze emptyLStr emptyLStr dTrace [ badPtSurf ] { PrimitiveDepths = [| 0 |] } with
               | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "non-finite control point -> RP0205"
               | other -> failtestf "expected RP0205, got %A" other
+          }
+
+          test "end-to-end timed model pipeline populates Stats derivation and geometry" {
+              let src =
+                  """
+settings { time = 2.5; }
+axiom: a(0);
+a at 1 -> s(0) a(0);
+b at 2 -> s(0);
+s(t) as F(t);
+"""
+
+              let s = analyzeOk src
+              Expect.equal s.Derivation.Steps 0 "steps = 0"
+              Expect.equal s.Derivation.Time (Some 2.5) "time = 2.5"
+              Expect.isFalse s.Derivation.FixedPointReached "fixed_point_reached = false"
+              Expect.equal s.Derivation.TotalRuleFirings 2 "2 divisions"
+
+              Expect.equal
+                  s.Derivation.RuleFirings
+                  [ { Line = 4; Predecessor = "a"; Arity = 1; Count = 2 }
+                    { Line = 5; Predecessor = "b"; Arity = 1; Count = 0 } ]
+                  "rule_firings in source order"
+
+              // s(1.5) s(0.5) a(0.5) -> F(1.5) F(0.5) a(0.5)
+              Expect.equal s.Geometry.SegmentCount 2 "2 segments"
+              Expect.floatClose Accuracy.high s.Geometry.TotalSegmentLength 2.0 "1.5 + 0.5 = 2.0"
+
+              let json = Stats.toJson false s
+              use doc = JsonDocument.Parse json
+              let jd = doc.RootElement.GetProperty "derivation"
+              Expect.equal (jd.GetProperty("steps").GetInt32()) 0 "json steps"
+              Expect.floatClose Accuracy.veryHigh (jd.GetProperty("time").GetDouble()) 2.5 "json time"
+              Expect.isFalse (jd.GetProperty("fixed_point_reached").GetBoolean()) "json fixed_point_reached"
+              Expect.equal (jd.GetProperty("total_rule_firings").GetInt32()) 2 "json total_rule_firings"
+              let rf = jd.GetProperty "rule_firings"
+              Expect.equal (rf.GetArrayLength()) 2 "2 rules"
+              Expect.equal (rf[0].GetProperty("predecessor").GetString()) "a" "rule 0 name"
+              Expect.equal (rf[0].GetProperty("arity").GetInt32()) 1 "rule 0 arity"
+              Expect.equal (rf[0].GetProperty("count").GetInt32()) 2 "rule 0 count"
+              Expect.equal (rf[1].GetProperty("count").GetInt32()) 0 "rule 1 dead count"
           } ]
 
 [<Tests>]

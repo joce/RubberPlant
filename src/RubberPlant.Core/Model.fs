@@ -130,6 +130,11 @@ module ContextFilter =
         | IgnoreList _ -> false
         | ConsiderList _ -> true
 
+/// Predefined turtle module names and symbols (§5.2).
+/// These pass through untimed in timed DOL-systems and cannot be `at` predecessors.
+let turtleModuleNames =
+    set [ "F"; "f"; "G"; "."; "$"; "+"; "-"; "&"; "^"; "\\"; "/"; "|"; "{"; "}"; "!"; "'" ]
+
 type Model =
     { Settings: Settings
       Includes: IncludeDecl list
@@ -139,6 +144,10 @@ type Model =
       Productions: CRule list
       TimedProductions: CTimedRule list
       Interpretations: CRule list }
+
+module Model =
+    let isTimed (m: Model) =
+        m.Settings.Time.IsSome || not m.TimedProductions.IsEmpty
 
 /// Execution budgets guarding against runaway derivation or geometry (core-hardening.md §2).
 /// Budgets never alter the output of a model that stays within them.

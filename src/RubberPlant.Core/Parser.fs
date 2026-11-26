@@ -41,7 +41,7 @@ let private (<??>) (p: P<'a>) (label: string) : P<'a> =
 
 let private isDigit c = c >= '0' && c <= '9'
 
-let private ruleKeywords = set [ "as"; "when"; "else"; "weight" ]
+let private ruleKeywords = set [ "as"; "when"; "else"; "weight"; "at" ]
 
 /// Keywords that start a prelude statement.
 let private declKeywords = set [ "settings"; "let"; "ignore"; "consider"; "axiom" ]
@@ -267,6 +267,7 @@ let private misplacedKeyword (k: string) (inWhat: string) =
         | "weight"
         | "else" -> "; `when`, `weight` and `else` start a branch, after the rule's `:`"
         | "as" -> "; `as` starts an interpretation rule's successor"
+        | "at" -> "; `at` starts a timed production's terminal age"
         | Empty -> "; `empty` can only be a whole module string, e.g. `S -> empty;`"
         | _ -> $"; `%s{k}` starts a statement"
 
@@ -299,9 +300,9 @@ let private moduleStop (expecting: string) (ruleEnd: bool) : P<'a> =
             fail
                 Codes.CutNotAllowed
                 "the cut `%` can only appear in an axiom or a production (`->`) successor"
-        // `as` is the next interpretation rule's arrow; other keywords mean
-        // a missing `;` only if a whole statement follows.
-        elif ruleEnd && keywords.Contains name && name <> "as" && not (statementAhead s) then
+        // `as` / `at` start the next rule; other keywords mean a missing `;`
+        // only if a whole statement follows.
+        elif ruleEnd && keywords.Contains name && name <> "as" && name <> "at" && not (statementAhead s) then
             fail Codes.MisplacedKeyword (misplacedKeyword name "a module string")
         elif ruleEnd && (isArrowAt s || c = ':' || c = '<' || c = '>' || keywords.Contains name) then
             fail Codes.MissingSemicolon $"missing `;`? unexpected %s{describeHere s}"
@@ -733,7 +734,11 @@ let private rawBranch: P<RawBranch> =
          >>= fun g ->
              (weightTail p (Some g))
              <|> (arrowAndSuccessor |>> fun (isAs, succ) -> BGuard(p, g, isAs, succ))
-             <|> (fun s -> moduleStop "`->`, `as` or `weight` after the guard" false s))
+             <|> (fun s ->
+                 if peekName s = "at" then
+                     fatal Codes.InvalidTimedRule "timed `at` productions cannot have `when` branches" s
+                 else
+                     moduleStop "`->`, `as` or `weight` after the guard" false s))
         <|> weightTail p None
 
 let private elseBranch: P<Pos * bool * ActualString> =
@@ -834,20 +839,67 @@ let private buildBranches
                         $"`else` can never fire: the branch at line %s{string u.Line} has no guard, so it's always eligible"
                 | _ -> Result.Ok(Production(h, ProdWeighted(weights, elseSucc), rulePos))
 
-let private ruleBody (h: Head) (rulePos: Pos) : P<Rule> =
+let private timedTail (h: Head) (rulePos: Pos) : P<Item> =
     fun s ->
-        if isArrowAt s then
-            (arrow >>. actualString .>> semicolon |>> fun succ -> Production(h, ProdSimple succ, rulePos)) s
+        let atPos = toPos s.Position
+
+        if not h.Left.IsEmpty || not h.Right.IsEmpty then
+            fatalAt atPos Codes.InvalidTimedRule "timed `at` productions cannot have context (`<` or `>`)"
+        elif not h.Pred.Params.IsEmpty then
+            fatalAt atPos Codes.InvalidTimedRule "timed `at` productions cannot have formal parameters"
+        else
+            let r = (keyword "at" >>. expr) s
+
+            if r.Status <> Ok then
+                Reply(r.Status, r.Error)
+            else
+                let termAge = r.Result
+                let next = peekName s
+
+                if next = "as" then
+                    fatal Codes.InvalidTimedRule "timed `at` productions must use `->`, not `as`" s
+                elif s.Peek() = ':' || next = "when" || next = "weight" then
+                    fatal
+                        Codes.InvalidTimedRule
+                        "timed `at` productions cannot have `:` or `when` / `weight` branches"
+                        s
+                else
+                    let r2 = (arrow >>. actualString .>> semicolon) s
+
+                    if r2.Status <> Ok then
+                        Reply(r2.Status, r2.Error)
+                    else
+                        Reply(
+                            TimedRuleItem
+                                { Name = h.Pred.Name
+                                  NamePos = h.Pred.Pos
+                                  TerminalAge = termAge
+                                  Successor = r2.Result
+                                  Pos = rulePos }
+                        )
+
+let private ruleBody (h: Head) (rulePos: Pos) : P<Item> =
+    fun s ->
+        if peekName s = "at" then
+            timedTail h rulePos s
+        elif isArrowAt s then
+            (arrow >>. actualString .>> semicolon
+             |>> fun succ -> RuleItem(Production(h, ProdSimple succ, rulePos)))
+                s
         elif peekName s = "as" then
             (keyword "as" >>. interpString .>> semicolon
-             |>> fun succ -> Interpretation(h, InterpSimple succ, rulePos))
+             |>> fun succ -> RuleItem(Interpretation(h, InterpSimple succ, rulePos)))
                 s
         elif s.Peek() = ':' then
             s.Skip()
 
             let r =
                 (ws
-                 >>. (many1 rawBranch <??> "`when` or `weight`")
+                 >>. (fun s ->
+                     if peekName s = "at" then
+                         fatal Codes.InvalidTimedRule "timed `at` productions cannot have `:` branches" s
+                     else
+                         (many1 rawBranch <??> "`when` or `weight`") s)
                  .>>. opt elseBranch
                  .>> semicolon)
                     s
@@ -858,12 +910,12 @@ let private ruleBody (h: Head) (rulePos: Pos) : P<Rule> =
                 let branches, elseB = r.Result
 
                 match buildBranches h rulePos branches elseB with
-                | Result.Ok rule -> Reply(rule)
+                | Result.Ok rule -> Reply(RuleItem rule)
                 | Result.Error d -> Reply(FatalError, otherError (box d))
         else
-            moduleStop "`->`, `as` or `:` after the rule's head" false s
+            moduleStop "`->`, `as`, `at` or `:` after the rule's head" false s
 
-let private rule: P<Rule> =
+let private rule: P<Item> =
     getPos .>>. head >>= fun (p, h) -> ruleBody h p
 
 // Prelude ---------------------------------------------------------------------
@@ -1059,7 +1111,7 @@ let private item: P<Item> =
         | "ignore" -> ignoreStatement s
         | "consider" -> considerStatement s
         | "axiom" -> axiomStatement s
-        | _ -> (rule |>> RuleItem) s
+        | _ -> rule s
 
 let private file: P<File> = skipTrivia >>. manyTill item eof
 

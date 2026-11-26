@@ -83,10 +83,14 @@ let private collectModules (file: File) : Dictionary<string, Pos option> =
             for s in successors r do
                 for m in actualModules s do
                     add m.Name m.Pos
+        | TimedRuleItem r ->
+            add r.Name r.NamePos
+
+            for m in actualModules r.Successor do
+                add m.Name m.Pos
         | Settings _
         | Let _
-        | Include _
-        | TimedRuleItem _ -> ()
+        | Include _ -> ()
 
     modules
 
@@ -440,6 +444,41 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
     let listed = HashSet<string>()
     let productions = ResizeArray<CRule>()
     let interpretations = ResizeArray<CRule>()
+    let timedRules = ResizeArray<CTimedRule * (ActualModule * float option list) list * bool>()
+    let timedByName = Dictionary<string, CTimedRule>()
+    let mutable firstDiscretePos: Pos option = None
+    let mutable firstTimedPos: Pos option = None
+    let mutable axiomTimedInfo: ((ActualModule * float option list) list * bool * Pos) option = None
+
+    let recordDiscrete p =
+        if firstDiscretePos.IsNone then
+            firstDiscretePos <- Some p
+
+    let recordTimed p =
+        if firstTimedPos.IsNone then
+            firstTimedPos <- Some p
+
+    let evalModuleString (what: string) (s: ActualString) =
+        let checkedMods = ResizeArray<ActualModule * float option list>()
+        let mutable hasCut = false
+
+        let rec walk (elems: ActualString) : Sym list =
+            elems
+            |> List.collect (function
+                | Module m ->
+                    let vals =
+                        m.Args
+                        |> List.map (fun e -> resolve ctx defines Map.empty e |> evalConst ctx m.Pos what)
+
+                    checkedMods.Add(m, vals)
+                    [ Mod(m.Name, vals |> List.map (Option.defaultValue 0.0) |> Array.ofList) ]
+                | Branch b -> Push :: walk b @ [ Pop ]
+                | ActualElem.Cut ->
+                    hasCut <- true
+                    [ Sym.Cut ])
+
+        let syms = walk s |> Array.ofList
+        syms, List.ofSeq checkedMods, hasCut
 
     for item in file do
         match firstRule, item with
@@ -462,6 +501,11 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
                     let pos = SettingEntry.pos entry
                     let what = $"`%s{SettingKey.name key}`"
                     let value e = resolve ctx defines Map.empty e |> evalConst ctx pos what
+
+                    match key with
+                    | ScalarKey Derivations -> recordDiscrete pos
+                    | ScalarKey Time -> recordTimed pos
+                    | _ -> ()
 
                     match settingsSeen.TryFind key with
                     | Some first ->
@@ -524,24 +568,9 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             match axiom with
             | Some(_, first) -> ctx.Error Codes.DuplicateAxiom pos $"the axiom is already set (line %s{string first.Line})"
             | None ->
-                // Walk the AST directly (not compileActual) so an evaluation error
-                // points at the failing module, not at `axiom`: axioms can span lines.
-                let rec evalAxiom (s: ActualString) : Sym list =
-                    s
-                    |> List.collect (function
-                        | Module m ->
-                            let arg e =
-                                resolve ctx defines Map.empty e
-                                |> evalConst ctx m.Pos "`axiom:`"
-                                |> Option.defaultValue 0.0
-
-                            [ Mod(m.Name, m.Args |> List.map arg |> Array.ofList) ]
-                        | Branch b -> Push :: evalAxiom b @ [ Pop ]
-                        | ActualElem.Cut -> [ Sym.Cut ])
-
-                let syms = evalAxiom a |> Array.ofList
-
+                let syms, mods, hasCut = evalModuleString "`axiom:`" a
                 axiom <- Some(syms, pos)
+                axiomTimedInfo <- Some(mods, hasCut, pos)
         | RuleItem r ->
             if firstRule.IsNone then
                 firstRule <- Some(Rule.pos r)
@@ -549,14 +578,133 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             let compiled = compileRule ctx defines r
 
             match r with
-            | Production _ -> productions.Add compiled
+            | Production _ ->
+                recordDiscrete (Rule.pos r)
+                productions.Add compiled
             | Interpretation _ -> interpretations.Add compiled
         | Include _ -> ()
         | TimedRuleItem r ->
             if firstRule.IsNone then
                 firstRule <- Some r.Pos
 
-    let checkedSettings = checkSettings ctx scalars vectors
+            recordTimed r.Pos
+
+            if turtleModuleNames.Contains r.Name then
+                ctx.Error
+                    Codes.InvalidTimedModule
+                    r.NamePos
+                    $"turtle symbol `%s{r.Name}` cannot be the predecessor of an `at` production"
+
+            let betaOpt =
+                resolve ctx defines Map.empty r.TerminalAge
+                |> evalConst ctx r.Pos $"`%s{r.Name} at ...`"
+
+            let beta =
+                match betaOpt with
+                | Some b ->
+                    if not (System.Double.IsFinite b) || b <= 0.0 then
+                        ctx.Error
+                            Codes.InvalidTimedAge
+                            r.Pos
+                            $"terminal age for `%s{r.Name}` must be finite and greater than 0, got %s{formatNumber b}"
+
+                    b
+                | None -> 0.0
+
+            let succSyms, succMods, succHasCut =
+                evalModuleString $"the successor of `%s{r.Name} at ...`" r.Successor
+
+            let compiled: CTimedRule =
+                { Name = r.Name
+                  TerminalAge = beta
+                  Successor = succSyms
+                  Pos = r.Pos }
+
+            match timedByName.TryGetValue r.Name with
+            | true, first ->
+                ctx.Error
+                    Codes.DuplicateTimedRule
+                    r.NamePos
+                    $"there is already an `at` production for `%s{r.Name}` (line %s{string first.Pos.Line})"
+            | _ -> timedByName[r.Name] <- compiled
+
+            timedRules.Add(compiled, succMods, succHasCut)
+
+    let isMixed = firstTimedPos.IsSome && firstDiscretePos.IsSome
+    let isTimed = firstTimedPos.IsSome && not isMixed
+
+    if isMixed then
+        let conflictPos = max firstTimedPos.Value firstDiscretePos.Value
+
+        ctx.Error
+            Codes.MixedTimedAndDiscrete
+            conflictPos
+            "cannot mix timed (`at`, `time`) and discrete (`->`, `derivations`) constructs in the same model"
+    elif isTimed then
+        let checkTimedMods
+            (inAxiom: bool)
+            (sitePos: Pos)
+            (hasCut: bool)
+            (mods: (ActualModule * float option list) list)
+            =
+            if hasCut then
+                ctx.Error
+                    Codes.InvalidTimedModule
+                    sitePos
+                    "the cut `%` cannot appear in a timed `axiom:` or `at` successor"
+
+            for m, vals in mods do
+                if not (turtleModuleNames.Contains m.Name) then
+                    if m.Args.Length <> 1 then
+                        ctx.Error
+                            Codes.InvalidTimedModule
+                            m.Pos
+                            $"timed module `%s{m.Name}` must have arity 1 (its age parameter), got %s{string m.Args.Length}"
+                    else
+                        match vals[0] with
+                        | None -> ()
+                        | Some tau ->
+                            if not (System.Double.IsFinite tau) then
+                                ctx.Error
+                                    Codes.InvalidTimedAge
+                                    m.Pos
+                                    $"age of `%s{m.Name}` must be finite, got %s{formatNumber tau}"
+                            elif tau < 0.0 then
+                                ctx.Error
+                                    Codes.InvalidTimedAge
+                                    m.Pos
+                                    $"age of `%s{m.Name}` must be non-negative, got %s{formatNumber tau}"
+                            else
+                                match timedByName.TryGetValue m.Name with
+                                | true, rule when System.Double.IsFinite rule.TerminalAge && rule.TerminalAge > 0.0 ->
+                                    let beta = rule.TerminalAge
+
+                                    if inAxiom && tau > beta then
+                                        ctx.Error
+                                            Codes.InvalidTimedAge
+                                            m.Pos
+                                            $"initial age of `%s{m.Name}` in `axiom:` must satisfy 0 <= tau <= %s{formatNumber beta}, got %s{formatNumber tau}"
+                                    elif not inAxiom && tau >= beta then
+                                        ctx.Error
+                                            Codes.InvalidTimedAge
+                                            m.Pos
+                                            $"successor age of `%s{m.Name}` must satisfy 0 <= alpha < %s{formatNumber beta} (ABOP C2), got %s{formatNumber tau}"
+                                | _ -> ()
+
+        match axiomTimedInfo with
+        | Some(mods, hasCut, axPos) -> checkTimedMods true axPos hasCut mods
+        | None -> ()
+
+        for rule, succMods, succHasCut in timedRules do
+            checkTimedMods false rule.Pos succHasCut succMods
+
+    let checkedSettings =
+        let s = checkSettings ctx scalars vectors
+
+        if isTimed then
+            { s with Time = Some(defaultArg s.Time 0.0) }
+        else
+            s
 
     let context =
         if considerList.IsSome then
@@ -582,7 +730,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
               Context = context
               Axiom = fst axiom.Value
               Productions = List.ofSeq productions
-              TimedProductions = []
+              TimedProductions = timedRules |> Seq.map (fun (r, _, _) -> r) |> List.ofSeq
               Interpretations = List.ofSeq interpretations },
             all
         )
