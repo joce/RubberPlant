@@ -2,6 +2,8 @@
 
 Status: **implemented** (Phase 2 of [`battle-plan.md`](battle-plan.md), targeting `v0.3` tooling): a direct `.rp` → GPU 3D viewer (`RubberPlant.Viewer`) with headless offscreen PNG/silhouette rendering, `batch` mode, and an interactive inspection window.
 
+*(**v0.3 extensions (BP.3):** generalized cylinders, `.s` surface loading with `--surface-div`, timed `--time` stepping, stable `ReferenceFrame` + empty-frame preservation, `WaitEventsTimeout` on `IInteractiveRenderer`, interactive `Left`/`Right`/`Home`/`End`/`Space` scrubbing, headless `sequence` PNG export, and `batch` `step`/`time`/`sequence` are specified in [`v0.3-organs-animation.md`](v0.3-organs-animation.md#53-rubberplantviewer-developmental-stepping--sequence).)*
+
 This document specifies the GPU stack, pure camera/scene/PNG core, rendering pipeline, unified command protocol, CLI and interactive UX, and CI verification strategy so both humans and automated agents can inspect `.rp` models in 3D without an OBJ/glTF round-trip.
 
 ---
@@ -82,7 +84,7 @@ Architecture preserves the repository's **pure core, thin I/O shell** boundary:
 Because OpenGL 3.3 Core is a legacy API (chosen here for low complexity, small Native AOT footprint, and simple CPU-only Mesa CI), the graphics surface must stay as small and isolated as possible so a future migration (e.g., to **WebGPU / `wgpu-native`** or **SDL3 GPU**, which dispatch natively to D3D12 on Windows, Vulkan on Linux, and Metal on macOS from a single codebase) requires minimal localized changes:
 
 - **Strict confinement:** Only `GlContext.fs`, `Shaders.fs`, and `Renderer.fs` may open `Silk.NET.*` or reference OpenGL/GLFW types. `Camera.fs`, `Scene.fs`, `Png.fs`, `Protocol.fs`, `Interaction.fs`, and `Program.fs` stay completely graphics-API-free.
-- **Narrow backend surface:** Expose a minimal API-agnostic renderer boundary (scene upload, offscreen shaded render returning packed RGB24, offscreen silhouette render returning packed Gray8, interactive window frame + input/wakeup loop, and disposal) consuming `Scene.MeshScene`, `Scene.GridGeometry option`, and `Camera.Camera`.
+- **Narrow backend surface:** Expose a minimal API-agnostic renderer boundary (scene upload, offscreen shaded render returning packed RGB24, offscreen silhouette render returning packed Gray8, interactive window frame + input/wakeup/timeout-wait loop, and disposal) consuming `Scene.MeshScene`, `Scene.GridGeometry option`, and `Camera.Camera`. (**v0.3:** adds `WaitEventsTimeout(seconds)` for interactive playback ticks.)
 - **Single cross-platform backend preferred over hand-rolled per-OS backends:** If we later migrate off OpenGL, prefer a unified native-dispatch layer (`wgpu-native` or SDL3 GPU) behind this boundary rather than maintaining separate D3D/Vulkan/Metal implementations and multiple shader languages.
 
 ---
@@ -360,7 +362,8 @@ Uses the exact same line splitter (`splitLine`: whitespace-separated, `"..."` qu
   - `G`: toggle ground grid.
   - `R`: reload current `.rp` file from disk (keeping current camera).
   - `Esc` / `Q`: close window and exit `0`.
-- **Window title:** `RubberPlant — <filename>` (or `RubberPlant — (no model)`).
+- **Window title:** `RubberPlant — <filename>` (or `RubberPlant — (no model)`), plus `[step k/n]` or `[t = x.xx]` during v0.3 developmental stepping.
+- *(**v0.3 stepping & `sequence`:** see [`v0.3-organs-animation.md` §5.3](v0.3-organs-animation.md#53-rubberplantviewer-developmental-stepping--sequence) for `Left`/`Right`/`[`/`]`/`Home`/`0`/`End`/`Space` playback, `ReferenceFrame` stability, headless `sequence`, and `batch` `step`/`time`/`sequence`.)*
 - **Minimized window handling:** when `glfwGetFramebufferSize` reports `fbW = 0` or `fbH = 0` (minimized window on Windows), skip rendering to the default framebuffer while continuing to process GLFW events and offscreen stdin commands cleanly.
 - **Event loop & live stdin bridge:**
   - Main thread owns the GLFW window and OpenGL context and blocks in `glfwWaitEvents()` (zero CPU when idle), redrawing only when marked dirty (input event, resize, or command execution).
