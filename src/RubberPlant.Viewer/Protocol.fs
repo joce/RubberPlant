@@ -40,6 +40,7 @@ Load options (override the file's settings; parity with `rubberplant`):
       --elasticity <e>            how strongly segments bend toward T (0: off)
       --seed <n>                  random seed (default 0)
       --sides <n>                 facets around each cylinder, at least 3 (default 12)
+      --surface-div <n>           bicubic patch subdivision per axis, at least 1
       --width-scale <k|auto>      world units per line width unit, or auto (default)
       --max-modules <n|unlimited>     max L-string symbols (default 1000000)
       --max-primitives <n|unlimited>  max turtle primitives (default 250000)
@@ -69,6 +70,7 @@ type LoadOptions =
       Elasticity: float option
       Seed: int64 option
       Sides: int option
+      SurfaceDiv: int option
       /// Some None: auto; Some (Some k): explicit scale.
       WidthScale: float option option
       /// Some None: unlimited.
@@ -86,6 +88,7 @@ let emptyLoadOptions =
       Elasticity = None
       Seed = None
       Sides = None
+      SurfaceDiv = None
       WidthScale = None
       MaxModules = None
       MaxPrimitives = None }
@@ -100,6 +103,7 @@ let hasAnyLoadOption (o: LoadOptions) : bool =
     || o.Elasticity.IsSome
     || o.Seed.IsSome
     || o.Sides.IsSome
+    || o.SurfaceDiv.IsSome
     || o.WidthScale.IsSome
     || o.MaxModules.IsSome
     || o.MaxPrimitives.IsSome
@@ -118,7 +122,8 @@ let applySettingsOverrides (o: LoadOptions) (s: Settings) : Settings =
 let toMeshOptionsWithSettings (settings: Settings) (o: LoadOptions) : Mesh.MeshOptions =
     { Mesh.defaultMeshOptions with
         Sides = defaultArg o.Sides Mesh.defaultMeshOptions.Sides
-        WidthScale = defaultArg o.WidthScale settings.WidthScale }
+        WidthScale = defaultArg o.WidthScale settings.WidthScale
+        SurfaceDiv = o.SurfaceDiv }
 
 let toMeshOptions (o: LoadOptions) : Mesh.MeshOptions =
     toMeshOptionsWithSettings defaultSettings o
@@ -368,6 +373,10 @@ let private tryParseLoadOption (args: string list) (o: LoadOptions) : (LoadOptio
         match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
         | true, n when n >= 3 -> Some({ o with Sides = Some n }, rest)
         | _ -> fail $"--sides expects an integer of at least 3, got '%s{v}'"
+    | "--surface-div" :: v :: rest ->
+        match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
+        | true, n when n >= 1 -> Some({ o with SurfaceDiv = Some n }, rest)
+        | _ -> fail $"--surface-div expects an integer of at least 1, got '%s{v}'"
     | "--width-scale" :: v :: rest ->
         if v = "auto" then
             Some({ o with WidthScale = Some None }, rest)
@@ -387,6 +396,7 @@ let private tryParseLoadOption (args: string list) (o: LoadOptions) : (LoadOptio
     | "--elasticity"
     | "--seed"
     | "--sides"
+    | "--surface-div"
     | "--width-scale"
     | "--max-modules"
     | "--max-primitives") as opt :: [] -> fail $"%s{opt} expects a value"

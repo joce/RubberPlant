@@ -63,49 +63,70 @@ let private loadModelWithRetries
         | Ok(model, warnings) ->
             report input warnings stderr
 
-            let model =
-                { model with
-                    Settings = Protocol.applySettingsOverrides opts model.Settings }
+            let baseDir = Path.GetDirectoryName input
 
-            let limits = Protocol.toLimits opts
+            let readSurfaceFile (relPath: string) =
+                let normalized =
+                    relPath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)
 
-            match Pipeline.runWith limits model with
+                let fullPath =
+                    if String.IsNullOrEmpty baseDir then
+                        normalized
+                    else
+                        Path.Combine(baseDir, normalized)
+
+                readSourceWithRetry retries delayMs fullPath
+
+            match Pipeline.loadSurfaces readSurfaceFile model with
             | Error diags ->
                 report input diags stderr
                 Error()
-            | Ok output ->
-                report input output.Warnings stderr
+            | Ok(model, surfaceWarnings) ->
+                report input surfaceWarnings stderr
 
-                match
-                    Stats.analyze
-                        output.Derived
-                        output.Drawing
-                        output.DerivationTrace
-                        output.Geometry
-                        output.TurtleTrace
-                with
+                let model =
+                    { model with
+                        Settings = Protocol.applySettingsOverrides opts model.Settings }
+
+                let limits = Protocol.toLimits opts
+
+                match Pipeline.runWith limits model with
                 | Error diags ->
                     report input diags stderr
                     Error()
-                | Ok stats ->
-                    match Mesh.build (Protocol.toMeshOptionsWithSettings model.Settings opts) output.Geometry with
-                    | Error msg ->
-                        stderr.WriteLine($"%s{input}: error: %s{msg}")
+                | Ok output ->
+                    report input output.Warnings stderr
+
+                    match
+                        Stats.analyze
+                            output.Derived
+                            output.Drawing
+                            output.DerivationTrace
+                            output.Geometry
+                            output.TurtleTrace
+                    with
+                    | Error diags ->
+                        report input diags stderr
                         Error()
-                    | Ok mesh ->
-                        match Scene.fromMesh mesh with
+                    | Ok stats ->
+                        match Mesh.build (Protocol.toMeshOptionsWithSettings model.Settings opts) output.Geometry with
                         | Error msg ->
                             stderr.WriteLine($"%s{input}: error: %s{msg}")
                             Error()
-                        | Ok scene ->
-                            let grid = Scene.buildGrid scene
+                        | Ok mesh ->
+                            match Scene.fromMesh mesh with
+                            | Error msg ->
+                                stderr.WriteLine($"%s{input}: error: %s{msg}")
+                                Error()
+                            | Ok scene ->
+                                let grid = Scene.buildGrid scene
 
-                            Ok
-                                { Input = input
-                                  Load = opts
-                                  Bounds = scene.Bounds
-                                  Stats = stats
-                                  Scene = (scene, grid) }
+                                Ok
+                                    { Input = input
+                                      Load = opts
+                                      Bounds = scene.Bounds
+                                      Stats = stats
+                                      Scene = (scene, grid) }
 
 let private loadModel
     (input: string)

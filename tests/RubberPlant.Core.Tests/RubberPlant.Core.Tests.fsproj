@@ -13,6 +13,7 @@
     <Compile Include="DerivationTests.fs" />
     <Compile Include="TimedDerivationTests.fs" />
     <Compile Include="TurtleTests.fs" />
+    <Compile Include="BezierTests.fs" />
     <Compile Include="StatsTests.fs" />
     <Compile Include="TrigTests.fs" />
     <Compile Include="ExpLogTests.fs" />

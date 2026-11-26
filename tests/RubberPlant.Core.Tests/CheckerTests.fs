@@ -417,4 +417,38 @@ let tests =
               expectError Codes.NamespaceClash 1 "let a = 1;\naxiom: b(0);\na at 1 -> b(0);"
               expectError Codes.NamespaceClash 1 "let b = 1;\naxiom: a(0);\na at 1 -> b(0);"
               expectError Codes.DeclarationAfterRules 2 "a at 1 -> a(0);\naxiom: a(0);"
-          } ]
+          }
+
+          testList
+              "v0.3 include"
+              [ test "populates Model.Includes in source order and allows rules and as rules" {
+                    let m, _ =
+                        compileOk
+                            "include L = \"leaf.s\";\ninclude K = \"petal.s\";\naxiom: ~L(1) K(1);\nL(t) -> L(t+1);\nK(t) as ~K(t);"
+
+                    Expect.equal
+                        (m.Includes |> List.map (fun d -> d.Name, d.Path, d.Pos.Line))
+                        [ "L", "leaf.s", 1; "K", "petal.s", 2 ]
+                        "source order"
+                }
+                test "clashes with let and rule parameters (RP0101)" {
+                    expectError Codes.NamespaceClash 2 "include L = \"leaf.s\";\nlet L = 3;\naxiom: F;"
+                    expectError Codes.NamespaceClash 3 "include L = \"leaf.s\";\naxiom: A(1);\nA(L) -> F;"
+                }
+                test "duplicate include name (RP0118)" {
+                    expectError Codes.DuplicateInclude 2 "include L = \"a.s\";\ninclude L = \"b.s\";\naxiom: F;"
+                }
+                test "invalid include names: builtin, turtle, turtle symbol (RP0119)" {
+                    expectError Codes.InvalidIncludeName 1 "include sin = \"a.s\";\naxiom: F;"
+                    expectError Codes.InvalidIncludeName 1 "include F = \"a.s\";\naxiom: F;"
+                    expectError Codes.InvalidIncludeName 1 "include + = \"a.s\";\naxiom: F;"
+                    expectError Codes.InvalidIncludeName 1 "include ~ = \"a.s\";\naxiom: F;"
+                }
+                test "include after rules (RP0113)" {
+                    expectError Codes.DeclarationAfterRules 3 "axiom: A;\nA -> B;\ninclude L = \"a.s\";"
+                }
+                test "~ passes through untimed in timed models" {
+                    let m, _ = compileOk "include L = \"leaf.s\";\nsettings { time = 1; }\naxiom: a(0);\na at 1 -> a(0);\na(t) as ~L(t);"
+                    Expect.isTrue (Model.isTimed m) "timed model with include"
+                    compileOk "settings { time = 1; }\naxiom: ~ a(0);" |> ignore
+                } ] ]

@@ -22,6 +22,12 @@ let turtleNames =
       "ScaleContour"
       "ContourSides" ]
 
+let private isInvalidIncludeName (name: string) =
+    Builtins.isBuiltin name
+    || turtleModuleNames.Contains name
+    || List.contains name turtleNames
+    || (SettingKey.tryParse name).IsSome
+
 let private lineOf (p: Pos option) =
     match p with
     | Some p -> $"line %s{string p.Line}"
@@ -94,14 +100,16 @@ let private collectModules (file: File) : Dictionary<string, Pos option> =
             for s in successors r do
                 for m in actualModules s do
                     add m.Name m.Pos
+        | Include(name, namePos, _, _) ->
+            if not (Builtins.isBuiltin name) then
+                add name namePos
         | TimedRuleItem r ->
             add r.Name r.NamePos
 
             for m in actualModules r.Successor do
                 add m.Name m.Pos
         | Settings _
-        | Let _
-        | Include _ -> ()
+        | Let _ -> ()
 
     modules
 
@@ -453,6 +461,8 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
     let mutable axiom: (LString * Pos) option = None
     let mutable firstRule: Pos option = None
     let listed = HashSet<string>()
+    let includesSeen = Dictionary<string, Pos>()
+    let includes = ResizeArray<IncludeDecl>()
     let productions = ResizeArray<CRule>()
     let interpretations = ResizeArray<CRule>()
     let timedRules = ResizeArray<CTimedRule * (ActualModule * float option list) list * bool>()
@@ -497,7 +507,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             ctx.Error
                 Codes.DeclarationAfterRules
                 p
-                $"declaration after rules: `settings`, `let`, `ignore:`, `consider:` and `axiom:` must come before the first rule (line %s{string r.Line})"
+                $"declaration after rules: `settings`, `let`, `include`, `ignore:`, `consider:` and `axiom:` must come before the first rule (line %s{string r.Line})"
         | _ -> ()
 
         match item with
@@ -593,7 +603,22 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
                 recordDiscrete (Rule.pos r)
                 productions.Add compiled
             | Interpretation _ -> interpretations.Add compiled
-        | Include _ -> ()
+        | Include(name, namePos, path, pos) ->
+            if isInvalidIncludeName name then
+                ctx.Error
+                    Codes.InvalidIncludeName
+                    namePos
+                    $"`%s{name}` is reserved or predefined and can't be an `include` surface name"
+            else
+                match includesSeen.TryGetValue name with
+                | true, first ->
+                    ctx.Error
+                        Codes.DuplicateInclude
+                        namePos
+                        $"surface `%s{name}` is already included (line %s{string first.Line})"
+                | false, _ ->
+                    includesSeen[name] <- namePos
+                    includes.Add { Name = name; Path = path; Pos = pos }
         | TimedRuleItem r ->
             if firstRule.IsNone then
                 firstRule <- Some r.Pos
@@ -736,7 +761,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
     else
         Ok(
             { Settings = checkedSettings
-              Includes = []
+              Includes = List.ofSeq includes
               Surfaces = Map.empty
               Context = context
               Axiom = fst axiom.Value

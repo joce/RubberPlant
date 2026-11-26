@@ -179,6 +179,8 @@ let tests =
                         "9007199254740991"
                         "--sides"
                         "3"
+                        "--surface-div"
+                        "5"
                         "--width-scale"
                         "auto"
                         "--max-modules"
@@ -188,6 +190,8 @@ let tests =
                   "all valid load options"
 
               Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--sides"; "2" ]) "sides < 3"
+              Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--surface-div"; "0" ]) "surface-div < 1"
+              Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--surface-div" ]) "missing value for --surface-div"
               Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--width"; "-0.1" ]) "width < 0"
               Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--taper"; "101" ]) "taper > 100"
               Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--tropism"; "0,0,0" ]) "zero tropism"
@@ -292,6 +296,7 @@ let tests =
                       Elasticity = Some 0.4
                       Seed = Some 99L
                       Sides = Some 16
+                      SurfaceDiv = Some 8
                       WidthScale = Some(Some 0.05)
                       MaxModules = Some None
                       MaxPrimitives = Some(Some 1000) }
@@ -308,6 +313,7 @@ let tests =
 
               let mo = toMeshOptions opts
               Expect.equal mo.Sides 16 "sides"
+              Expect.equal mo.SurfaceDiv (Some 8) "surfaceDiv"
               Expect.equal mo.WidthScale (Some 0.05) "widthScale"
 
               let settingsWithScale = { Model.defaultSettings with WidthScale = Some 1.0 }

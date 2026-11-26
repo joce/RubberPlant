@@ -36,10 +36,27 @@ let names =
 let run (name: string) : Pipeline.Output =
     let source = File.ReadAllText(Path.Combine(examplesDir, name + ".rp"))
 
+    let readSurfaceFile (relPath: string) =
+        let normalized =
+            relPath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)
+
+        let fullPath = Path.Combine(examplesDir, normalized)
+
+        try
+            Ok(File.ReadAllText fullPath)
+        with e ->
+            Error e.Message
+
     let withSeed (m: Model.Model) =
         { m with Settings = { m.Settings with Seed = seedOf name } }
 
-    match Pipeline.compile source |> Result.bind (fst >> withSeed >> Pipeline.run) with
+    let res =
+        Pipeline.compile source
+        |> Result.bind (fun (m, _) ->
+            Pipeline.loadSurfaces readSurfaceFile m
+            |> Result.bind (fun (mWithSurfaces, _) -> Pipeline.run (withSeed mWithSurfaces)))
+
+    match res with
     | Ok output -> output
     | Error ds -> failtestf "%s:\n%s" name (ds |> List.map (Diagnostic.format name) |> String.concat "\n")
 

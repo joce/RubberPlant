@@ -44,7 +44,7 @@ let private isDigit c = c >= '0' && c <= '9'
 let private ruleKeywords = set [ "as"; "when"; "else"; "weight"; "at" ]
 
 /// Keywords that start a prelude statement.
-let private declKeywords = set [ "settings"; "let"; "ignore"; "consider"; "axiom" ]
+let private declKeywords = set [ "settings"; "let"; "include"; "ignore"; "consider"; "axiom" ]
 
 /// The empty module string (v0.2, "empty" in Appendix A.1).
 [<Literal>]
@@ -57,7 +57,7 @@ let private settingNames = SettingKey.all |> List.map SettingKey.name |> set
 
 /// Why a name that isn't a keyword can't be used at all (§2.6), if it can't.
 let private reservedReason (n: string) =
-    if n = "include" || n = "module" then
+    if n = "module" then
         Some $"`%s{n}` is reserved and not supported yet"
     elif settingNames.Contains n then
         Some $"`%s{n}` is a setting name: it can only be a key in the `settings` block, and settings aren't values"
@@ -247,6 +247,23 @@ let private statementAhead (s: CharStream<unit>) =
             s.Skip k.Length
             skipTrivia s |> ignore
             nameLength s > 0 && nameThenSeparator s
+        | "include" ->
+            s.Skip k.Length
+            skipTrivia s |> ignore
+
+            if s.IsEndOfStream then
+                false
+            else
+                let len = nameLength s
+
+                if len > 0 then
+                    nameThenSeparator s
+                else
+                    // Single-character symbol surface name, e.g. `include @ = "leaf.s";`.
+                    let struct (scalarLen, _) = Unicode.scalarAt (s.Peek()) (s.Peek 1)
+                    s.Skip scalarLen
+                    let r = skipTrivia s
+                    r.Status = Ok && (s.Peek() = '=' || s.Peek() = ':')
         | "settings" ->
             s.Skip k.Length
             (skipTrivia s).Status = Ok && s.Peek() = '{'
@@ -1096,6 +1113,80 @@ let private considerStatement: P<Item> =
             else
                 Reply(Consider(names, p))
 
+let private includeName: P<string * Pos> =
+    fun s ->
+        let p = toPos s.Position
+        let len = nameLength s
+
+        if len > 0 then
+            let n = s.PeekString len
+
+            if keywords.Contains n then
+                fatalAt p Codes.InvalidIncludeName $"`%s{n}` is a keyword and can't be an `include` surface name"
+            elif (reservedReason n).IsSome then
+                fatalAt p Codes.InvalidIncludeName (reservedReason n).Value
+            elif n = "_" then
+                fatalAt p Codes.InvalidIncludeName "`_` is the wildcard and can't be an `include` surface name"
+            else
+                s.Skip len
+                let w = ws s
+                if w.Status = Ok then Reply((n, p)) else Reply(w.Status, w.Error)
+        elif s.Peek() = '[' || s.Peek() = ']' then
+            fatalAt p Codes.BracketNotAllowed "brackets aren't allowed as an `include` surface name"
+        elif s.Peek() = '%' then
+            fatalAt p Codes.CutNotAllowed "the cut `%` can't be an `include` surface name"
+        else
+            let r = moduleNameTok s
+            if r.Status <> Ok then moduleExpected "a surface name after `include`" s else r
+
+let private stringLit: P<string> =
+    fun s ->
+        let p = toPos s.Position
+
+        if s.Peek() <> '"' then
+            fatalAt p Codes.Syntax $"unexpected %s{describeHere s}; expected a double-quoted path string"
+        else
+            s.Skip()
+            let sb = System.Text.StringBuilder()
+            let mutable closed = false
+            let mutable err: Reply<string> option = None
+
+            while not closed && err.IsNone do
+                if s.IsEndOfStream then
+                    err <- Some(fatalAt p Codes.InvalidStringLiteral "unterminated string literal")
+                else
+                    let c = s.Peek()
+
+                    if c = '"' then
+                        s.Skip()
+                        closed <- true
+                    elif c = '\n' || c = '\r' then
+                        err <- Some(fatalAt p Codes.InvalidStringLiteral "string literal cannot span multiple lines")
+                    elif c = '\000' then
+                        err <- Some(fatalAt p Codes.InvalidStringLiteral "string literal cannot contain a NUL character")
+                    else
+                        sb.Append c |> ignore
+                        s.Skip()
+
+            match err with
+            | Some r -> r
+            | None ->
+                if sb.Length = 0 then
+                    fatalAt p Codes.InvalidStringLiteral "include path cannot be empty"
+                else
+                    let w = ws s
+                    if w.Status = Ok then Reply(sb.ToString()) else Reply(w.Status, w.Error)
+
+let private includeStatement: P<Item> =
+    preludeKeyword "include"
+    >>= fun p ->
+        includeName
+        >>= fun (name, namePos) ->
+            equalsAfter $"`%s{name}`"
+            >>. stringLit
+            .>> exprSemicolon
+            |>> fun path -> Include(name, namePos, path, p)
+
 let private axiomStatement: P<Item> =
     preludeKeyword "axiom"
     >>= fun p -> colonAfter "axiom" >>. actualString .>> semicolon |>> fun a -> Axiom(a, p)
@@ -1108,6 +1199,7 @@ let private item: P<Item> =
         match peekName s with
         | "settings" -> settingsBlock s
         | "let" -> letStatement s
+        | "include" -> includeStatement s
         | "ignore" -> ignoreStatement s
         | "consider" -> considerStatement s
         | "axiom" -> axiomStatement s

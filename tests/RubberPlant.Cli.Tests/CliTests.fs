@@ -233,6 +233,62 @@ let tests =
                   Expect.equal (run [ "render"; input; "-o"; out; "--width-scale"; "0.01" ]) 0 "explicit")
           }
 
+          test "--surface-div scoping, validation, and include .s resolution" {
+              withTempDir (fun dir ->
+                  let surfDir = Directory.CreateDirectory(Path.Combine(dir, "surfaces")).FullName
+
+                  let pts =
+                      [ for i in 0..3 do
+                            for j in 0..3 -> $"%g{float j / 3.0} %g{float i / 3.0} 0" ]
+                      |> String.concat "\n"
+
+                  let surfText =
+                      $"""0 1 0 1 0 0
+PRECISION S: 2 T: 2
+CONTACT POINT: 0 0 0
+END POINT: 0 1 0
+HEADING: 0 1 0
+UP: 0 0 1
+SIZE: 1
+p0
+%s{pts}
+"""
+
+                  File.WriteAllText(Path.Combine(surfDir, "leaf.s"), surfText)
+                  let input = Path.Combine(dir, "plant.rp")
+                  File.WriteAllText(input, "include L = \"surfaces/leaf.s\";\naxiom: F ~L;\n")
+
+                  // --surface-div rejected on derive, stats, check, and svg output (exit 2)
+                  Expect.equal (run [ "derive"; input; "--surface-div"; "3" ]) 2 "derive rejects --surface-div"
+                  Expect.equal (run [ "stats"; input; "--surface-div"; "3" ]) 2 "stats rejects --surface-div"
+                  Expect.equal (run [ "check"; input; "--surface-div"; "3" ]) 2 "check rejects --surface-div"
+                  Expect.equal (run [ "render"; input; "-o"; Path.Combine(dir, "out.svg"); "--surface-div"; "3" ]) 2 "svg rejects --surface-div"
+
+                  for bad in [ "0"; "-1"; "1.5"; "x" ] do
+                      Expect.equal (run [ "render"; input; "-o"; Path.Combine(dir, "out.obj"); "--surface-div"; bad ]) 2 $"bad --surface-div %s{bad}"
+
+                  Expect.equal (run [ "check"; input ]) 0 "check loads included .s"
+                  Expect.equal (run [ "render"; input; "-o"; Path.Combine(dir, "out.svg") ]) 0 "svg renders"
+                  Expect.stringContains (File.ReadAllText(Path.Combine(dir, "out.svg"))) "<polygon points=" "svg has surface polygon"
+
+                  let objDefault = Path.Combine(dir, "def.obj")
+                  let objDiv4 = Path.Combine(dir, "div4.obj")
+                  Expect.equal (run [ "render"; input; "-o"; objDefault ]) 0 "obj default div"
+                  Expect.equal (run [ "render"; input; "-o"; objDiv4; "--surface-div"; "4" ]) 0 "obj --surface-div 4"
+                  let facesDef = File.ReadAllLines objDefault |> Array.filter (fun l -> l.StartsWith "f ") |> Array.length
+                  let facesDiv4 = File.ReadAllLines objDiv4 |> Array.filter (fun l -> l.StartsWith "f ") |> Array.length
+                  Expect.equal facesDiv4 (facesDef + 2 * 4 * 4 - 2 * 2 * 2) "surface-div 4 increases surface triangle count"
+
+                  Expect.equal (run [ "render"; input; "-o"; Path.Combine(dir, "out.gltf"); "--surface-div"; "3" ]) 0 "gltf --surface-div"
+                  Expect.equal (run [ "render"; input; "-o"; Path.Combine(dir, "out.glb"); "--surface-div"; "3" ]) 0 "glb --surface-div"
+
+                  // Missing .s fails check and render with exit 1
+                  let missingRp = Path.Combine(dir, "missing.rp")
+                  File.WriteAllText(missingRp, "include L = \"surfaces/nope.s\";\naxiom: ~L;\n")
+                  Expect.equal (run [ "check"; missingRp ]) 1 "check fails on missing .s"
+                  Expect.equal (run [ "render"; missingRp; "-o"; Path.Combine(dir, "missing.obj") ]) 1 "render fails on missing .s")
+          }
+
           test "an existing OBJ/MTL pair survives a failed render" {
               // Found in review: the OBJ used to be replaced before the MTL failed.
               withTempDir (fun dir ->
@@ -513,6 +569,36 @@ let batchTests =
                   Expect.isFalse ((rawOut.TrimEnd '\n').Contains "\n") "stdout is still single-line JSON"
                   use doc = JsonDocument.Parse rawOut
                   Expect.equal (doc.RootElement.GetProperty("geometry").GetProperty("segment_count").GetInt32()) 1 "valid JSON")
+          }
+
+          test "stats emits surface_count, RP0307 warnings on stderr, and fails RP0208 on bad .s" {
+              withTempDir (fun dir ->
+                  let pts =
+                      [ for i in 0..3 do
+                            for j in 0..3 -> $"%g{float j / 3.0} %g{float i / 3.0} 0" ]
+                      |> String.concat "\n"
+
+                  File.WriteAllText(
+                      Path.Combine(dir, "warn.s"),
+                      $"0 1 0 1 0 0\nCONTACT POINT: 0 0 0\nEND POINT: 0 1 0\nHEADING: 0 1 0\nUP: 0 0 1\nSIZE: 1\np0\nA: nope\n%s{pts}\n"
+                  )
+
+                  let rp = Path.Combine(dir, "surf.rp")
+                  File.WriteAllText(rp, "include L = \"warn.s\";\naxiom: ~L;\n")
+
+                  let code, rawOut, rawErr = capturedRaw (fun () -> run [ "stats"; rp ])
+                  Expect.equal code 0 "exit 0"
+                  Expect.stringContains rawErr "RP0307" "RP0307 on stderr"
+                  Expect.isFalse ((rawOut.TrimEnd '\n').Contains "\n") "pure JSON on stdout"
+                  use doc = JsonDocument.Parse rawOut
+                  Expect.equal (doc.RootElement.GetProperty("geometry").GetProperty("surface_count").GetInt32()) 1 "surface_count"
+
+                  let badRp = Path.Combine(dir, "bad.rp")
+                  File.WriteAllText(badRp, "include L = \"missing.s\";\naxiom: ~L;\n")
+                  let codeBad, outBad, errBad = capturedRaw (fun () -> run [ "stats"; badRp ])
+                  Expect.equal codeBad 1 "exit 1 on RP0208"
+                  Expect.equal outBad "" "empty stdout"
+                  Expect.stringContains errBad "RP0208" "RP0208 on stderr")
           }
 
           test "stats reports RP0205 on derived metric overflow with empty stdout" {

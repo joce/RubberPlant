@@ -607,10 +607,11 @@ let errors =
               expectParseError Codes.ReservedName (1, 31) "settings { angle = 10; step = angle; }"
               expectParseError Codes.ReservedName (1, 11) "A(x) -> B(angle);"
           }
-          test "include and module are reserved everywhere" {
-              expectParseError Codes.ReservedName (1, 1) "include x;"
+          test "module is reserved everywhere and include cannot be used as a name" {
+              expectParseError Codes.Syntax (1, 10) "include x;"
               expectParseError Codes.ReservedName (1, 1) "module A;"
-              expectParseError Codes.ReservedName (1, 6) "A -> include;"
+              expectParseError Codes.MisplacedKeyword (1, 6) "A -> include;"
+              expectParseError Codes.ReservedName (1, 6) "A -> module;"
               expectParseError Codes.ReservedName (1, 9) "let a = module;"
               expectParseError Codes.ReservedName (1, 9) "ignore: module;"
           }
@@ -831,6 +832,39 @@ let v03 =
                     expectParseError Codes.InvalidTimedRule (1, 8) "a at 1 weight 1 -> b;"
                     expectParseError Codes.InvalidTimedRule (1, 5) "a : at 1 -> b;"
                     expectParseError Codes.InvalidTimedRule (1, 12) "a : when x at 1 -> b;"
+                } ]
+
+          testList
+              "include"
+              [ test "parses include declarations" {
+                    match parseOk "include L = \"surfaces/leaf.s\";\naxiom: ~L;" with
+                    | [ Include("L", np, "surfaces/leaf.s", p); Axiom _ ] ->
+                        Expect.equal np { Line = 1; Column = 9 } "name pos"
+                        Expect.equal p { Line = 1; Column = 1 } "stmt pos"
+                    | r -> failtestf "unexpected %A" r
+                }
+                test "double quote remains a symbol in module mode" {
+                    Expect.equal (axiomText "\" F \"") "\" F \"" ""
+                }
+                test "missing ; before and after include" {
+                    expectParseError Codes.MissingSemicolon (2, 1) "A -> B\ninclude L = \"leaf.s\";"
+                    expectParseError Codes.MissingSemicolon (2, 1) "include L = \"leaf.s\"\naxiom: F;"
+                    expectParseError Codes.MissingSemicolon (2, 1) "include L = \"leaf.s\"\nA -> F;"
+                }
+                test "wrong separator suggests =" {
+                    expectParseError Codes.WrongSeparator (1, 11) "include L : \"leaf.s\";"
+                }
+                test "invalid string literals emit RP0023" {
+                    expectParseError Codes.InvalidStringLiteral (1, 13) "include L = \"unterminated;"
+                    expectParseError Codes.InvalidStringLiteral (1, 13) "include L = \"\";"
+                    expectParseError Codes.InvalidStringLiteral (1, 13) "include L = \"a\nb\";"
+                    expectParseError Codes.InvalidStringLiteral (1, 13) "include L = \"a\000b\";"
+                }
+                test "invalid include names emit RP0119" {
+                    expectParseError Codes.InvalidIncludeName (1, 9) "include let = \"a.s\";"
+                    expectParseError Codes.InvalidIncludeName (1, 9) "include angle = \"a.s\";"
+                    expectParseError Codes.InvalidIncludeName (1, 9) "include module = \"a.s\";"
+                    expectParseError Codes.InvalidIncludeName (1, 9) "include _ = \"a.s\";"
                 } ] ]
 
 [<Tests>]

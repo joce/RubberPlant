@@ -179,4 +179,46 @@ let tests =
                             sec (Vec3.create 0.0 1.0 0.0) 800.0 1.0 1.0 0 ] }
 
               Expect.isError (Svg.render Svg.defaultOptions [ tooWide ]) "too-wide GC rejected"
+          }
+
+          test "surfaces render as 16-vertex boundary polygons with palette color" {
+              let cp =
+                  [| for i in 0..3 do
+                         for j in 0..3 ->
+                             let u = float i / 3.0
+                             let vCoord = float j / 3.0
+                             Vec3.create ((vCoord - 0.5) * u) (1.0 - u) (0.25 * u * (1.0 - u)) |]
+
+              let surf: BezierSurface =
+                  { Name = "Pinch"
+                    DefaultDivisions = (2, 2)
+                    EndPoint = Vec3.create 0.0 1.0 0.0
+                    Patches =
+                      [| { Name = "p0"
+                           Neighbors =
+                             { TopLeft = None
+                               Top = None
+                               TopRight = None
+                               Left = None
+                               Right = None
+                               BottomLeft = None
+                               Bottom = None
+                               BottomRight = None }
+                           ControlPoints = cp } |] }
+
+              let geometry =
+                  [ Surface
+                        { Surface = surf
+                          Origin = Vec3.zero
+                          AxisX = Vec3.create 1.0 0.0 0.0
+                          AxisY = Vec3.create 0.0 1.0 0.0
+                          AxisZ = Vec3.create 0.0 0.0 1.0
+                          Scale = Vec3.create 1.0 1.0 1.0
+                          Color = 1 } ]
+
+              let svg = Svg.render options geometry |> ok
+              Expect.stringContains svg "<polygon points=\"" "polygon emitted"
+              Expect.stringContains svg "fill=\"#2e7d32\"" "palette entry 1"
+              let ptsAttr = svg.Split([| "points=\"" |], StringSplitOptions.None).[1].Split('"').[0]
+              Expect.equal (ptsAttr.Split(' ').Length) 16 "16 boundary vertices"
           } ]

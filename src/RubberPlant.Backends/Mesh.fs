@@ -13,9 +13,14 @@ type MeshOptions =
     { /// Facets around a cylinder; at least 3.
       Sides: int
       /// World units per width unit; None means "auto" (§4.4).
-      WidthScale: float option }
+      WidthScale: float option
+      /// Bicubic patch subdivision per axis; None uses the `.s` PRECISION (v0.3).
+      SurfaceDiv: int option }
 
-let defaultMeshOptions = { Sides = 12; WidthScale = None }
+let defaultMeshOptions =
+    { Sides = 12
+      WidthScale = None
+      SurfaceDiv = None }
 
 type MeshGroup =
     { /// Palette entry, 0-7 (§4.5).
@@ -42,10 +47,10 @@ let private effectiveWidth (s: CrossSection) =
 let private points (geometry: Geometry) =
     geometry
     |> Seq.collect (function
-        | Segment(p0, p1, _, _) -> [ p0; p1 ]
-        | Polygon(vs, _) -> vs
-        | GeneralizedCylinder gc -> gc.Sections |> List.map _.P
-        | Surface _ -> [])
+        | Segment(p0, p1, _, _) -> Seq.ofList [ p0; p1 ]
+        | Polygon(vs, _) -> Seq.ofList vs
+        | GeneralizedCylinder gc -> gc.Sections |> Seq.map _.P
+        | Surface inst -> Bezier.instanceControlPoints inst)
 
 /// The width scale k (§4.4).
 let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<float, string> =
@@ -271,6 +276,18 @@ let private addPolygon (g: GroupBuilder) (vertices: Vec3 list) =
                 for t in tris do
                     g.Triangles.Add(first + t)
 
+/// Tessellates a predefined bicubic Bézier surface instance (v0.3 §4.4).
+let private addSurface (g: GroupBuilder) (divOverride: int option) (inst: SurfaceInstance) =
+    let tess = Bezier.tessellateSurface divOverride inst
+
+    if tess.Triangles.Length > 0 then
+        let first = g.Positions.Count
+        g.Positions.AddRange tess.Positions
+        g.Normals.AddRange tess.Normals
+
+        for t in tess.Triangles do
+            g.Triangles.Add(first + t)
+
 // ---------------------------------------------------------------------- build
 
 /// Builds the mesh of some geometry (backends.md §4). Fails on invalid options,
@@ -280,43 +297,46 @@ let build (options: MeshOptions) (geometry: Geometry) : Result<Mesh, string> =
     if options.Sides < 3 then
         Error $"a cylinder needs at least 3 sides, got %s{string options.Sides}"
     else
-        widthScale options geometry
-        |> Result.map (fun k ->
-            let ring = ringDirections options.Sides
-            let groups = Dictionary<int, GroupBuilder>()
+        match options.SurfaceDiv with
+        | Some d when d < 1 -> Error $"surface subdivision must be at least 1, got %s{string d}"
+        | _ ->
+            widthScale options geometry
+            |> Result.map (fun k ->
+                let ring = ringDirections options.Sides
+                let groups = Dictionary<int, GroupBuilder>()
 
-            let groupOf color =
-                let entry = Palette.entry color
+                let groupOf color =
+                    let entry = Palette.entry color
 
-                match groups.TryGetValue entry with
-                | true, g -> g
-                | false, _ ->
-                    let g = GroupBuilder()
-                    groups[entry] <- g
-                    g
+                    match groups.TryGetValue entry with
+                    | true, g -> g
+                    | false, _ ->
+                        let g = GroupBuilder()
+                        groups[entry] <- g
+                        g
 
-            for prim in geometry do
-                match prim with
-                | Segment(p0, p1, w, color) -> addCylinder (groupOf color) ring p0 p1 (k * w / 2.0)
-                | Polygon(vs, color) -> addPolygon (groupOf color) vs
-                | GeneralizedCylinder gc -> SweptMesh.addCylinder groupOf options.Sides k gc
-                | Surface _ -> ()
+                for prim in geometry do
+                    match prim with
+                    | Segment(p0, p1, w, color) -> addCylinder (groupOf color) ring p0 p1 (k * w / 2.0)
+                    | Polygon(vs, color) -> addPolygon (groupOf color) vs
+                    | GeneralizedCylinder gc -> SweptMesh.addCylinder groupOf options.Sides k gc
+                    | Surface inst -> addSurface (groupOf inst.Color) options.SurfaceDiv inst
 
-            { Groups =
-                groups
-                |> Seq.filter (fun kv -> kv.Value.Triangles.Count > 0)
-                |> Seq.sortBy _.Key
-                |> Seq.map (fun kv ->
-                    { Color = kv.Key
-                      Positions = kv.Value.Positions.ToArray()
-                      Normals = kv.Value.Normals.ToArray()
-                      Triangles = kv.Value.Triangles.ToArray() })
-                |> List.ofSeq })
-        |> Result.bind (fun mesh ->
-            let finite (g: MeshGroup) =
-                Array.forall isFinite g.Positions && Array.forall isFinite g.Normals
+                { Groups =
+                    groups
+                    |> Seq.filter (fun kv -> kv.Value.Triangles.Count > 0)
+                    |> Seq.sortBy _.Key
+                    |> Seq.map (fun kv ->
+                        { Color = kv.Key
+                          Positions = kv.Value.Positions.ToArray()
+                          Normals = kv.Value.Normals.ToArray()
+                          Triangles = kv.Value.Triangles.ToArray() })
+                    |> List.ofSeq })
+            |> Result.bind (fun mesh ->
+                let finite (g: MeshGroup) =
+                    Array.forall isFinite g.Positions && Array.forall isFinite g.Normals
 
-            if List.forall finite mesh.Groups then
-                Ok mesh
-            else
-                Error "the mesh has coordinates too large to represent; use a smaller --width-scale or smaller steps")
+                if List.forall finite mesh.Groups then
+                    Ok mesh
+                else
+                    Error "the mesh has coordinates too large to represent; use a smaller --width-scale or smaller steps")
