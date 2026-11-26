@@ -1073,13 +1073,46 @@ let parseBatchCommand (args: string list) : Result<BatchCommand, string> =
 let parseBatchLine (line: string) : Result<BatchCommand, string> =
     splitLine line |> Result.bind parseBatchCommand
 
-/// Discrete step list or continuous time list for `sequence` rendering (§5.3).
+let maxSequenceFrames = 1_000_000
+
+/// O(1)-memory frame schedule descriptor for `sequence` rendering (§5.3).
 type SequenceSchedule =
-    | DiscreteSteps of steps: int list
-    | TimedPoints of times: float list
+    | DiscreteRange of startStep: int * step: int * count: int
+    | TimedStepRange of startTime: float * endTime: float * step: float * count: int
+    | TimedFramesRange of startTime: float * endTime: float * count: int
+
+type SequenceFrameStage =
+    | FrameDiscrete of step: int
+    | FrameTimed of time: float
+
+let sequenceFrameCount (schedule: SequenceSchedule) : int =
+    match schedule with
+    | DiscreteRange(_, _, count)
+    | TimedStepRange(_, _, _, count)
+    | TimedFramesRange(_, _, count) -> count
+
+let sequenceFrameStage (schedule: SequenceSchedule) (index: int) : SequenceFrameStage =
+    match schedule with
+    | DiscreteRange(startStep, step, _) -> FrameDiscrete(startStep + index * step)
+    | TimedStepRange(startTime, endTime, step, _) ->
+        let t =
+            if index = 0 then startTime
+            else min endTime (startTime + float index * step)
+
+        FrameTimed t
+    | TimedFramesRange(startTime, endTime, count) ->
+        let t =
+            if index = 0 then startTime
+            elif index = count - 1 then endTime
+            else startTime + (endTime - startTime) * (float index / float (count - 1))
+
+        FrameTimed t
+
+let sequenceFrameStages (schedule: SequenceSchedule) : SequenceFrameStage list =
+    [ for i in 0 .. sequenceFrameCount schedule - 1 -> sequenceFrameStage schedule i ]
 
 /// Resolves discrete vs timed `sequence` frame schedule after inspecting `isTimed`.
-/// Returns `Error` (CLI exit 2) on model-kind/flag mismatches.
+/// Returns `Error` (CLI exit 2) on model-kind/flag mismatches or frame counts exceeding `maxSequenceFrames`.
 let resolveSequenceSchedule
     (isTimed: bool)
     (fromVal: float)
@@ -1106,18 +1139,16 @@ let resolveSequenceSchedule
                 | Some _ -> Error "--step must be an integer >= 1 for a discrete model"
 
             stepRes
-            |> Result.map (fun step ->
+            |> Result.bind (fun step ->
                 let startStep = int64 fromVal
                 let endStep = int64 toVal
                 let step64 = int64 step
-                let steps = ResizeArray<int>()
-                let mutable cur = startStep
+                let count64 = (endStep - startStep) / step64 + 1L
 
-                while cur <= endStep do
-                    steps.Add(int cur)
-                    cur <- cur + step64
-
-                DiscreteSteps(List.ofSeq steps))
+                if count64 > int64 maxSequenceFrames then
+                    Error "sequence frame count exceeds maximum"
+                else
+                    Ok(DiscreteRange(int startStep, step, int count64)))
     else
         match stepOpt, framesOpt with
         | None, None -> Error "timed models require --step or --frames"
@@ -1125,36 +1156,25 @@ let resolveSequenceSchedule
         | None, Some k ->
             if k < 2 then
                 Error "--frames must be at least 2"
+            elif k > maxSequenceFrames then
+                Error "sequence frame count exceeds maximum"
             else
-                let times =
-                    [ for i = 0 to k - 1 do
-                          if i = 0 then fromVal
-                          elif i = k - 1 then toVal
-                          else fromVal + (toVal - fromVal) * (float i / float (k - 1)) ]
-
-                Ok(TimedPoints times)
+                Ok(TimedFramesRange(fromVal, toVal, k))
         | Some dt, None ->
             if not (Double.IsFinite dt && dt > 0.0) then
                 Error "--step must be greater than 0"
             elif fromVal = toVal then
-                Ok(TimedPoints [ fromVal ])
+                Ok(TimedStepRange(fromVal, toVal, dt, 1))
             else
                 let span = toVal - fromVal
                 let rawCount = span / dt
                 let tol = max 1e-12 (rawCount * 1e-9)
-                let countF = Math.Floor(rawCount + tol)
+                let countF = Math.Floor(rawCount + tol) + 1.0
 
-                if not (Double.IsFinite countF) || countF > 1_000_000.0 then
+                if not (Double.IsFinite countF) || countF > float maxSequenceFrames then
                     Error "sequence frame count exceeds maximum"
                 else
-                    let n = int countF
-
-                    let times =
-                        [ for i = 0 to n do
-                              if i = 0 then fromVal
-                              else min toVal (fromVal + float i * dt) ]
-
-                    Ok(TimedPoints times)
+                    Ok(TimedStepRange(fromVal, toVal, dt, int countF))
 
 // --------------------------------------------------- pure session state machine
 

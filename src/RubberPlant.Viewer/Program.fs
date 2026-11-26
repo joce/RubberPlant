@@ -423,16 +423,12 @@ let private runHeadlessOneShot
                 1
             | Ok pngBytes -> writeRenderOutputs baseSpec.Output pngBytes loaded.Stats baseSpec.Stats stdout stderr
 
-let private frameModelForSchedule (model: Model.Model) (schedule: Protocol.SequenceSchedule) : seq<int * Model.Model> =
-    match schedule with
-    | Protocol.DiscreteSteps steps ->
-        steps
-        |> Seq.mapi (fun i n ->
-            i, { model with Settings = { model.Settings with Derivations = n } })
-    | Protocol.TimedPoints times ->
-        times
-        |> Seq.mapi (fun i t ->
-            i, { model with Settings = { model.Settings with Time = Some t } })
+let private frameModelAt (model: Model.Model) (schedule: Protocol.SequenceSchedule) (index: int) : Model.Model =
+    match Protocol.sequenceFrameStage schedule index with
+    | Protocol.FrameDiscrete n ->
+        { model with Settings = { model.Settings with Derivations = n } }
+    | Protocol.FrameTimed t ->
+        { model with Settings = { model.Settings with Time = Some t } }
 
 let private executeSequence
     (renderer: Renderer.IOffscreenRenderer)
@@ -440,10 +436,7 @@ let private executeSequence
     (model: Model.Model)
     (loadOpts: Protocol.LoadOptions)
     (outputPrefix: string)
-    (fromVal: float)
-    (toVal: float)
-    (stepOpt: float option)
-    (framesOpt: int option)
+    (schedule: Protocol.SequenceSchedule)
     (mode: Protocol.SequenceMode)
     (snapSize: int * int)
     (sheetSize: int)
@@ -453,190 +446,190 @@ let private executeSequence
     (stdout: TextWriter)
     (stderr: TextWriter)
     : int =
-    let isTimed = Model.Model.isTimed model
+    let frameCount = Protocol.sequenceFrameCount schedule
+    let baseMeshOpts = Protocol.toMeshOptionsWithSettings model.Settings loadOpts
 
-    match Protocol.resolveSequenceSchedule isTimed fromVal toVal stepOpt framesOpt with
-    | Error msg ->
-        stderr.WriteLine($"rubberplant-viewer: %s{msg}")
-        2
-    | Ok schedule ->
-        let baseMeshOpts = Protocol.toMeshOptionsWithSettings model.Settings loadOpts
-
-        let precheckError =
-            if baseMeshOpts.Sides < 3 then
-                Some $"a cylinder needs at least 3 sides, got %s{string baseMeshOpts.Sides}"
-            else
-                match baseMeshOpts.SurfaceDiv with
-                | Some d when d < 1 -> Some $"surface subdivision must be at least 1, got %s{string d}"
+    let precheckError =
+        if baseMeshOpts.Sides < 3 then
+            Some $"a cylinder needs at least 3 sides, got %s{string baseMeshOpts.Sides}"
+        else
+            match baseMeshOpts.SurfaceDiv with
+            | Some d when d < 1 -> Some $"surface subdivision must be at least 1, got %s{string d}"
+            | _ ->
+                match baseMeshOpts.WidthScale with
+                | Some k when not (Double.IsFinite k && k > 0.0) ->
+                    Some $"the width scale must be a finite number greater than 0, got %s{string k}"
                 | _ ->
-                    match baseMeshOpts.WidthScale with
-                    | Some k when not (Double.IsFinite k && k > 0.0) ->
-                        Some $"the width scale must be a finite number greater than 0, got %s{string k}"
-                    | _ ->
-                        try
-                            let samplePath = $"%s{outputPrefix}0000.png"
+                    try
+                        let samplePath = $"%s{outputPrefix}0000.png"
 
-                            if Directory.Exists samplePath then
-                                Some $"%s{samplePath}: is a directory"
+                        if Directory.Exists samplePath then
+                            Some $"%s{samplePath}: is a directory"
+                        else
+                            let fullSample = Path.GetFullPath samplePath
+                            let dir = Path.GetDirectoryName fullSample
+
+                            if String.IsNullOrEmpty dir then
+                                Some $"%s{samplePath}: invalid output path"
+                            elif not (Directory.Exists dir) then
+                                Some $"Could not find a part of the path '%s{dir}'."
                             else
-                                let fullSample = Path.GetFullPath samplePath
-                                let dir = Path.GetDirectoryName fullSample
+                                None
+                    with ex ->
+                        Some ex.Message
 
-                                if String.IsNullOrEmpty dir then
-                                    Some $"%s{samplePath}: invalid output path"
-                                elif not (Directory.Exists dir) then
-                                    Some $"Could not find a part of the path '%s{dir}'."
-                                else
-                                    None
-                        with ex ->
-                            Some ex.Message
+    match precheckError with
+    | Some msg ->
+        stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+        1
+    | None ->
+        let limits = Protocol.toLimits loadOpts
 
-        match precheckError with
-        | Some msg ->
-            stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
-            1
-        | None ->
-            let limits = Protocol.toLimits loadOpts
+        let accumulateExactBounds (fixedScale: float) : Result<Scene.ReferenceFrame, unit> =
+            let meshOpts = { baseMeshOpts with WidthScale = Some fixedScale }
+            let mutable accBounds: (Geometry.Vec3 * Geometry.Vec3) option = None
+            let mutable failed = false
 
-            let accumulateExactBounds (fixedScale: float) : Result<Scene.ReferenceFrame, unit> =
-                let meshOpts = { baseMeshOpts with WidthScale = Some fixedScale }
-                let mutable accBounds: (Geometry.Vec3 * Geometry.Vec3) option = None
+            for i = 0 to frameCount - 1 do
+                if not failed then
+                    let frameModel = frameModelAt model schedule i
+
+                    match Pipeline.runWith limits frameModel with
+                    | Error diags ->
+                        report inputPath diags stderr
+                        failed <- true
+                    | Ok output ->
+                        match Mesh.build meshOpts output.Geometry with
+                        | Error msg ->
+                            stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                            failed <- true
+                        | Ok mesh ->
+                            match Scene.validateAndAccumulateMeshBounds mesh accBounds with
+                            | Error msg ->
+                                stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                                failed <- true
+                            | Ok nextAcc -> accBounds <- nextAcc
+
+            if failed then
+                Error()
+            else
+                match Scene.referenceFrameOfBounds fixedScale accBounds with
+                | Error msg ->
+                    stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                    Error()
+                | Ok frame -> Ok frame
+
+        // Pass 1 (O(1) memory, no retained meshes): derive fixed WidthScale and ReferenceFrame.
+        let frameRes =
+            match baseMeshOpts.WidthScale with
+            | Some k -> accumulateExactBounds k
+            | None ->
+                let mutable hasPts = false
+                let mutable minX = infinity
+                let mutable minY = infinity
+                let mutable maxX = -infinity
+                let mutable maxY = -infinity
+                let mutable maxWidest = 0.0
                 let mutable failed = false
 
-                for _, frameModel in frameModelForSchedule model schedule do
+                for i = 0 to frameCount - 1 do
                     if not failed then
+                        let frameModel = frameModelAt model schedule i
+
                         match Pipeline.runWith limits frameModel with
                         | Error diags ->
                             report inputPath diags stderr
                             failed <- true
                         | Ok output ->
-                            match Mesh.build meshOpts output.Geometry with
-                            | Error msg ->
-                                stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
-                                failed <- true
-                            | Ok mesh ->
-                                match Scene.validateAndAccumulateMeshBounds mesh accBounds with
-                                | Error msg ->
-                                    stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
-                                    failed <- true
-                                | Ok nextAcc -> accBounds <- nextAcc
+                            let struct (gMin, gMax, gHas, gWidest) =
+                                Mesh.geometryBoundsAndMaxWidth output.Geometry
+
+                            maxWidest <- max maxWidest gWidest
+
+                            if gHas then
+                                hasPts <- true
+                                minX <- min minX gMin.X
+                                minY <- min minY gMin.Y
+                                maxX <- max maxX gMax.X
+                                maxY <- max maxY gMax.Y
 
                 if failed then
                     Error()
                 else
-                    match Scene.referenceFrameOfBounds fixedScale accBounds with
+                    let extentXY = if hasPts then max (maxX - minX) (maxY - minY) else 0.0
+
+                    match Mesh.resolveAutoWidthScale extentXY maxWidest with
                     | Error msg ->
                         stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
                         Error()
-                    | Ok frame -> Ok frame
+                    | Ok autoK -> accumulateExactBounds autoK
 
-            // Pass 1 (O(1) memory, no retained meshes): derive fixed WidthScale and ReferenceFrame.
-            let frameRes =
-                match baseMeshOpts.WidthScale with
-                | Some k -> accumulateExactBounds k
-                | None ->
-                    let mutable hasPts = false
-                    let mutable minX = infinity
-                    let mutable minY = infinity
-                    let mutable maxX = -infinity
-                    let mutable maxY = -infinity
-                    let mutable maxWidest = 0.0
-                    let mutable failed = false
+        match frameRes with
+        | Error() -> 1
+        | Ok frame ->
+            // Pass 2 (O(1) memory): re-evaluate each frame with fixed WidthScale and ReferenceFrame, render, and write atomically.
+            let seqMeshOpts = { baseMeshOpts with WidthScale = Some frame.WidthScale }
+            let w, h = snapSize
+            let cam = resolveCam frame.Bounds (float w / float h)
+            let mutable failed = false
 
-                    for _, frameModel in frameModelForSchedule model schedule do
-                        if not failed then
-                            match Pipeline.runWith limits frameModel with
-                            | Error diags ->
-                                report inputPath diags stderr
-                                failed <- true
-                            | Ok output ->
-                                let struct (gMin, gMax, gHas, gWidest) =
-                                    Mesh.geometryBoundsAndMaxWidth output.Geometry
+            for i = 0 to frameCount - 1 do
+                if not failed then
+                    let frameModel = frameModelAt model schedule i
 
-                                maxWidest <- max maxWidest gWidest
+                    match Pipeline.runWith limits frameModel with
+                    | Error diags ->
+                        report inputPath diags stderr
+                        failed <- true
+                    | Ok output ->
+                        report inputPath output.Warnings stderr
 
-                                if gHas then
-                                    hasPts <- true
-                                    minX <- min minX gMin.X
-                                    minY <- min minY gMin.Y
-                                    maxX <- max maxX gMax.X
-                                    maxY <- max maxY gMax.Y
-
-                    if failed then
-                        Error()
-                    else
-                        let extentXY = if hasPts then max (maxX - minX) (maxY - minY) else 0.0
-
-                        match Mesh.resolveAutoWidthScale extentXY maxWidest with
+                        match Mesh.build seqMeshOpts output.Geometry with
                         | Error msg ->
                             stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
-                            Error()
-                        | Ok autoK -> accumulateExactBounds autoK
-
-            match frameRes with
-            | Error() -> 1
-            | Ok frame ->
-                // Pass 2 (O(1) memory): re-evaluate each frame with fixed WidthScale and ReferenceFrame, render, and write atomically.
-                let seqMeshOpts = { baseMeshOpts with WidthScale = Some frame.WidthScale }
-                let w, h = snapSize
-                let cam = resolveCam frame.Bounds (float w / float h)
-                let mutable failed = false
-
-                for i, frameModel in frameModelForSchedule model schedule do
-                    if not failed then
-                        match Pipeline.runWith limits frameModel with
-                        | Error diags ->
-                            report inputPath diags stderr
                             failed <- true
-                        | Ok output ->
-                            report inputPath output.Warnings stderr
-
-                            match Mesh.build seqMeshOpts output.Geometry with
+                        | Ok mesh ->
+                            match Scene.fromMeshWithFrame frame mesh with
                             | Error msg ->
                                 stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
                                 failed <- true
-                            | Ok mesh ->
-                                match Scene.fromMeshWithFrame frame mesh with
+                            | Ok scene ->
+                                let grid =
+                                    if mode = Protocol.SeqSilhouette || not showGrid then
+                                        None
+                                    else
+                                        Scene.buildGrid scene
+
+                                renderer.UploadScene scene grid
+
+                                let pngRes =
+                                    match mode with
+                                    | Protocol.SeqSnapshot ->
+                                        renderer.RenderShaded w h cam showGrid wireframe
+                                        |> Result.map (Png.encodeRgb24 w h)
+                                    | Protocol.SeqContactSheet ->
+                                        renderContactSheet renderer frame.Bounds sheetSize showGrid wireframe
+                                    | Protocol.SeqSilhouette ->
+                                        renderer.RenderSilhouette w h cam
+                                        |> Result.map (Png.encodeGray8 w h)
+
+                                match pngRes with
                                 | Error msg ->
-                                    stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                                    stderr.WriteLine($"rubberplant-viewer: %s{msg}")
                                     failed <- true
-                                | Ok scene ->
-                                    let grid =
-                                        if mode = Protocol.SeqSilhouette || not showGrid then
-                                            None
-                                        else
-                                            Scene.buildGrid scene
+                                | Ok pngBytes ->
+                                    let idxStr = i.ToString("D4", CultureInfo.InvariantCulture)
+                                    let outPath = $"%s{outputPrefix}%s{idxStr}.png"
 
-                                    renderer.UploadScene scene grid
-
-                                    let pngRes =
-                                        match mode with
-                                        | Protocol.SeqSnapshot ->
-                                            renderer.RenderShaded w h cam showGrid wireframe
-                                            |> Result.map (Png.encodeRgb24 w h)
-                                        | Protocol.SeqContactSheet ->
-                                            renderContactSheet renderer frame.Bounds sheetSize showGrid wireframe
-                                        | Protocol.SeqSilhouette ->
-                                            renderer.RenderSilhouette w h cam
-                                            |> Result.map (Png.encodeGray8 w h)
-
-                                    match pngRes with
+                                    match writeAtomic [ outPath, pngBytes ] with
                                     | Error msg ->
-                                        stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                                        stderr.WriteLine($"error: can't write the output: %s{msg}")
                                         failed <- true
-                                    | Ok pngBytes ->
-                                        let idxStr = i.ToString("D4", CultureInfo.InvariantCulture)
-                                        let outPath = $"%s{outputPrefix}%s{idxStr}.png"
+                                    | Ok paths ->
+                                        for p in paths do
+                                            stdout.WriteLine($"wrote %s{p}")
 
-                                        match writeAtomic [ outPath, pngBytes ] with
-                                        | Error msg ->
-                                            stderr.WriteLine($"error: can't write the output: %s{msg}")
-                                            failed <- true
-                                        | Ok paths ->
-                                            for p in paths do
-                                                stdout.WriteLine($"wrote %s{p}")
-
-                if failed then 1 else 0
+            if failed then 1 else 0
 
 let private runBatchCmd
     (renderer: Renderer.IOffscreenRenderer)
@@ -784,31 +777,35 @@ let private runBatchCmd
         | Ok loaded ->
             let curState = state
             let prevPayload = loaded.Scene
-            let snapSize = defaultArg seq.SnapshotSize curState.DefaultSize
-            let sheetSize = defaultArg seq.ContactSheetSize Protocol.defaultContactSheetSize
-            let resolveCam bounds aspect = Protocol.resolveRenderCamera curState bounds seq.Camera aspect
+            let isTimed = Model.Model.isTimed prevPayload.CompiledModel
 
-            try
-                executeSequence
-                    renderer
-                    loaded.Input
-                    prevPayload.CompiledModel
-                    loaded.Load
-                    seq.OutputPrefix
-                    seq.From
-                    seq.To
-                    seq.Step
-                    seq.Frames
-                    seq.Mode
-                    snapSize
-                    sheetSize
-                    curState.Grid
-                    curState.Wireframe
-                    resolveCam
-                    stdout
-                    stderr
-            finally
-                renderer.UploadScene prevPayload.Scene prevPayload.Grid
+            match Protocol.resolveSequenceSchedule isTimed seq.From seq.To seq.Step seq.Frames with
+            | Error msg ->
+                stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                2
+            | Ok schedule ->
+                let snapSize = defaultArg seq.SnapshotSize curState.DefaultSize
+                let sheetSize = defaultArg seq.ContactSheetSize Protocol.defaultContactSheetSize
+                let resolveCam bounds aspect = Protocol.resolveRenderCamera curState bounds seq.Camera aspect
+
+                try
+                    executeSequence
+                        renderer
+                        loaded.Input
+                        prevPayload.CompiledModel
+                        loaded.Load
+                        seq.OutputPrefix
+                        schedule
+                        seq.Mode
+                        snapSize
+                        sheetSize
+                        curState.Grid
+                        curState.Wireframe
+                        resolveCam
+                        stdout
+                        stderr
+                finally
+                    renderer.UploadScene prevPayload.Scene prevPayload.Grid
     | Protocol.BatchStats pretty ->
         match Protocol.requireLoaded state with
         | Error msg ->
@@ -1306,31 +1303,33 @@ let internal executeCli (argv: string list) (stdin: TextReader) (stdout: TextWri
         match compileAndLoadModelWithRetries 0 0 seq.Input seq.Load stderr with
         | Error() -> 1
         | Ok model ->
-            match Renderer.createHeadless () with
+            match Protocol.resolveSequenceSchedule (Model.Model.isTimed model) seq.From seq.To seq.Step seq.Frames with
             | Error msg ->
                 stderr.WriteLine($"rubberplant-viewer: %s{msg}")
-                1
-            | Ok renderer ->
-                use r = renderer
+                2
+            | Ok schedule ->
+                match Renderer.createHeadless () with
+                | Error msg ->
+                    stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                    1
+                | Ok renderer ->
+                    use r = renderer
 
-                executeSequence
-                    r
-                    seq.Input
-                    model
-                    seq.Load
-                    seq.OutputPrefix
-                    seq.From
-                    seq.To
-                    seq.Step
-                    seq.Frames
-                    seq.Mode
-                    seq.SnapshotSize
-                    seq.ContactSheetSize
-                    seq.Grid
-                    seq.Wireframe
-                    (fun bounds aspect -> Protocol.resolveOneShotCamera bounds seq.Camera aspect)
-                    stdout
-                    stderr
+                    executeSequence
+                        r
+                        seq.Input
+                        model
+                        seq.Load
+                        seq.OutputPrefix
+                        schedule
+                        seq.Mode
+                        seq.SnapshotSize
+                        seq.ContactSheetSize
+                        seq.Grid
+                        seq.Wireframe
+                        (fun bounds aspect -> Protocol.resolveOneShotCamera bounds seq.Camera aspect)
+                        stdout
+                        stderr
     | Ok(Protocol.View args) -> executeViewWithVisibility true args stdin stdout stderr
 
 [<EntryPoint>]

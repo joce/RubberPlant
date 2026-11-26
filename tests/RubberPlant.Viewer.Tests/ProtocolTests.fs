@@ -569,15 +569,36 @@ let tests =
               Expect.isError (parseBatchLine "sequence f_ --from 0 --to 2 --no-grid") "batch sequence rejects --no-grid"
               Expect.isError (parseBatchLine "sequence f_ --from 0 --to 2 --stats") "batch sequence rejects --stats"
 
-              // resolveSequenceSchedule discrete vs timed
-              Expect.equal (resolveSequenceSchedule false 0.0 4.0 None None) (Ok(DiscreteSteps [ 0; 1; 2; 3; 4 ])) "discrete default step 1"
-              Expect.equal (resolveSequenceSchedule false 1.0 5.0 (Some 2.0) None) (Ok(DiscreteSteps [ 1; 3; 5 ])) "discrete step 2"
+              // resolveSequenceSchedule discrete vs timed (O(1) descriptors + maxSequenceFrames cap)
+              let discDefault = Expect.wantOk (resolveSequenceSchedule false 0.0 4.0 None None) "discrete default step 1"
+              Expect.equal discDefault (DiscreteRange(0, 1, 5)) "discrete descriptor"
+              Expect.equal (sequenceFrameStages discDefault) [ FrameDiscrete 0; FrameDiscrete 1; FrameDiscrete 2; FrameDiscrete 3; FrameDiscrete 4 ] "discrete step 1 stages"
+
+              let discStep2 = Expect.wantOk (resolveSequenceSchedule false 1.0 5.0 (Some 2.0) None) "discrete step 2"
+              Expect.equal (sequenceFrameStages discStep2) [ FrameDiscrete 1; FrameDiscrete 3; FrameDiscrete 5 ] "discrete step 2 stages"
+
+              let discSingle = Expect.wantOk (resolveSequenceSchedule false 3.0 3.0 None None) "discrete from == to"
+              Expect.equal (sequenceFrameStages discSingle) [ FrameDiscrete 3 ] "discrete single stage"
+
               Expect.isError (resolveSequenceSchedule false 0.0 4.0 None (Some 3)) "discrete rejects --frames"
               Expect.isError (resolveSequenceSchedule false 0.0 4.0 (Some 0.5) None) "discrete rejects fractional --step"
               Expect.isError (resolveSequenceSchedule false 0.5 4.0 None None) "discrete rejects fractional --from"
               Expect.isError (resolveSequenceSchedule false 0.0 4.5 None None) "discrete rejects fractional --to"
+              Expect.isError (resolveSequenceSchedule false 0.0 2147483647.0 None None) "discrete rejects huge range without OOM"
+              Expect.isError (resolveSequenceSchedule false 0.0 (float maxSequenceFrames) None None) "discrete rejects maxSequenceFrames + 1"
+              Expect.isOk (resolveSequenceSchedule false 0.0 (float (maxSequenceFrames - 1)) None None) "discrete allows exact maxSequenceFrames"
 
               Expect.isError (resolveSequenceSchedule true 0.0 1.0 None None) "timed requires --step or --frames"
-              Expect.equal (resolveSequenceSchedule true 0.0 0.3 (Some 0.1) None) (Ok(TimedPoints [ 0.0; 0.1; 0.2; 0.3 ])) "timed step 0.1 hits endpoint cleanly"
-              Expect.equal (resolveSequenceSchedule true 1.0 3.0 None (Some 5)) (Ok(TimedPoints [ 1.0; 1.5; 2.0; 2.5; 3.0 ])) "timed frames 5"
+
+              let timedStep = Expect.wantOk (resolveSequenceSchedule true 0.0 0.3 (Some 0.1) None) "timed step 0.1"
+              Expect.equal (sequenceFrameStages timedStep) [ FrameTimed 0.0; FrameTimed 0.1; FrameTimed 0.2; FrameTimed 0.3 ] "timed step 0.1 hits endpoint cleanly"
+
+              let timedSingle = Expect.wantOk (resolveSequenceSchedule true 1.5 1.5 (Some 0.25) None) "timed from == to"
+              Expect.equal (sequenceFrameStages timedSingle) [ FrameTimed 1.5 ] "timed single stage"
+
+              let timedFrames = Expect.wantOk (resolveSequenceSchedule true 1.0 3.0 None (Some 5)) "timed frames 5"
+              Expect.equal (sequenceFrameStages timedFrames) [ FrameTimed 1.0; FrameTimed 1.5; FrameTimed 2.0; FrameTimed 2.5; FrameTimed 3.0 ] "timed frames 5 stages"
+
+              Expect.isError (resolveSequenceSchedule true 0.0 1.0 None (Some(maxSequenceFrames + 1))) "timed rejects --frames > maxSequenceFrames"
+              Expect.isError (resolveSequenceSchedule true 0.0 1e6 (Some 0.5) None) "timed rejects --step exceeding maxSequenceFrames"
           } ]
