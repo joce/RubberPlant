@@ -93,13 +93,14 @@ let deriveWithTrace (limits: Limits) (model: Model) : Result<LString * Derivatio
 
                 counts[ruleIdx] <- counts[ruleIdx] + 1
 
-            let stack = Stack<struct (LString * int * float)>()
+            let stack = Stack<struct (LString * int * float * float)>()
 
             if model.Axiom.Length > 0 then
-                stack.Push(struct (model.Axiom, 0, t))
+                stack.Push(struct (model.Axiom, 0, 0.0, 0.0))
 
             while stack.Count > 0 do
-                let struct (str, startIdx, remT) = stack.Pop()
+                let struct (str, startIdx, elapsed, comp) = stack.Pop()
+                let remT = max 0.0 ((t - elapsed) + comp) |> normZero
                 let mutable i = startIdx
                 let mutable descended = false
 
@@ -126,23 +127,7 @@ let deriveWithTrace (limits: Limits) (model: Model) : Result<LString * Derivatio
                         else
                             let tau = args[0]
 
-                            match byName.TryGetValue name with
-                            | true, (ruleIdx, rule) when tau + remT > rule.TerminalAge ->
-                                // Axiom A3: D((a, tau), t) = D(succ, t - (beta - tau))
-                                recordDivision ruleIdx
-                                let tNext = max 0.0 (remT - (rule.TerminalAge - tau)) |> normZero
-
-                                if i + 1 < str.Length then
-                                    stack.Push(struct (str, i + 1, remT))
-
-                                if rule.Successor.Length > 0 then
-                                    stack.Push(struct (rule.Successor, 0, tNext))
-
-                                descended <- true
-                            | _ ->
-                                // Axiom A2: D((a, tau), t) = (a, tau + t)
-                                let newAge = normZero (tau + remT)
-
+                            let emitAged (newAge: float) =
                                 if not (Double.IsFinite newAge) then
                                     raise (
                                         TimedError(
@@ -155,6 +140,35 @@ let deriveWithTrace (limits: Limits) (model: Model) : Result<LString * Derivatio
 
                                 addSym (Mod(name, [| newAge |]))
                                 i <- i + 1
+
+                            match byName.TryGetValue name with
+                            | true, (ruleIdx, rule) ->
+                                let tol =
+                                    64.0
+                                    * 2.220446049250313e-16
+                                    * max (abs t) (max (abs rule.TerminalAge) (abs tau))
+
+                                if tau + remT > rule.TerminalAge + tol then
+                                    // Axiom A3: D((a, tau), t) = D(succ, t - (beta - tau))
+                                    recordDivision ruleIdx
+                                    let dt = rule.TerminalAge - tau
+                                    let y = dt - comp
+                                    let elapsedNext = elapsed + y
+                                    let compNext = (elapsedNext - elapsed) - y
+
+                                    if i + 1 < str.Length then
+                                        stack.Push(struct (str, i + 1, elapsed, comp))
+
+                                    if rule.Successor.Length > 0 then
+                                        stack.Push(struct (rule.Successor, 0, elapsedNext, compNext))
+
+                                    descended <- true
+                                else
+                                    // Axiom A2: D((a, tau), t) = (a, tau + t)
+                                    emitAged (min rule.TerminalAge (normZero (tau + remT)))
+                            | false, _ ->
+                                // Axiom A2: D((a, tau), t) = (a, tau + t)
+                                emitAged (normZero (tau + remT))
 
             let ruleFirings: Derivation.RuleFiring list =
                 model.TimedProductions
