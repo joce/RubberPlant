@@ -88,7 +88,7 @@ let private loadModelWithRetries
                     report input diags stderr
                     Error()
                 | Ok stats ->
-                    match Mesh.build (Protocol.toMeshOptions opts) output.Geometry with
+                    match Mesh.build (Protocol.toMeshOptionsWithSettings model.Settings opts) output.Geometry with
                     | Error msg ->
                         stderr.WriteLine($"%s{input}: error: %s{msg}")
                         Error()

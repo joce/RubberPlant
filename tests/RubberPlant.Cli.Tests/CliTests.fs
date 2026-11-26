@@ -320,6 +320,31 @@ let tests =
                   Expect.equal (run [ "derive"; interp; "--max-modules"; "2" ]) 0 "derived string is 1 symbol"
                   Expect.equal (run [ "derive"; interp; "--drawing"; "--max-modules"; "2" ]) 1 "drawing string exceeds limit"
                   Expect.equal (run [ "stats"; interp; "--max-modules"; "2" ]) 1 "stats drawing string exceeds limit")
+          }
+
+          test "settings { width_scale = <expr>; } applies to mesh outputs and can be overridden by --width-scale" {
+              withTempDir (fun dir ->
+                  let input = Path.Combine(dir, "leaf.rp")
+
+                  File.WriteAllText(
+                      input,
+                      "settings { width_scale = 0.5; }\naxiom: ContourFlat !(2) StartGC F(10) EndGC;\n"
+                  )
+
+                  let objSetting = Path.Combine(dir, "setting.obj")
+                  let objOverride = Path.Combine(dir, "override.obj")
+                  let objAuto = Path.Combine(dir, "auto.obj")
+
+                  Expect.equal (run [ "render"; input; "-o"; objSetting ]) 0 "uses settings width_scale = 0.5"
+                  Expect.equal (run [ "render"; input; "-o"; objOverride; "--width-scale"; "2" ]) 0 "CLI --width-scale overrides"
+                  Expect.equal (run [ "render"; input; "-o"; objAuto; "--width-scale"; "auto" ]) 0 "CLI --width-scale auto overrides"
+
+                  // Width = 2, k = 0.5 => full width 1.0 => X in [-0.5, 0.5]
+                  Expect.stringContains (File.ReadAllText objSetting) "v -0.5 0 0" "width_scale = 0.5 applied"
+                  // Width = 2, k = 2.0 => full width 4.0 => X in [-2, 2]
+                  Expect.stringContains (File.ReadAllText objOverride) "v -2 0 0" "--width-scale 2 overrides setting"
+                  // Width = 2, auto k = 10 / (800 - 22) = 10/778 => X != -0.5
+                  Expect.isFalse ((File.ReadAllText objAuto).Contains "v -0.5 0 0") "--width-scale auto overrides setting")
           } ]
 
 /// Runs `f` with stdout and stderr captured; returns its result and raw strings.

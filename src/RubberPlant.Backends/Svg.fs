@@ -28,12 +28,24 @@ let private num (v: float) =
     let r = if r = 0.0 then 0.0 else r // no "-0"
     r.ToString("0.##", CultureInfo.InvariantCulture)
 
+let private effectiveWidth (s: CrossSection) =
+    if s.ScaleL = 1.0 && s.ScaleU = 1.0 then
+        s.Width
+    else
+        s.Width * max s.ScaleL s.ScaleU
+
+let private spanWidth (s0: CrossSection) (s1: CrossSection) =
+    let w0 = effectiveWidth s0
+    let w1 = effectiveWidth s1
+    let sum = w0 + w1
+    if Double.IsFinite sum then 0.5 * sum else 0.5 * w0 + 0.5 * w1
+
 let private points (g: Geometry) =
     g
     |> Seq.collect (function
         | Segment(p0, p1, _, _) -> [ p0; p1 ]
         | Polygon(vs, _) -> vs
-        | GeneralizedCylinder _
+        | GeneralizedCylinder gc -> gc.Sections |> List.map _.P
         | Surface _ -> [])
 
 let private maxStrokeWidth (geometry: Geometry) =
@@ -42,8 +54,16 @@ let private maxStrokeWidth (geometry: Geometry) =
         (fun acc p ->
             match p with
             | Segment(_, _, w, _) -> max acc w
+            | GeneralizedCylinder gc ->
+                let rec go m (prev: CrossSection) (rest: CrossSection list) =
+                    match rest with
+                    | [] -> m
+                    | cur :: tail -> go (max m (spanWidth prev cur)) cur tail
+
+                match gc.Sections with
+                | first :: rest -> go acc first rest
+                | [] -> acc
             | Polygon _
-            | GeneralizedCylinder _
             | Surface _ -> acc)
         0.0
 
@@ -96,23 +116,25 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
             lastEnd <- ""
         | None -> ()
 
+    let addSpan (p0: Vec3) (p1: Vec3) (width: float) (color: int) =
+        if style <> Some(width, color) then
+            flush ()
+            style <- Some(width, color)
+
+        let x0, y0 = px p0
+        let x1, y1 = px p1
+        let start = $"%s{num x0} %s{num y0}"
+        let finish = $"%s{num x1} %s{num y1}"
+
+        if start <> lastEnd then
+            (if path.Length > 0 then path.Append ' ' else path).Append($"M%s{start}") |> ignore
+
+        path.Append($" L%s{finish}") |> ignore
+        lastEnd <- finish
+
     for prim in geometry do
         match prim with
-        | Segment(p0, p1, width, color) ->
-            if style <> Some(width, color) then
-                flush ()
-                style <- Some(width, color)
-
-            let x0, y0 = px p0
-            let x1, y1 = px p1
-            let start = $"%s{num x0} %s{num y0}"
-            let finish = $"%s{num x1} %s{num y1}"
-
-            if start <> lastEnd then
-                (if path.Length > 0 then path.Append ' ' else path).Append($"M%s{start}") |> ignore
-
-            path.Append($" L%s{finish}") |> ignore
-            lastEnd <- finish
+        | Segment(p0, p1, width, color) -> addSpan p0 p1 width color
         | Polygon(vs, color) ->
             flush ()
 
@@ -124,7 +146,17 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
                 |> String.concat " "
 
             line $"""<polygon points="%s{pts}" fill="%s{Palette.hex color}"/>"""
-        | GeneralizedCylinder _
+        | GeneralizedCylinder gc ->
+            let rec go (prev: CrossSection) (rest: CrossSection list) =
+                match rest with
+                | [] -> ()
+                | cur :: tail ->
+                    addSpan prev.P cur.P (spanWidth prev cur) prev.Color
+                    go cur tail
+
+            match gc.Sections with
+            | first :: rest -> go first rest
+            | [] -> ()
         | Surface _ -> ()
 
     flush ()

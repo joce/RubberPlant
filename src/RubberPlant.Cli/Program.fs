@@ -451,7 +451,7 @@ let private run (args: Args) : int =
                         let meshOptions =
                             { Mesh.defaultMeshOptions with
                                 Sides = defaultArg args.Sides Mesh.defaultMeshOptions.Sides
-                                WidthScale = defaultArg args.WidthScale Mesh.defaultMeshOptions.WidthScale }
+                                WidthScale = defaultArg args.WidthScale model.Settings.WidthScale }
 
                         let files =
                             match format with

@@ -1,0 +1,21 @@
+(* Provisional organ probe (BP.3 / 3A): Lanceolate leaf using flat contour.
+   Pinched !(0) base and tip with sinusoidal width profile and gentle droop. *)
+settings {
+  derivations = 13;
+  angle = 6;
+  width_scale = 1;
+}
+
+let segs = 12;
+let leaf_len = 4.5;
+let max_width = 1.1;
+
+axiom: '(1) ContourFlat !(0) StartGC L(0);
+
+L(k) :
+  when k < segs ->
+    &(k * 0.5)
+    !(max_width * sin(180 * (k + 1) / segs))
+    F(leaf_len / segs)
+    L(k + 1)
+  else -> EndGC;

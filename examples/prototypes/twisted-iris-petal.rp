@@ -1,0 +1,22 @@
+(* Provisional organ probe (BP.3 / 3A): Twisted iris fall petal.
+   Combines UCup depth morphing with incremental helical /(10) roll. *)
+settings {
+  derivations = 13;
+  width_scale = 1;
+}
+
+let segs = 12;
+let petal_len = 4.8;
+let max_w = 1.6;
+
+axiom: '(6) ContourCup(0.15) !(0.2) StartGC I(0);
+
+I(k) :
+  when k < segs ->
+    /(10)
+    &(5.5)
+    ContourCup(0.55 * sin(180 * (k + 1) / segs))
+    !(0.2 + max_w * (sin(180 * (k + 1) / segs) ^ 0.75))
+    F(petal_len / segs)
+    I(k + 1)
+  else -> !(0) F(0.2) EndGC;

@@ -1,0 +1,23 @@
+(* Provisional organ probe (BP.3 / 3A): Elliptical petiole transitioning into a leaf blade.
+   Demonstrates ScaleContour(sL, sU) persistence across !(w) and mid-GC color switch. *)
+settings {
+  derivations = 11;
+  width_scale = 1;
+}
+
+let segs = 10;
+
+axiom:
+  '(2) ContourSides(12) ContourCircle
+  ScaleContour(1.0, 0.35) !(0.22) StartGC
+  F(0.6) &(8) !(0.2) F(0.6) &(8) !(0.18) F(0.6)
+  '(1) B(0);
+
+B(k) :
+  when k < segs ->
+    &(4)
+    ScaleContour(1.0 + 4.0 * sin(180 * (k + 1) / segs), 0.12)
+    !(0.22)
+    F(0.35)
+    B(k + 1)
+  else -> !(0) F(0.25) EndGC;

@@ -494,6 +494,205 @@ let private fixtureTests =
               Expect.equal (m.Groups[1].Positions.Length) 48 "colors 2 and 10 share entry 2"
           } ]
 
+let private gcTests =
+    let sec p h l u w sL sU c contour =
+        { P = p
+          H = h
+          L = l
+          U = u
+          Width = w
+          ScaleL = sL
+          ScaleU = sU
+          Color = c
+          Contour = contour }
+
+    let h0 = v 0.0 1.0 0.0
+    let l0 = v -1.0 0.0 0.0
+    let u0 = v 0.0 0.0 1.0
+
+    testList
+        "generalized cylinders"
+        [ test "circle contour: Sides override, vertex/triangle counts, and outward normals" {
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 8
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 2.0 1.0 1.0 0 Circle
+                            sec (v 0.0 1.0 0.0) h0 l0 u0 2.0 1.0 1.0 0 Circle
+                            sec (v 0.0 2.0 0.0) h0 l0 u0 2.0 1.0 1.0 0 Circle ] }
+
+              let g = build (explicitScale 1.0) [ gc ] |> ok |> single
+              Expect.equal g.Positions.Length (3 * 8) "3 shared rings of 8 vertices"
+              Expect.equal (g.Triangles.Length / 3) (2 * 2 * 8) "2 spans * 2s triangles"
+
+              for i in 0 .. g.Positions.Length - 1 do
+                  close (Vec3.length g.Normals[i]) 1.0 "unit normal"
+
+              for a, b, c as t in triangles g do
+                  let centroid = (1.0 / 3.0) * (a + b + c)
+                  let _, foot = toAxis (v 0.0 0.0 0.0) (v 0.0 2.0 0.0) centroid
+                  Expect.isGreaterThan (Vec3.dot (faceNormal t) (centroid - foot)) 0.0 "outward winding"
+          }
+
+          test "circle parallel transport avoids twist across phyllotactic roll" {
+              // Simulate a vertical trunk where section 1 has rolled 137.5° around H,
+              // matching ABOP trunk rolls without twisting the circular mesh.
+              let a = 137.5 * Math.PI / 180.0
+              let l1 = v (-cos a) 0.0 (-sin a)
+              let u1 = v (-sin a) 0.0 (cos a)
+
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 6
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 1.0 1.0 1.0 0 Circle
+                            sec (v 0.0 1.0 0.0) h0 l1 u1 1.0 1.0 1.0 0 Circle ] }
+
+              let g = build (explicitScale 1.0) [ gc ] |> ok |> single
+              let ring0 = g.Positions |> Array.filter (fun p -> abs p.Y < 0.5)
+              let ring1 = g.Positions |> Array.filter (fun p -> abs (p.Y - 1.0) < 0.5)
+              Expect.equal ring0.Length 6 "6 vertices on ring 0"
+              Expect.equal ring1.Length 6 "6 vertices on ring 1"
+
+              for p0 in ring0 do
+                  let hasMatch = ring1 |> Array.exists (fun p1 -> Vec3.length (p1 - p0 - v 0.0 1.0 0.0) < 1e-9)
+                  Expect.isTrue hasMatch $"no longitudinal twist at %A{p0}"
+          }
+
+          test "flat contour has +U front normals and follows section roll" {
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 0
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 2.0 1.0 1.0 1 Flat
+                            sec (v 0.0 1.0 0.0) h0 l0 u0 2.0 1.0 1.0 1 Flat ] }
+
+              let g = build (explicitScale 1.0) [ gc ] |> ok |> single
+              Expect.equal g.Positions.Length 4 "2 sections * 2 points"
+              Expect.equal (g.Triangles.Length / 3) 2 "2 triangles"
+
+              for n in g.Normals do
+                  closeVec n (v 0.0 0.0 1.0) "+U front normal"
+
+              for t in triangles g do
+                  Expect.isGreaterThan (Vec3.dot (faceNormal t) (v 0.0 0.0 1.0)) 0.0 "winding faces +U"
+          }
+
+          test "UCup contour has odd vertex count with midrib on spine and curls toward +U" {
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 8
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 2.0 1.0 1.0 1 (UCup 0.5)
+                            sec (v 0.0 1.0 0.0) h0 l0 u0 2.0 1.0 1.0 1 (UCup 0.5) ] }
+
+              let g = build (explicitScale 1.0) [ gc ] |> ok |> single
+              // s = 8 -> r = max 5 (8/2 + 1) = 5 (odd) -> 5 points per section
+              Expect.equal g.Positions.Length 10 "2 * 5 vertices"
+              Expect.equal (g.Triangles.Length / 3) 8 "4 quads * 2 triangles"
+              Expect.isTrue (g.Positions |> Array.exists (fun p -> Vec3.length (p - v 0.0 0.0 0.0) < 1e-9)) "midrib at (0,0,0)"
+              Expect.isTrue (g.Positions |> Array.exists (fun p -> Vec3.length (p - v 0.0 1.0 0.0) < 1e-9)) "midrib at (0,1,0)"
+              let edges = g.Positions |> Array.filter (fun p -> abs (abs p.X - 1.0) < 1e-9)
+              Expect.equal edges.Length 4 "4 outer edge vertices (2 per section)"
+
+              for e in edges do
+                  Expect.isGreaterThan e.Z 0.0 "edges curl toward +U"
+          }
+
+          test "VFold contour splits into 2 strips for crisp crease normals" {
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 0
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 2.0 1.0 1.0 1 (VFold 0.5)
+                            sec (v 0.0 1.0 0.0) h0 l0 u0 2.0 1.0 1.0 1 (VFold 0.5) ] }
+
+              let g = build (explicitScale 1.0) [ gc ] |> ok |> single
+              Expect.equal g.Positions.Length 8 "2 strips * 4 vertices"
+              Expect.equal (g.Triangles.Length / 3) 4 "4 triangles"
+              // Left half normal points (+X, 0, +Z); right half normal points (-X, 0, +Z).
+              Expect.isGreaterThan g.Normals[0].X 0.0 "left half tilts inward"
+              Expect.isGreaterThan g.Normals[0].Z 0.0 "left half faces +U"
+              Expect.isLessThan g.Normals[4].X 0.0 "right half tilts inward"
+              Expect.isGreaterThan g.Normals[4].Z 0.0 "right half faces +U"
+          }
+
+          test "pinched !(0) tips skip zero-area triangles without NaN normals" {
+              let g = build (fst gcFlatPinched) (snd gcFlatPinched) |> ok |> single
+              Expect.equal (g.Triangles.Length / 3) 2 "only the two non-degenerate tip triangles"
+
+              for i in 0 .. g.Positions.Length - 1 do
+                  Expect.isTrue (Vec3.isFinite g.Normals[i]) "finite normal"
+                  close (Vec3.length g.Normals[i]) 1.0 "unit normal"
+                  closeVec g.Normals[i] (v 0.0 0.0 1.0) "+U normal from adjacent/triangle"
+          }
+
+          test "mid-GC color switch emits separate groups with duplicated boundary vertices" {
+              let m = build (fst gcVFoldColors) (snd gcVFoldColors) |> ok
+              Expect.equal (m.Groups |> List.map _.Color) [ 1; 2 ] "two palette groups"
+              Expect.equal m.Groups[0].Positions.Length 8 "span 0 has both strips in color 1"
+              Expect.equal m.Groups[1].Positions.Length 8 "span 1 duplicates boundary vertices in color 2"
+          }
+
+          test "coincident positions dropped and 180-degree hairpins split cleanly without NaN" {
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 6
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 0.5 1.0 1.0 0 Circle
+                            sec (v 0.0 0.0 0.0) h0 l0 u0 0.5 1.0 1.0 0 Circle // coincident
+                            sec (v 0.0 1.0 0.0) h0 l0 u0 0.5 1.0 1.0 0 Circle
+                            sec (v 0.0 0.0 0.0) (v 0.0 -1.0 0.0) (v 1.0 0.0 0.0) u0 0.5 1.0 1.0 0 Circle ] } // 180° hairpin
+
+              let g = build (explicitScale 1.0) [ gc ] |> ok |> single
+              Expect.equal (g.Triangles.Length / 3) (2 * 2 * 6) "2 valid spans * 12 triangles"
+
+              for n in g.Normals do
+                  Expect.isTrue (Vec3.isFinite n) "finite normal after hairpin"
+                  close (Vec3.length n) 1.0 "unit normal"
+          }
+
+          test "ScaleContour scales effective width in auto width_scale" {
+              // Spine Y in [0, 100], effective width = 10 * 2 = 20 -> k = 100 / (800 - 2 * (10 + 10)) = 100 / 760.
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 4
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 10.0 2.0 0.5 0 Flat
+                            sec (v 0.0 100.0 0.0) h0 l0 u0 10.0 2.0 0.5 0 Flat ] }
+
+              let g = build defaultMeshOptions [ gc ] |> ok |> single
+              let expectedHalfSpan = 0.5 * (100.0 / 760.0) * 10.0 * 2.0
+              close (abs g.Positions[0].X) expectedHalfSpan "auto width_scale uses Width * max ScaleL ScaleU"
+          }
+
+          test "huge and tiny GCs remain finite with unit normals" {
+              let big =
+                  GeneralizedCylinder
+                      { Sides = 6
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 1.0 1.0 1.0 0 Circle
+                            sec (v 0.0 1e200 0.0) h0 l0 u0 1.0 1.0 1.0 0 Circle ] }
+
+              let gBig = build defaultMeshOptions [ big ] |> ok |> single
+
+              for i in 0 .. gBig.Positions.Length - 1 do
+                  Expect.isTrue (Vec3.isFinite gBig.Positions[i]) "finite big pos"
+                  close (Vec3.length gBig.Normals[i]) 1.0 "unit big normal"
+
+              let tiny =
+                  GeneralizedCylinder
+                      { Sides = 6
+                        Sections =
+                          [ sec (v 0.0 0.0 0.0) h0 l0 u0 1.0 1.0 1.0 0 Circle
+                            sec (v 0.0 1e-200 0.0) h0 l0 u0 1.0 1.0 1.0 0 Circle ] }
+
+              let gTiny = build (explicitScale 1e-200) [ tiny ] |> ok |> single
+
+              for n in gTiny.Normals do
+                  close (Vec3.length n) 1.0 "unit tiny normal"
+          } ]
+
 [<Tests>]
 let tests =
-    testList "Mesh" [ cylinderTests; polygonTests; widthScaleTests; scaleTests; groupTests; fixtureTests ]
+    testList "Mesh" [ cylinderTests; polygonTests; widthScaleTests; scaleTests; groupTests; fixtureTests; gcTests ]

@@ -1,0 +1,25 @@
+(* Provisional organ probe (BP.3 / 3A): Six-petal tulip cup.
+   Short circular stem topped by six radially arranged cupped petals. *)
+settings {
+  derivations = 10;
+  width_scale = 1;
+}
+
+let petal_segs = 8;
+
+axiom:
+  '(1) ContourSides(10) ContourCircle !(0.22) StartGC F(1.5) '(3) !(0.16) F(1.5) EndGC
+  [ Petal ] /(60) [ Petal ] /(60) [ Petal ] /(60)
+  [ Petal ] /(60) [ Petal ] /(60) [ Petal ];
+
+Petal ->
+  '(4) ContourCup(0.2) &(45) !(0.25) StartGC P(0);
+
+P(k) :
+  when k < petal_segs ->
+    ^(10)
+    ContourCup(0.2 + 0.65 * sin(180 * (k + 1) / petal_segs))
+    !(0.25 + 1.15 * sin(180 * (k + 1) / petal_segs))
+    F(0.38)
+    P(k + 1)
+  else -> !(0) F(0.25) EndGC;

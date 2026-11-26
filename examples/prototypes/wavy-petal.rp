@@ -1,0 +1,21 @@
+(* Provisional organ probe (BP.3 / 3A): Wavy / undulating petal.
+   Oscillates UCup depth and lateral yaw along the blade. *)
+settings {
+  derivations = 17;
+  width_scale = 1;
+}
+
+let segs = 16;
+let petal_len = 5.0;
+
+axiom: '(7) ContourCup(0) !(0.1) StartGC W(0);
+
+W(k) :
+  when k < segs ->
+    +(4 * cos(k * 90))
+    &(3)
+    ContourCup(0.35 + 0.35 * sin(k * 90))
+    !(0.1 + 1.3 * sin(180 * (k + 1) / segs))
+    F(petal_len / segs)
+    W(k + 1)
+  else -> !(0) F(0.2) EndGC;

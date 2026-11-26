@@ -9,7 +9,18 @@ open RubberPlant.LString
 open RubberPlant.Geometry
 
 /// Names the turtle predefines (§4.2). Symbols like `+` can't be identifiers anyway.
-let turtleNames = [ "F"; "f"; "G" ]
+let turtleNames =
+    [ "F"
+      "f"
+      "G"
+      "StartGC"
+      "EndGC"
+      "ContourCircle"
+      "ContourFlat"
+      "ContourCup"
+      "ContourV"
+      "ScaleContour"
+      "ContourSides" ]
 
 let private lineOf (p: Pos option) =
     match p with

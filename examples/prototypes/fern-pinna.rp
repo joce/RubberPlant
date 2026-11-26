@@ -1,0 +1,23 @@
+(* Provisional organ probe (BP.3 / 3A): Arched fern pinna.
+   Gracefully arching central axis with V-folded tapering leaflets. *)
+settings {
+  derivations = 9;
+  width_scale = 1;
+}
+
+let count = 8;
+
+axiom: '(1) ContourSides(8) ContourCircle !(0.16) StartGC A(0);
+
+A(k) :
+  when k < count ->
+    &(7)
+    !(0.16 * (1 - 0.7 * k / count))
+    F(0.85)
+    [ +(68) &(6) EndGC ContourV(0.45) !(0.28 * (1 - 0.65 * k / count)) StartGC Pinna(2.0 * (1 - 0.65 * k / count)) EndGC ]
+    [ -(68) &(6) EndGC ContourV(0.45) !(0.28 * (1 - 0.65 * k / count)) StartGC Pinna(2.0 * (1 - 0.65 * k / count)) EndGC ]
+    A(k + 1)
+  else -> !(0) F(0.4) EndGC;
+
+Pinna(len) as
+  F(len * 0.3) &(8) !(0.16) F(len * 0.35) &(8) !(0) F(len * 0.35);

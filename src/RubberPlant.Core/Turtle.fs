@@ -15,7 +15,11 @@ type State =
       /// Up. Always H × L.
       U: Vec3
       Width: float
-      Color: int }
+      Color: int
+      ScaleL: float
+      ScaleU: float
+      Contour: ContourKind
+      ContourSides: int option }
 
 /// Facing +Y; looking down −U onto the XY plane, `+` turns counter-clockwise (§5.1).
 let initialState (settings: Settings) =
@@ -24,7 +28,11 @@ let initialState (settings: Settings) =
       L = Vec3.create -1.0 0.0 0.0
       U = Vec3.create 0.0 0.0 1.0
       Width = settings.Width
-      Color = 0 }
+      Color = 0
+      ScaleL = 1.0
+      ScaleU = 1.0
+      Contour = Circle
+      ContourSides = None }
 
 // Rotations. ABOP §1.5 gives R_U, R_L, R_H. R_U and R_L are applied with H, L, U as
 // the rows of the frame: R_U(a) turns H toward L (left), R_L(a) pitches H toward −U
@@ -114,7 +122,46 @@ let private turtleArity =
           "{", 0
           "}", 0
           "!", 1
-          "'", 1 ]
+          "'", 1
+          "StartGC", 0
+          "EndGC", 0
+          "ContourCircle", 0
+          "ContourFlat", 0
+          "ContourCup", 1
+          "ContourV", 1
+          "ScaleContour", 2
+          "ContourSides", 1 ]
+
+type private GcVariant =
+    | VarCircle
+    | VarFlat
+    | VarUCup
+    | VarVFold
+
+let private variantOf =
+    function
+    | Circle -> VarCircle
+    | Flat -> VarFlat
+    | UCup _ -> VarUCup
+    | VFold _ -> VarVFold
+
+type private GcBuilder =
+    { OpenDepth: int
+      IsForked: bool
+      Sides: int
+      ContourVariant: GcVariant
+      Sections: ResizeArray<CrossSection> }
+
+let private snapshotSection (t: State) : CrossSection =
+    { P = t.P
+      H = t.H
+      L = t.L
+      U = t.U
+      Width = t.Width
+      ScaleL = t.ScaleL
+      ScaleU = t.ScaleU
+      Color = t.Color
+      Contour = t.Contour }
 
 exception private TurtleError of code: string * message: string
 
@@ -154,21 +201,31 @@ let interpretWithTrace
     let depths = ResizeArray<int>()
     let warnings = ResizeArray<Diagnostic>()
     let warned = System.Collections.Generic.HashSet<struct (string * int)>()
-    let stack = System.Collections.Generic.Stack<State>()
+    let stack = System.Collections.Generic.Stack<struct (State * GcBuilder option)>()
     // One (opening bracket depth, vertex list) pair per open `{` (§5.3).
     let polygons = System.Collections.Generic.Stack<struct (int * ResizeArray<Vec3>)>()
     let mutable t = initialState settings
+    let mutable activeGC: GcBuilder option = None
+    let mutable primitiveCount = 0
     let mutable unmatchedClose = false
     let mutable vertexOutside = false
+    let mutable warnedUnbalancedGC = false
     let tHat = normalizeTropism settings.Tropism
 
-    let addPrimitive (depth: int) (p: Primitive) =
+    let warnUnbalancedGC (msg: string) =
+        if not warnedUnbalancedGC then
+            warnedUnbalancedGC <- true
+            warnings.Add(Diagnostic.warning Codes.UnbalancedGC None msg)
+
+    let consumeBudget () =
         match limits.MaxPrimitives with
-        | Some limit when out.Count >= limit ->
+        | Some limit when primitiveCount >= limit ->
             raise (TurtleError(Codes.PrimitiveLimitExceeded, $"primitive limit of %s{string limit} exceeded"))
-        | _ ->
-            out.Add p
-            depths.Add depth
+        | _ -> primitiveCount <- primitiveCount + 1
+
+    let addPrimitive (depth: int) (p: Primitive) =
+        out.Add p
+        depths.Add depth
 
     /// `F`, `f` and `G`: emit the segment (`draw`), record the polygon vertex
     /// (`vertex`), then bend toward T (§5.5).
@@ -179,7 +236,13 @@ let interpretWithTrace
             invalidGeometry "the turtle's position is no longer finite (overflow)"
 
         if draw then
-            addPrimitive stack.Count (Segment(t.P, p1, t.Width, t.Color))
+            match activeGC with
+            | Some gc when polygons.Count = 0 ->
+                consumeBudget ()
+                gc.Sections.Add(snapshotSection { t with P = p1 })
+            | _ ->
+                consumeBudget ()
+                addPrimitive stack.Count (Segment(t.P, p1, t.Width, t.Color))
 
         if vertex && polygons.Count > 0 then
             let struct (_, verts) = polygons.Peek()
@@ -205,8 +268,37 @@ let interpretWithTrace
 
         for sym in drawing do
             match sym with
-            | Push -> stack.Push t
-            | Pop -> if stack.Count > 0 then t <- stack.Pop()
+            | Push ->
+                stack.Push(struct (t, activeGC))
+
+                match activeGC with
+                | None -> ()
+                | Some gc ->
+                    let lastSec = gc.Sections[gc.Sections.Count - 1]
+
+                    activeGC <-
+                        Some
+                            { OpenDepth = stack.Count
+                              IsForked = true
+                              Sides = gc.Sides
+                              ContourVariant = gc.ContourVariant
+                              Sections = ResizeArray([ lastSec ]) }
+            | Pop ->
+                if stack.Count > 0 then
+                    match activeGC with
+                    | None -> ()
+                    | Some gc ->
+                        if gc.IsForked then
+                            if gc.Sections.Count >= 2 then
+                                addPrimitive
+                                    gc.OpenDepth
+                                    (GeneralizedCylinder { Sides = gc.Sides; Sections = List.ofSeq gc.Sections })
+                        else
+                            warnUnbalancedGC "unclosed `StartGC` inside `[...]`; generalized cylinder dropped"
+
+                    let struct (savedT, savedGC) = stack.Pop()
+                    t <- savedT
+                    activeGC <- savedGC
             | Cut -> () // the cut happens in the next derivation step (language.md "Cutting branches")
             | Mod(name, args) ->
                 match turtleArity.TryFind name with
@@ -220,20 +312,25 @@ let interpretWithTrace
                                 $"the turtle ignores the extra parameters of `%s{name}` (it uses %s{string arity}, got %s{string args.Length})"
                         )
 
-                    // The value a command consumes: its first parameter, or the
-                    // setting it defaults to. Only consumed values must be finite;
+                    // The value a command consumes: parameter `i`, or the
+                    // setting/default it falls back to. Only consumed values must be finite;
                     // unused parameters are ignored (with the warning above).
-                    let arg (setting: string) (dflt: float) =
-                        let v = if args.Length > 0 then args[0] else dflt
+                    let argAt (i: int) (setting: string option) (dflt: float) =
+                        let v = if args.Length > i then args[i] else dflt
 
                         if not (System.Double.IsFinite v) then
-                            if args.Length > 0 then
+                            if args.Length > i then
                                 invalidGeometry $"`%s{format [| sym |]}`: turtle parameters must be finite"
                             else
-                                invalidGeometry
-                                    $"`%s{name}` uses `#%s{setting}`, which is not finite (%s{formatNumber v})"
+                                match setting with
+                                | Some s ->
+                                    invalidGeometry $"`%s{name}` uses `#%s{s}`, which is not finite (%s{formatNumber v})"
+                                | None ->
+                                    invalidGeometry $"`%s{name}` uses a non-finite default (%s{formatNumber v})"
 
                         v
+
+                    let arg (setting: string) (dflt: float) = argAt 0 (Some setting) dflt
 
                     match name with
                     | "F" -> move (arg "step" settings.Step) true true
@@ -278,14 +375,95 @@ let interpretWithTrace
                                 t.Color + 1
 
                         t <- { t with Color = c }
+
+                        match activeGC with
+                        | Some gc when polygons.Count = 0 && gc.Sections.Count > 0 ->
+                            let lastIdx = gc.Sections.Count - 1
+                            gc.Sections[lastIdx] <- { gc.Sections[lastIdx] with Color = c }
+                        | _ -> ()
                     // An empty polygon (ABOP p. 127); v0.1 also recorded P here (§5.3).
                     | "{" -> polygons.Push(struct (stack.Count, ResizeArray()))
                     | "}" ->
                         if polygons.Count > 0 then
                             let struct (openDepth, verts) = polygons.Pop()
+                            consumeBudget ()
                             addPrimitive openDepth (Polygon(List.ofSeq verts, t.Color))
                         else
                             unmatchedClose <- true
+                    | "StartGC" ->
+                        let openExplicit () =
+                            activeGC <-
+                                Some
+                                    { OpenDepth = stack.Count
+                                      IsForked = false
+                                      Sides = defaultArg t.ContourSides 0
+                                      ContourVariant = variantOf t.Contour
+                                      Sections = ResizeArray([ snapshotSection t ]) }
+
+                        match activeGC with
+                        | None -> openExplicit ()
+                        | Some gc when gc.IsForked && gc.Sections.Count = 1 -> openExplicit ()
+                        | Some _ ->
+                            warnUnbalancedGC "`StartGC` while a generalized cylinder is already active; ignored"
+                    | "EndGC" ->
+                        match activeGC with
+                        | None ->
+                            warnUnbalancedGC "`EndGC` without an active `StartGC`; ignored"
+                        | Some gc ->
+                            if gc.Sections.Count >= 2 then
+                                addPrimitive
+                                    gc.OpenDepth
+                                    (GeneralizedCylinder { Sides = gc.Sides; Sections = List.ofSeq gc.Sections })
+
+                            activeGC <- None
+                    | "ContourCircle" ->
+                        match activeGC with
+                        | Some gc when gc.ContourVariant <> VarCircle ->
+                            warnUnbalancedGC "cannot switch contour kind inside an active generalized cylinder; ignored"
+                        | _ -> t <- { t with Contour = Circle }
+                    | "ContourFlat" ->
+                        match activeGC with
+                        | Some gc when gc.ContourVariant <> VarFlat ->
+                            warnUnbalancedGC "cannot switch contour kind inside an active generalized cylinder; ignored"
+                        | _ -> t <- { t with Contour = Flat }
+                    | "ContourCup" ->
+                        let d = argAt 0 None 0.5
+
+                        match activeGC with
+                        | Some gc when gc.ContourVariant <> VarUCup ->
+                            warnUnbalancedGC "cannot switch contour kind inside an active generalized cylinder; ignored"
+                        | _ -> t <- { t with Contour = UCup d }
+                    | "ContourV" ->
+                        let d = argAt 0 None 0.5
+
+                        match activeGC with
+                        | Some gc when gc.ContourVariant <> VarVFold ->
+                            warnUnbalancedGC "cannot switch contour kind inside an active generalized cylinder; ignored"
+                        | _ -> t <- { t with Contour = VFold d }
+                    | "ScaleContour" ->
+                        let sL = argAt 0 None 1.0
+                        let sU = argAt 1 None 1.0
+
+                        if sL < 0.0 || sU < 0.0 then
+                            invalidGeometry $"`%s{format [| sym |]}`: contour scales must be non-negative"
+
+                        t <- { t with ScaleL = sL; ScaleU = sU }
+                    | "ContourSides" ->
+                        let sidesOpt =
+                            if args.Length > 0 then
+                                let v = truncate (argAt 0 None 0.0)
+
+                                if v < 3.0 || v > float System.Int32.MaxValue then
+                                    invalidGeometry $"`%s{format [| sym |]}`: contour sides must be at least 3"
+
+                                Some(int v)
+                            else
+                                None
+
+                        match activeGC with
+                        | Some _ ->
+                            warnUnbalancedGC "cannot change `ContourSides` inside an active generalized cylinder; ignored"
+                        | None -> t <- { t with ContourSides = sidesOpt }
                     | _ -> ()
 
     try
@@ -296,6 +474,19 @@ let interpretWithTrace
 
         if polygons.Count > 0 then
             warnings.Add(Diagnostic.warning Codes.UnbalancedPolygon None "`{` without a matching `}`; polygon dropped")
+
+        let hasUnclosedExplicitGC =
+            (match activeGC with
+             | Some gc when not gc.IsForked -> true
+             | _ -> false)
+            || (stack
+                |> Seq.exists (fun struct (_, gcOpt) ->
+                    match gcOpt with
+                    | Some gc when not gc.IsForked -> true
+                    | _ -> false))
+
+        if hasUnclosedExplicitGC then
+            warnUnbalancedGC "`StartGC` without a matching `EndGC`; generalized cylinder dropped"
 
         if vertexOutside then
             warnings.Add(Diagnostic.warning Codes.VertexOutsidePolygon None "`.` outside a polygon; ignored")

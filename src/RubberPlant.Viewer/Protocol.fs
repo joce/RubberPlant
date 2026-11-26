@@ -115,10 +115,13 @@ let applySettingsOverrides (o: LoadOptions) (s: Settings) : Settings =
         Elasticity = defaultArg o.Elasticity s.Elasticity
         Seed = defaultArg o.Seed s.Seed }
 
-let toMeshOptions (o: LoadOptions) : Mesh.MeshOptions =
+let toMeshOptionsWithSettings (settings: Settings) (o: LoadOptions) : Mesh.MeshOptions =
     { Mesh.defaultMeshOptions with
         Sides = defaultArg o.Sides Mesh.defaultMeshOptions.Sides
-        WidthScale = defaultArg o.WidthScale Mesh.defaultMeshOptions.WidthScale }
+        WidthScale = defaultArg o.WidthScale settings.WidthScale }
+
+let toMeshOptions (o: LoadOptions) : Mesh.MeshOptions =
+    toMeshOptionsWithSettings defaultSettings o
 
 let toLimits (o: LoadOptions) : Limits =
     { MaxModules = defaultArg o.MaxModules Limits.defaults.MaxModules
