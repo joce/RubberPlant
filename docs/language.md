@@ -168,16 +168,16 @@ All keywords are **fully reserved**: none can be used as a module name, a `let` 
 **Declaration keywords:**
 
 ```
-settings  let  ignore  consider  axiom           (* consider: v0.2 *)
-include  module                                  (* reserved, not yet used *)
+settings  let  ignore  consider  axiom  include  (* consider: v0.2; include: v0.3 *)
+module                                           (* reserved, not yet used *)
 ```
 
-`module` is reserved for future module declarations, and `include` for Chapter 5 (predefined surfaces).
+`module` is reserved for future module declarations; `include` loads predefined `.s` surfaces (Ch 5, v0.3).
 
 **Rule keywords**, inside rules (§3.4):
 
 ```
-as  when  else  weight
+as  when  else  weight  at                       (* at: v0.3 *)
 ```
 
 **String keyword (v0.2)**, wherever a module string is expected (axiom, successors):
@@ -191,6 +191,7 @@ empty
 ```
 derivations  angle  step  width  taper
 tropism  elasticity                              (* v0.2 *)
+time  width_scale                                (* v0.3 *)
 ```
 
 They can't be a module name, a `let` name, a parameter name or anything else. The `settings` block is the only place they can appear.
@@ -223,8 +224,8 @@ EBNF. Quoted strings are literal tokens. This section explains the grammar piece
 
 ```ebnf
 File        = { Prelude } { Rule ";" } ;
-Prelude     = Settings | Let | Ignore | Consider | Axiom ;
-Rule        = Production | Interpretation ;
+Prelude     = Settings | Let | Include | Ignore | Consider | Axiom ;
+Rule        = Production | TimedProduction | Interpretation ;
 ```
 
 The prelude items can come in any order, and can be interleaved. Their counts are checked after parsing: at most one `settings`, at most one `ignore` or `consider` (not both), exactly one `axiom`. All of them come before the first rule.
@@ -236,11 +237,14 @@ Settings    = "settings" "{" { SettingEntry } "}" ;
 SettingEntry = ScalarKey "=" Expr ";"
             | VectorKey "=" Vector ";" ;                 (* v0.2 *)
 ScalarKey   = "derivations" | "angle" | "step" | "width" | "taper"
-            | "elasticity" ;                             (* v0.2 *)
+            | "elasticity"                               (* v0.2 *)
+            | "time" | "width_scale" ;                   (* v0.3 *)
 VectorKey   = "tropism" ;                                (* v0.2 *)
 Vector      = "(" Expr "," Expr "," Expr ")" ;
 
 Let         = "let" Ident "=" Expr ";" ;
+
+Include     = "include" ModuleName "=" StringLit ";" ;   (* v0.3 *)
 
 Ignore      = "ignore" ":" ModuleName { ModuleName } ";" ;
 Consider    = "consider" ":" ModuleName { ModuleName } ";" ;   (* v0.2 *)
@@ -282,10 +286,11 @@ InterpElem    = ActualModule | "[" { InterpElem } "]" ;
 Two kinds of rule: **productions** (`->`, applied at every derivation step) and **interpretation rules** (`as`, applied once before drawing, §4.6). The grammar keeps them separate, so one rule can't mix `->` and `as` branches.
 
 ```ebnf
-Production     = Head ( "->" ActualString                 (* simple form *)
-                      | ":" ProdBranches ) ;
-Interpretation = Head ( "as" InterpString                 (* simple form *)
-                      | ":" InterpBranches ) ;
+Production      = Head ( "->" ActualString                 (* simple form *)
+                       | ":" ProdBranches ) ;
+TimedProduction = ModuleName "at" Expr "->" ActualString ; (* v0.3 *)
+Interpretation  = Head ( "as" InterpString                 (* simple form *)
+                       | ":" InterpBranches ) ;
 
 Head           = [ LeftContext "<" ] FormalModule [ ">" RightContext ] ;
 
@@ -401,7 +406,7 @@ Atom     = Number
 
 **Built-in functions (v0.1):** `sin cos tan asin acos atan atan2 sqrt exp log abs floor ceil round min max`. Trigonometry is in **degrees**, to match the turtle. `atan2(y, x)`, `min(a, b)` and `max(a, b)` take two arguments; the others take one. `round` rounds halves away from zero: `round(2.5)` is 3, `round(-2.5)` is −3.
 
-**Same results on every platform (v0.2).** IEEE 754 defines `+ − × ÷` and `sqrt` exactly, but not the transcendental functions: system math libraries (glibc, Microsoft's C runtime, …) differ in the last bit. So RubberPlant computes `sin`, `cos` and `tan`, and the turtle's rotations, itself, from exactly defined operations only: they give the same bits everywhere, within one ulp of the exact value. They are exact at multiples of 90°: `sin(180)` and `cos(90)` are 0, `tan(180)` is 0, `tan(90)` is +∞ and `tan(-90)` is −∞. The other transcendental functions (`asin`, `acos`, `atan`, `atan2`, `exp`, `log` and the `^` operator) still use the system's math library, so their results may differ in the last bit between platforms. `sqrt`, `abs`, `floor`, `ceil`, `round`, `min` and `max` are exact everywhere.
+**Same results on every platform (v0.2 / v0.3).** IEEE 754 defines `+ − × ÷` and `sqrt` exactly, but not the transcendental functions: system math libraries (glibc, Microsoft's C runtime, …) differ in the last bit. So RubberPlant computes `sin`, `cos`, `tan`, and **(v0.3)** `exp` and `log` (plus `^ 0.5` via `sqrt` and all turtle rotations) itself, from exactly defined operations only: they give the same bits everywhere, within one ulp of the exact value. `sin`/`cos`/`tan` are exact at multiples of 90° (`sin(180) = 0`, `cos(90) = 0`, `tan(180) = 0`, `tan(90) = +∞`, `tan(-90) = -∞`), and `exp(0) = 1`, `log(1) = 0`, `log(0) = -∞`. The remaining transcendental functions (`asin`, `acos`, `atan`, `atan2`, and non-`0.5` exponents of `^`) still use the system's math library, so their results may differ in the last bit between platforms. `sqrt`, `abs`, `floor`, `ceil`, `round`, `min` and `max` are exact everywhere.
 
 ### 4.2 Names and scope
 
@@ -415,7 +420,7 @@ Atom     = Number
   - a `let` constant
   - a formal parameter
   - a built-in function (`sin`, `max`, …)
-  - a setting name (`derivations`, `angle`, `step`, `width`, `taper`, `tropism`, `elasticity`)
+  - a setting name (`derivations`, `angle`, `step`, `width`, `taper`, `tropism`, `elasticity`, `time`, `width_scale`)
   - a keyword (§2.6)
 
   Any clash is a compile-time error, e.g. "`L` is used as a module (line 12) and as a `let` (line 3)". Modules aren't declared, so the module checks run after the whole file is parsed.
@@ -452,6 +457,15 @@ Consequences:
 Randomness comes from an explicit seed, supplied by the host (CLI), not by the file. The same seed and source always produce the same result.
 
 `derivations = n` (in `settings`) runs *n* steps starting from the axiom.
+
+#### Timed DOL-systems (v0.3)
+
+Models written for continuous-time animation (ABOP §6.1–6.2) replace discrete `->` rules and `derivations` with **timed productions** `a at <const-expr> -> <const-succ>;` and `settings { time = <expr>; }` (overridable via CLI `--time <t>`):
+- Every non-turtle module carries a single age parameter (`a(tau)`), with `0 <= τ <= β` in the axiom and `0 <= α < β` in successors (`β > 0` unique per dividing module; non-dividing modules age continuously without dividing).
+- Turtle symbols and brackets pass through untimed and cannot be `at` predecessors.
+- Continuous growth curves are expressed in `as` interpretation rules (`a(tau) as F(A * exp(B * tau));`).
+
+See [`v0.3-organs-animation.md` §5.2](v0.3-organs-animation.md#52-abop-chapter-6-timed-dol-systems) for the complete static checks, A1–A3 derivation semantics, and division budget rules.
 
 #### Cutting branches (v0.2)
 
@@ -559,6 +573,8 @@ The optional `settings { … }` block holds scalar configuration. Every key is o
 | `taper` | width decrement applied by each bare `!`, as a **percentage**: the width is multiplied by (1 − taper/100). Must be in [0, 100]. | `30` |
 | `tropism` **(v0.2)** | direction of the tropism vector **T**, in world coordinates (§5.1); a vector `(x, y, z)` with finite components, not all zero. Only its direction matters: it is normalized (§5.5). | `(0, -1, 0)` (gravity) |
 | `elasticity` **(v0.2)** | elasticity *e*: how strongly segments bend toward **T** (§5.5). Finite; negative values bend away from **T**. `0` disables tropism. | `0` |
+| `time` **(v0.3)** | target evaluation time *t* for timed DOL-systems (finite, `>= 0`). Mutually exclusive with `derivations` and discrete `->` rules. | `0` (timed models) |
+| `width_scale` **(v0.3)** | fixed mesh width multiplier *k* (finite, `> 0`), overriding automatic SVG-matched width scaling (useful for world-unit leaves and Ch 6 animations). | auto |
 
 A CLI flag overrides the file value. The random **seed** isn't part of the language; it is a run parameter supplied by the host (default `0`): an integer with \|seed\| ≤ 2<sup>53</sup> − 1 (exact as a float).
 
@@ -618,7 +634,20 @@ When a turtle symbol has parameters, the first parameter overrides the default (
 
 Every other module is **ignored** by the turtle. That's what makes node-rewriting symbols like `L`, `R`, `X` and `A` work (ABOP §1.4.2).
 
-Reserved for later chapters, with no meaning yet: `~` (predefined surface, Ch 5). The turtle ignores it, so `~K(0)` is the ignored `~` followed by a module `K(0)`, which an `as` rule can draw as a stand-in (§6).
+#### v0.3 turtle modules (generalized cylinders & surfaces)
+
+See [`v0.3-organs-animation.md` §3–§4](v0.3-organs-animation.md) for full sweep, frame-transport, and patch-tessellation rules:
+
+| Symbol | Parameters | Effect |
+|---|---|---|
+| `StartGC` / `EndGC` | — | Open/close a generalized cylinder swept across `F`/`G` moves (locks contour & `Sides` at `StartGC`). |
+| `ContourCircle` / `ContourFlat` | — | Select closed circular (default) or open flat ribbon contour. |
+| `ContourCup` / `ContourV` | `[depth]` (default `0.5`) | Select open U-cup or V-fold contour (same-kind `depth` can morph mid-GC). |
+| `ScaleContour` | `(sL, sU)` (`>= 0`, default `(1, 1)`) | Multiplicative aspect ratio applied on top of `Width` (`!(w)` / `!`). |
+| `ContourSides` | `(n)` (`>= 3`) | Facets around subsequent generalized cylinders. |
+| `~` + surface `H` | `~H`, `~H(s)`, `~H(sx, sy)`, `~H(sx, sy, sz)` | Instantiate predefined `.s` surface declared via `include H = "path.s";` at `P` in `(-L, H, U)` without moving the turtle. |
+
+*(If `~` is not followed by an `include`-declared surface name, it warns `RP0306` and leaves the following symbol unconsumed.)*
 
 **(v0.2) Details of the new symbols:**
 
@@ -644,6 +673,8 @@ Reserved for later chapters, with no meaning yet: `~` (predefined surface, Ch 5)
 The turtle produces backend-neutral **geometry**:
 - `Segment(p0, p1, width, color)`
 - `Polygon(vertices, color)`
+- `GeneralizedCylinder(sides, sections)` **(v0.3)**
+- `Surface(instance)` **(v0.3)**
 
 **(v0.2)** In 3D a segment is an **open cylinder** (a tube without end caps) of diameter `width` from p0 to p1, as in ABOP's own software (cpfg's and lpfg's cylinder line style). Mesh backends tessellate it; the SVG backend draws a line with straight (butt) ends, like the book's figures. Polygons are flat-shaded, two-sided, and may be concave. Widths are in *width units*: pixels for SVG, and world units times a scale factor for mesh backends (ABOP's widths are line widths in pixels, as in Fig 2.6, where a trunk 1 unit long is 10 wide). Later chapters add more primitives: generalized cylinders, surfaces.
 
@@ -841,11 +872,11 @@ K as [ '(4) { -(45) f +(90) f +(90) f } ];   (* stand-in flower: a red triangle 
 None.
 
 Not modeled yet:
-- **Predefined surfaces** (`~`, ABOP's `#include`; Ch 5, 0.3). `~H` lexes as `~` followed by the name `H`, and the turtle ignores `~`. The Chapter 3 examples that need surfaces (crocus, Lychnis, Mycelis, lilac) draw their organs with stand-in `as` rules, marked as such in comments.
+- **Predefined surfaces** (`~`, ABOP's `#include`) and **developmental stepping / animation** (Ch 5–6): specified for **v0.3** in [`v0.3-organs-animation.md`](v0.3-organs-animation.md). (The existing Chapter 3 examples temporarily keep their `as` stand-ins until PR 7 promotes the v0.3 `.s` assets.)
 - **Table L-systems** (ABOP §3.1.2, "the effect of environment"): no figure uses them. lpfg has groups; revisit with 1.0.
 - **Partial L-systems** (ABOP §3.1.1, §3.3): they are nondeterministic and have no geometry. They can be written as `weight` rules plus `as` rules, but the book's diagrams aren't transcribed as examples. The developmental sequences that the book prints in full (the signal example of §3.1.2, the lily-of-the-valley sequence of §3.3.1) are derivation tests instead.
 - **L-system schemata** (ABOP §3.1) give topology and timing but no geometry, by design: the book says a schema "must be completed with geometric information" before it can be drawn (p. 68), and does so for the crocus (Fig 3.2). Examples that draw a schema complete it with marked additions, in its productions where nothing else can reach (a branch's angle) and in `as` rules otherwise. L-system 3.1 (the dibotryoids, Figs 3.9 and 3.10) is the one with figures; its examples explain their additions in their comments. The printed schema doesn't reproduce the figures' stages, which were drawn from a fuller model; companion examples reconstruct that model from the figures themselves, marked as reconstructions.
-- **Developmental sequences in one image** (Figs 3.5, 3.9, 3.10, 3.14, 3.17 show several stages side by side): deferred to animation (Ch 6, 0.3). Each example renders one stage, chosen with `derivations`.
+- **Developmental sequences in one image** (Figs 3.5, 3.9, 3.10, 3.14, 3.17 show several stages side by side): handled via `RubberPlant.Viewer` developmental stepping and `sequence` export (**v0.3**, [`v0.3-organs-animation.md`](v0.3-organs-animation.md#53-rubberplantviewer-developmental-stepping--sequence)). Each `.rp` example renders one stage, chosen with `derivations`.
 - **Views** (v0.2): ABOP chose a view for each figure, and RubberPlant has no camera yet (backends draw a front view, looking down −Z). Fig 1.37b renders rotated 90°. Figs 2.6d and 2.7a–d are drawn from +X: their examples start the axiom with `/(90)`, which turns the tree a quarter turn about the vertical axis; that is exact because they have no tropism and `$` only depends on the vertical. Figs 2.8a and 2.8c are drawn from below (about 45–54° under the horizon) and Fig 2.8b from slightly below (about 20°), which a roll can't reproduce: a view setting is deferred.
 
 Temporary decisions (may be revisited):
@@ -894,14 +925,15 @@ Reserved names (never a module name, `let` name, parameter or function name):
 
 ```ebnf
 DeclKeyword   = "settings" | "let" | "ignore" | "consider" | "axiom" | "include" | "module" ;
-RuleKeyword   = "as" | "when" | "else" | "weight" ;
+RuleKeyword   = "as" | "when" | "else" | "weight" | "at" ;
 StringKeyword = "empty" ;
 SettingName   = "derivations" | "angle" | "step" | "width" | "taper"
-              | "tropism" | "elasticity" ;
+              | "tropism" | "elasticity" | "time" | "width_scale" ;
 BuiltinName   = "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "atan2" | "sqrt"
               | "exp" | "log" | "abs" | "floor" | "ceil" | "round" | "min" | "max" ;
 Reserved      = DeclKeyword | RuleKeyword | StringKeyword | SettingName ;   (* BuiltinName only as a call *)
 Wildcard      = "_" ;                (* a lone "_"; only valid as a Pattern *)
+StringLit     = '"' ? non-empty single-line, NUL-free path ? '"' ;         (* only after `include Name =` *)
 ```
 
 Module mode (after `axiom:` / `ignore:` / `consider:`, successors, contexts, predecessors):
@@ -943,8 +975,8 @@ File structure:
 
 ```ebnf
 File            = { Prelude } { Rule ";" } EndOfFile ;
-Prelude         = Settings | Let | Ignore | Consider | Axiom ;
-Rule            = Production | Interpretation ;
+Prelude         = Settings | Let | Include | Ignore | Consider | Axiom ;
+Rule            = Production | TimedProduction | Interpretation ;
 ```
 
 Prelude:
@@ -952,14 +984,16 @@ Prelude:
 ```ebnf
 Settings        = "settings" "{" { SettingEntry } "}" ;
 SettingEntry    = ScalarKey "=" Expr ";" | VectorKey "=" Vector ";" ;
-ScalarKey       = "derivations" | "angle" | "step" | "width" | "taper" | "elasticity" ;
+ScalarKey       = "derivations" | "angle" | "step" | "width" | "taper"
+                | "elasticity" | "time" | "width_scale" ;
 VectorKey       = "tropism" ;
 Vector          = "(" Expr "," Expr "," Expr ")" ;
 Let             = "let" Ident "=" Expr ";" ;
+Include         = "include" ModuleName "=" StringLit ";" ;
 Ignore          = "ignore" ":" ModuleName { ModuleName } ";" ;
 Consider        = "consider" ":" ModuleName { ModuleName } ";" ;
 Axiom           = "axiom" ":" ActualString ";" ;
-                  (* "include" and "module" are reserved, not yet valid *)
+                  (* "module" is reserved, not yet valid *)
 ```
 
 Module strings:
@@ -988,6 +1022,7 @@ Rules:
 Head            = [ LeftContext "<" ] FormalModule [ ">" RightContext ] ;
 
 Production      = Head ( "->" ActualString | ":" ProdBranches ) ;
+TimedProduction = ModuleName "at" Expr "->" ActualString ;
 ProdBranches    = GuardBranch { GuardBranch } [ ProdElse ]
                 | GWeightBranch { GWeightBranch } [ ProdElse ]
                 | { GWeightBranch } UWeightBranch { WeightBranch } ;
@@ -1033,13 +1068,15 @@ These can't be expressed in a context-free grammar. They're checked after parsin
 - **One namespace, no shadowing.** A name has exactly one role: module (or turtle-predefined), `let` constant, formal parameter, built-in function, setting name or keyword (§4.2).
 - Formal parameter names in one head are distinct (`_` excepted).
 - `let` names are unique. A `let` value, a settings value and the axiom's parameters only use `let`s defined **earlier** in the source (§4.2).
+- **(v0.3) `include`:** surface names are unique and valid module names (never a keyword, builtin, setting, or turtle module).
+- **(v0.3) Timed DOL-systems:** `at` rules and `settings { time = …; }` are mutually exclusive with discrete `->` rules and `settings { derivations = …; }`; at most one `at` rule per module name (`β > 0`); non-turtle modules in timed `axiom:` / `at` successors have arity 1 with constant `0 <= τ <= β` in `axiom:` and `0 <= α < β` in successors; turtle modules and `%` cannot be timed.
 - A function call names a built-in function with the right number of arguments.
 
 **At evaluation time (runtime errors):**
 - Weights are finite and non-negative, and at least one eligible weight is positive.
-- Turtle parameters are finite, `!(w)` has *w* ≥ 0, and the turtle's position stays finite.
+- Turtle parameters are finite, `!(w)` has *w* ≥ 0, `ScaleContour(sL, sU)` has `sL, sU >= 0`, `ContourSides(n)` truncates to `>= 3`, and the turtle's position stays finite.
 - No division by zero and no NaN results.
-- `taper` is in [0, 100]; `derivations` is a non-negative integer; `width` is finite and non-negative; `elasticity` and the components of `tropism` are finite, and `tropism` isn't the zero vector; the host-supplied seed is an integer with |seed| ≤ 2<sup>53</sup> − 1.
+- `taper` is in [0, 100]; `derivations` is a non-negative integer; `width` is finite and non-negative; `time` **(v0.3)** is finite and non-negative; `width_scale` **(v0.3)** is finite and positive; `elasticity` and the components of `tropism` are finite, and `tropism` isn't the zero vector; the host-supplied seed is an integer with |seed| ≤ 2<sup>53</sup> − 1.
 
 ### A.4 Parsing notes
 

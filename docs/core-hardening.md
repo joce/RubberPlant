@@ -80,7 +80,7 @@ Two new evaluation diagnostic codes in `Diagnostics.fs`:
 
 | Code | Name | When emitted |
 |---|---|---|
-| `RP0206` | `ModuleLimitExceeded` | Symbol count exceeds `MaxModules` in the axiom, a derivation step, or `as` interpretation. The message names the stage (e.g., `axiom`, `derivation step 14`, `interpretation`) and the limit. |
+| `RP0206` | `ModuleLimitExceeded` | Symbol count exceeds `MaxModules` in the axiom, a derivation step, or `as` interpretation. The message names the stage (e.g., `axiom`, `derivation step 14`, `interpretation`) and the limit. **(v0.3)** Also enforces the total A3 division budget in [`TimedDerivation.fs`](v0.3-organs-animation.md#52-abop-chapter-6-timed-dol-systems). |
 | `RP0207` | `PrimitiveLimitExceeded` | Emitted primitive count exceeds `MaxPrimitives` in `Turtle.interpret`. The message names the limit. |
 
 Exceeding a budget returns `Error [ diag ]`, prints the diagnostic on `stderr`, and exits with code **`1`** (matching all other runtime/evaluation errors). Inside `rubberplant batch`, the command prints `exit 1` and leaves the batch process healthy for subsequent commands.
@@ -141,7 +141,8 @@ type TurtleTrace =
 
 | Field | JSON type | Definition |
 |---|---|---|
-| `steps` | `int` | `model.Settings.Derivations` |
+| `steps` | `int` | `model.Settings.Derivations` (`0` for v0.3 timed models) |
+| `time` **(v0.3)** | `number \| null` | Target evaluation time for timed models (`null` for discrete models; see [`v0.3-organs-animation.md`](v0.3-organs-animation.md#24-statsfs-json-schema-updates-pr-2)) |
 | `derived_modules` | `int` | `Derived.Length` (total `Sym` count, matching `--max-modules`) |
 | `drawing_modules` | `int` | `Drawing.Length` (total `Sym` count after `as` interpretation) |
 | `max_bracket_depth` | `int` | Maximum `[` nesting depth reached anywhere in `Derived` (`0` if unbranched) |
@@ -161,6 +162,8 @@ Geometry points are all `p0` and `p1` of `Segment` primitives and all vertices o
 | `aspect_ratio` | `number \| null` | `height / crown_width`; `null` if `bbox` is `null` or `crown_width = 0` |
 | `segment_count` | `int` | Number of `Segment` primitives |
 | `polygon_count` | `int` | Number of `Polygon` primitives |
+| `gc_count` **(v0.3)** | `int` | Number of `GeneralizedCylinder` primitives (spine points, lengths, widths, and branch orders also feed the geometry stats; see [`v0.3-organs-animation.md`](v0.3-organs-animation.md#24-statsfs-json-schema-updates-pr-2)) |
+| `surface_count` **(v0.3)** | `int` | Number of `Surface` primitives (world-space control points feed `bbox` / `height` / `crown_width`) |
 | `total_segment_length` | `number` | Sum of Euclidean lengths of all segments (`0` if no segments), computed with scale-safe power-of-two scaling (as in `Mesh.fs`) |
 | `width_min` | `number \| null` | Minimum `width` across all segments; `null` if `segment_count = 0` |
 | `width_max` | `number \| null` | Maximum `width` across all segments; `null` if `segment_count = 0` |

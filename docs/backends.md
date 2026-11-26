@@ -14,9 +14,9 @@ builder, the OBJ and glTF backends, the CLI changes, and how all of it is tested
 
 | In 0.2 | Not in 0.2 |
 |---|---|
-| Segments rendered as cylinders in 3D | Generalized cylinders (Ch 5, 0.3) |
-| Flat, two-sided polygons, concave allowed | Predefined surfaces `~` (Ch 5, 0.3) |
-| OBJ (+ MTL), glTF (`.gltf` and `.glb`) | Textures, animation, cameras, lights |
+| Segments rendered as cylinders in 3D | Generalized cylinders (Ch 5, **v0.3**: [`v0.3-organs-animation.md`](v0.3-organs-animation.md)) |
+| Flat, two-sided polygons, concave allowed | Predefined surfaces `~` (Ch 5, **v0.3**: [`v0.3-organs-animation.md`](v0.3-organs-animation.md)) |
+| OBJ (+ MTL), glTF (`.gltf` and `.glb`) | Textures, animation (Ch 6 **v0.3**), cameras, lights |
 | SVG keeps its front view of 3D models | Other SVG views, depth sorting |
 | Backend chosen from the output file extension | Several outputs in one run |
 
@@ -51,6 +51,7 @@ The `Geometry` type doesn't change in 0.2:
 type Primitive =
     | Segment of p0: Vec3 * p1: Vec3 * width: float * color: int
     | Polygon of vertices: Vec3 list * color: int
+    (* v0.3 adds GeneralizedCylinder and Surface; see v0.3-organs-animation.md §2–§4 *)
 ```
 
 What changes is what it means in 3D:
@@ -196,17 +197,17 @@ ABOP gives widths as line widths in pixels: Fig 2.6 starts with a trunk 1 unit l
 Taken as world units, that trunk would be a blob. Mesh backends therefore multiply widths by a
 **width scale** *k*:
 
-- **Explicit**: `WidthScale = Some k`, with *k* finite and positive (CLI `--width-scale <k>`).
+- **Explicit**: `WidthScale = Some k`, with *k* finite and positive (CLI `--width-scale <k>`, or in **v0.3** `settings { width_scale = <expr>; }`).
 - **Auto** (the default): *k* makes the mesh match the SVG that the default options would draw.
   Take *E* = max(x extent, y extent) of all geometry points (the SVG's front view), *W* = the largest
-  segment width, and the SVG defaults *size* = 800 and *margin* = 10. Then
+  segment (or **v0.3** generalized-cylinder effective) width, and the SVG defaults *size* = 800 and *margin* = 10. Then
   *k* = *E* / (*size* − 2 (*margin* + *W* / 2)). If the denominator isn't positive, which is the
   case where the SVG backend would refuse to render, `build` fails and suggests `--width-scale`;
   this is checked first. Otherwise *k* = 1 if *E* = 0.
 
 So by default a cylinder appears as thick, relative to the plant, as the line in the SVG. The cost is
 that *k* depends on the extent of the drawing. That's harmless for still images, and animation
-(Ch 6) will need a fixed *k* anyway.
+(Ch 6) uses a fixed *k* via `settings { width_scale = …; }` or `--width-scale` (**v0.3**, [`v0.3-organs-animation.md`](v0.3-organs-animation.md#33-settings--width_scale--expr--and-svg-rendering)).
 
 ### 4.5 Colors
 
@@ -442,6 +443,7 @@ The document, with every key in this order (`…` stands for more elements of th
   the lines meet end to end and the width steps, as in the book. SVG is a line drawing, like the
   book's figures, not a projection of the mesh.
 - The palette moves to the shared `Palette` module (§4.5).
+- **(v0.3)** Generalized cylinders draw their spine spans (`0.5 * (w_i + w_{i+1})`), and `.s` surfaces draw a 16-vertex boundary `<polygon>` per patch ([`v0.3-organs-animation.md`](v0.3-organs-animation.md#33-settings--width_scale--expr--and-svg-rendering)).
 
 ## 8. CLI
 
@@ -464,6 +466,8 @@ rubberplant render <file.rp> [-o <out>] [--format svg|obj|gltf|glb] [options]
   | `--width-scale <k\|auto>` | obj, gltf, glb | width scale, finite and > 0, or `auto` (default) |
   | `--tropism <x,y,z>` | all | overrides the `tropism` setting |
   | `--elasticity <e>` | all | overrides the `elasticity` setting |
+  | `--time <t>` **(v0.3)** | all (except `check`) | overrides the `time` setting for timed models (mutually exclusive with `-n`) |
+  | `--surface-div <n>` **(v0.3)** | obj, gltf, glb | bicubic patch subdivision per axis, integer ≥ 1 (overrides `.s` `PRECISION`) |
 
 - An option that doesn't apply to the chosen format (`--size` with OBJ, `--sides` with SVG) is a
   usage error, not silently ignored. So is an option that doesn't apply to the command: `-o`,

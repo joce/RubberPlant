@@ -4,6 +4,7 @@
 - [`backends.md`](backends.md): geometry in 3D, mesh construction, and the output backends (SVG, OBJ, glTF).
 - [`core-hardening.md`](core-hardening.md): execution budgets (`--max-modules`, `--max-primitives`) and `rubberplant stats` morphology telemetry (BP.1).
 - [`viewer.md`](viewer.md): direct-from-`.rp` 3D GPU viewer, headless contact sheets/silhouettes, and batch protocol (BP.2).
+- [`v0.3-organs-animation.md`](v0.3-organs-animation.md): generalized cylinders (closed & open contours), predefined bicubic Bézier surfaces (`.s` / `~H`), ABOP Chapters 4–6 (phyllotaxis & timed L-systems), and viewer developmental stepping (BP.3 / v0.3).
 - [`roadmap.md`](roadmap.md): milestones.
 - [`battle-plan.md`](battle-plan.md): multi-phase plan from core hardening and 3D viewer through AI/ML workflows.
 - [`abop-notes.md`](abop-notes.md): ABOP errata candidates, `cpfg` verification findings, and modeling notes.
