@@ -278,6 +278,180 @@ let tanDeg (a: float) =
         // + 0.0 turns -0 into +0.
         t + 0.0
 
+// Natural exponential and logarithm, computed with IEEE-754 + - * / and bit
+// manipulation only (language.md §4.1, v0.3-organs-animation.md §2.2), so they
+// produce identical bits on Linux, Windows, and Windows Native AOT.
+
+// Coefficients of fdlibm's __ieee754_exp (e_exp.c; Copyright (C) 2004 by Sun
+// Microsystems, Inc. All rights reserved. Permission to use, copy, modify, and
+// distribute this software is freely granted, provided that this notice is
+// preserved.)
+let private ExpOThreshold = 7.09782712893383973096e+02 // 0x40862E42 FEFA39EF
+let private ExpUThreshold = -7.45133219101941108420e+02 // 0xC0874910 D52D3051
+let private Ln2HiPos = 6.93147180369123816490e-01 // 0x3FE62E42 FEE00000
+let private Ln2HiNeg = -6.93147180369123816490e-01 // 0xBFE62E42 FEE00000
+let private Ln2LoPos = 1.90821492927058770002e-10 // 0x3DEA39EF 35793C76
+let private Ln2LoNeg = -1.90821492927058770002e-10 // 0xBDEA39EF 35793C76
+let private InvLn2 = 1.44269504088896338700e+00 // 0x3FF71547 652B82FE
+let private ExpP1 = 1.66666666666666019037e-01 // 0x3FC55555 5555553E
+let private ExpP2 = -2.77777777770155933842e-03 // 0xBF66C16C 16BEBD93
+let private ExpP3 = 6.61375632143793436117e-05 // 0x3F11566A AF25DE2C
+let private ExpP4 = -1.65339022054652515390e-06 // 0xBEBBBD41 C5D26BF1
+let private ExpP5 = 4.13813679705723846039e-08 // 0x3E663769 72BEA4D0
+let private TwoM1000 = BitConverter.Int64BitsToDouble 0x0170000000000000L // 2^-1000
+let private Two512 = BitConverter.Int64BitsToDouble 0x5FF0000000000000L // 2^512
+
+// Coefficients of fdlibm's __ieee754_log (e_log.c; Copyright (C) 1993 by Sun
+// Microsystems, Inc. Developed at SunPro, a Sun Microsystems, Inc. business.
+// Permission to use, copy, modify, and distribute this software is freely
+// granted, provided that this notice is preserved.)
+let private Two54 = 18014398509481984.0 // 0x43500000 00000000 (2^54)
+let private Lg1 = 6.666666666666735130e-01 // 0x3FE55555 55555593
+let private Lg2 = 3.999999999940941908e-01 // 0x3FD99999 9997FA04
+let private Lg3 = 2.857142874366239149e-01 // 0x3FD24924 94229359
+let private Lg4 = 2.222219843214978396e-01 // 0x3FCC71C5 1D8E78AF
+let private Lg5 = 1.818357216161805012e-01 // 0x3FC74664 96CB03DE
+let private Lg6 = 1.531383769920937332e-01 // 0x3FC39A09 D078C69F
+let private Lg7 = 1.479819860511658591e-01 // 0x3FC2F112 DF3E5244
+
+/// Natural exponential e^x, with the same bits on every platform, within one
+/// ulp of the exact value. Exact at 0 -> 1, -inf -> 0, +inf -> +inf, NaN -> NaN.
+let exp (x: float) : float =
+    let bits = BitConverter.DoubleToInt64Bits x
+    let hx = int32 (bits >>> 32)
+    let xsb = (uint32 hx) >>> 31
+    let hxAbs = hx &&& 0x7fffffff
+    let lx = uint32 (bits &&& 0xffffffffL)
+
+    if hxAbs >= 0x7ff00000 then
+        if ((hxAbs &&& 0xfffff) ||| int32 lx) <> 0 then
+            nan
+        elif xsb = 0u then
+            infinity
+        else
+            0.0
+    elif x > ExpOThreshold then
+        infinity
+    elif x < ExpUThreshold then
+        0.0
+    elif hxAbs < 0x3e300000 then
+        // |x| < 2^-28: exp(x) = 1 + x within 0.51 ulp; exact for ±0 -> 1.0.
+        1.0 + x
+    else
+        let k, hi, lo =
+            if hxAbs > 0x3fd62e42 then
+                // |x| > 0.5 * ln 2
+                if hxAbs < 0x3ff0a2b2 then
+                    // |x| < 1.5 * ln 2
+                    let hi = x - (if xsb = 0u then Ln2HiPos else Ln2HiNeg)
+                    let lo = if xsb = 0u then Ln2LoPos else Ln2LoNeg
+                    let k = if xsb = 0u then 1 else -1
+                    k, hi, lo
+                else
+                    let half = if xsb = 0u then 0.5 else -0.5
+                    let k = int (InvLn2 * x + half)
+                    let t = float k
+                    k, x - t * Ln2HiPos, t * Ln2LoPos
+            else
+                0, x, 0.0
+
+        let r = hi - lo
+        let t = r * r
+        let c = r - t * (ExpP1 + t * (ExpP2 + t * (ExpP3 + t * (ExpP4 + t * ExpP5))))
+
+        let y =
+            if k = 0 then
+                1.0 - ((r * c) / (c - 2.0) - r)
+            else
+                1.0 - ((lo - (r * c) / (2.0 - c)) - hi)
+
+        if k = 0 then
+            y
+        elif k >= -1021 then
+            if k = 1024 then
+                (y * Two512) * Two512
+            else
+                BitConverter.Int64BitsToDouble(BitConverter.DoubleToInt64Bits y + (int64 k <<< 52))
+        else
+            let scaled =
+                BitConverter.Int64BitsToDouble(BitConverter.DoubleToInt64Bits y + (int64 (k + 1000) <<< 52))
+
+            scaled * TwoM1000
+
+/// Natural logarithm ln(x), with the same bits on every platform, within one
+/// ulp of the exact value. Exact at 1 -> 0, ±0 -> -inf, +inf -> +inf, x < 0 or NaN -> NaN.
+let log (x: float) : float =
+    let bits = BitConverter.DoubleToInt64Bits x
+    let hx = int32 (bits >>> 32)
+    let lx = uint32 (bits &&& 0xffffffffL)
+
+    if ((hx &&& 0x7fffffff) ||| int32 lx) = 0 then
+        -infinity
+    elif hx < 0 then
+        nan
+    elif hx >= 0x7ff00000 then
+        if ((hx &&& 0xfffff) ||| int32 lx) <> 0 then
+            nan
+        else
+            infinity
+    else
+        let mutable k = 0
+        let mutable hx = hx
+        let mutable lx = lx
+
+        if hx < 0x00100000 then
+            // Subnormal: normalize into normal range by multiplying by 2^54.
+            k <- -54
+            let scaledBits = BitConverter.DoubleToInt64Bits(x * Two54)
+            hx <- int32 (scaledBits >>> 32)
+            lx <- uint32 (scaledBits &&& 0xffffffffL)
+
+        k <- k + (hx >>> 20) - 1023
+        hx <- hx &&& 0x000fffff
+        let i = (hx + 0x95f64) &&& 0x100000
+        let xNorm = BitConverter.Int64BitsToDouble((int64 (hx ||| (i ^^^ 0x3ff00000)) <<< 32) ||| int64 lx)
+        k <- k + (i >>> 20)
+        let f = xNorm - 1.0
+
+        if (0x000fffff &&& (2 + hx)) < 3 then
+            // |f| < 2^-20: x is very close to a power of 2.
+            if f = 0.0 then
+                if k = 0 then
+                    0.0
+                else
+                    let dk = float k
+                    dk * Ln2HiPos + dk * Ln2LoPos
+            else
+                let r = f * f * (0.5 - 0.33333333333333333 * f)
+
+                if k = 0 then
+                    f - r
+                else
+                    let dk = float k
+                    dk * Ln2HiPos - ((r - dk * Ln2LoPos) - f)
+        else
+            let s = f / (2.0 + f)
+            let dk = float k
+            let z = s * s
+            let ii = hx - 0x6147a
+            let w = z * z
+            let jj = 0x6b851 - hx
+            let t1 = w * (Lg2 + w * (Lg4 + w * Lg6))
+            let t2 = z * (Lg1 + w * (Lg3 + w * (Lg5 + w * Lg7)))
+            let r = t2 + t1
+
+            if (ii ||| jj) > 0 then
+                let hfsq = 0.5 * f * f
+
+                if k = 0 then
+                    f - (hfsq - s * (hfsq + r))
+                else
+                    dk * Ln2HiPos - ((hfsq - (s * (hfsq + r) + dk * Ln2LoPos)) - f)
+            else if k = 0 then
+                f - s * (f - r)
+            else
+                dk * Ln2HiPos - ((s * (f - r) - dk * Ln2LoPos) - f)
+
 let apply (f: Builtin) (args: float[]) : float =
     match f with
     | Sin -> sinDeg args[0]
@@ -288,8 +462,8 @@ let apply (f: Builtin) (args: float[]) : float =
     | Atan -> Math.Atan args[0] * deg
     | Atan2 -> Math.Atan2(args[0], args[1]) * deg
     | Sqrt -> Math.Sqrt args[0]
-    | Exp -> Math.Exp args[0]
-    | Log -> Math.Log args[0]
+    | Exp -> exp args[0]
+    | Log -> log args[0]
     | Abs -> Math.Abs args[0]
     | Floor -> Math.Floor args[0]
     | Ceil -> Math.Ceiling args[0]

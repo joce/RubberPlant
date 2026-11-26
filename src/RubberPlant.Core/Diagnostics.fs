@@ -84,6 +84,14 @@ module Codes =
     [<Literal>]
     let EmptyConsider = "RP0022"
 
+    /// Unterminated, empty, or multiline/NUL string literal in `include` (v0.3).
+    [<Literal>]
+    let InvalidStringLiteral = "RP0023"
+
+    /// Malformed `at` production (v0.3).
+    [<Literal>]
+    let InvalidTimedRule = "RP0024"
+
     // Static checks (checker)
     [<Literal>]
     let NamespaceClash = "RP0101"
@@ -136,6 +144,24 @@ module Codes =
     [<Literal>]
     let DuplicateConsider = "RP0117"
 
+    [<Literal>]
+    let DuplicateInclude = "RP0118"
+
+    [<Literal>]
+    let InvalidIncludeName = "RP0119"
+
+    [<Literal>]
+    let MixedTimedAndDiscrete = "RP0120"
+
+    [<Literal>]
+    let DuplicateTimedRule = "RP0121"
+
+    [<Literal>]
+    let InvalidTimedAge = "RP0122"
+
+    [<Literal>]
+    let InvalidTimedModule = "RP0123"
+
     // Evaluation (derivation, interpretation)
     [<Literal>]
     let DivisionByZero = "RP0201"
@@ -158,6 +184,9 @@ module Codes =
     [<Literal>]
     let PrimitiveLimitExceeded = "RP0207"
 
+    [<Literal>]
+    let SurfaceLoadError = "RP0208"
+
     // Warnings
     [<Literal>]
     let UnreachableRule = "RP0301"
@@ -171,6 +200,15 @@ module Codes =
     /// `.` with no open polygon.
     [<Literal>]
     let VertexOutsidePolygon = "RP0304"
+
+    [<Literal>]
+    let UnbalancedGC = "RP0305"
+
+    [<Literal>]
+    let UndeclaredSurface = "RP0306"
+
+    [<Literal>]
+    let InvalidSurfaceNeighbor = "RP0307"
 
 module Diagnostic =
     let error code pos message =

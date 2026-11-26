@@ -84,7 +84,9 @@ let private collectModules (file: File) : Dictionary<string, Pos option> =
                 for m in actualModules s do
                     add m.Name m.Pos
         | Settings _
-        | Let _ -> ()
+        | Let _
+        | Include _
+        | TimedRuleItem _ -> ()
 
     modules
 
@@ -358,6 +360,22 @@ let private checkSettings
             defaultSettings.Width
         | None -> defaultSettings.Width
 
+    let time =
+        match get Time with
+        | Some v when v >= 0.0 && System.Double.IsFinite v -> Some v
+        | Some v ->
+            invalid Time $"`time` must be a finite, non-negative number, got %s{formatNumber v}"
+            defaultSettings.Time
+        | None -> defaultSettings.Time
+
+    let widthScale =
+        match get WidthScale with
+        | Some v when v > 0.0 && System.Double.IsFinite v -> Some v
+        | Some v ->
+            invalid WidthScale $"`width_scale` must be a finite number greater than 0, got %s{formatNumber v}"
+            defaultSettings.WidthScale
+        | None -> defaultSettings.WidthScale
+
     { Derivations = derivations
       Angle = get Angle |> Option.defaultValue defaultSettings.Angle
       Step = get Step |> Option.defaultValue defaultSettings.Step
@@ -365,6 +383,8 @@ let private checkSettings
       Taper = taper
       Tropism = tropism
       Elasticity = elasticity
+      Time = time
+      WidthScale = widthScale
       // The seed is a run parameter, set by the host (§4.7).
       Seed = defaultSettings.Seed }
 
@@ -423,7 +443,7 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
 
     for item in file do
         match firstRule, item with
-        | Some r, (Settings(_, p) | Let(_, _, p) | Ignore(_, p) | Consider(_, p) | Axiom(_, p)) ->
+        | Some r, (Settings(_, p) | Let(_, _, p) | Include(_, _, _, p) | Ignore(_, p) | Consider(_, p) | Axiom(_, p)) ->
             ctx.Error
                 Codes.DeclarationAfterRules
                 p
@@ -531,6 +551,10 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
             match r with
             | Production _ -> productions.Add compiled
             | Interpretation _ -> interpretations.Add compiled
+        | Include _ -> ()
+        | TimedRuleItem r ->
+            if firstRule.IsNone then
+                firstRule <- Some r.Pos
 
     let checkedSettings = checkSettings ctx scalars vectors
 
@@ -553,9 +577,12 @@ let check (file: File) : Result<Model * Diagnostic list, Diagnostic list> =
     else
         Ok(
             { Settings = checkedSettings
+              Includes = []
+              Surfaces = Map.empty
               Context = context
               Axiom = fst axiom.Value
               Productions = List.ofSeq productions
+              TimedProductions = []
               Interpretations = List.ofSeq interpretations },
             all
         )

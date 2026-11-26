@@ -68,7 +68,9 @@ let private points (geometry: Geometry) =
     geometry
     |> Seq.collect (function
         | Segment(p0, p1, _, _) -> [ p0; p1 ]
-        | Polygon(vs, _) -> vs)
+        | Polygon(vs, _) -> vs
+        | GeneralizedCylinder _
+        | Surface _ -> [])
 
 /// The width scale k (§4.4).
 let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<float, string> =
@@ -86,7 +88,9 @@ let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<floa
                 (fun acc p ->
                     match p with
                     | Segment(_, _, w, _) -> max acc w
-                    | Polygon _ -> acc)
+                    | Polygon _
+                    | GeneralizedCylinder _
+                    | Surface _ -> acc)
                 0.0
 
         let denominator = svg.Size - 2.0 * (svg.Margin + widest / 2.0)
@@ -325,6 +329,8 @@ let build (options: MeshOptions) (geometry: Geometry) : Result<Mesh, string> =
                 match prim with
                 | Segment(p0, p1, w, color) -> addCylinder (groupOf color) ring p0 p1 (k * w / 2.0)
                 | Polygon(vs, color) -> addPolygon (groupOf color) vs
+                | GeneralizedCylinder _
+                | Surface _ -> ()
 
             { Groups =
                 groups

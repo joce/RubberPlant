@@ -32,7 +32,9 @@ let private points (g: Geometry) =
     g
     |> Seq.collect (function
         | Segment(p0, p1, _, _) -> [ p0; p1 ]
-        | Polygon(vs, _) -> vs)
+        | Polygon(vs, _) -> vs
+        | GeneralizedCylinder _
+        | Surface _ -> [])
 
 let private maxStrokeWidth (geometry: Geometry) =
     geometry
@@ -40,7 +42,9 @@ let private maxStrokeWidth (geometry: Geometry) =
         (fun acc p ->
             match p with
             | Segment(_, _, w, _) -> max acc w
-            | Polygon _ -> acc)
+            | Polygon _
+            | GeneralizedCylinder _
+            | Surface _ -> acc)
         0.0
 
 /// Draws with `pad` pixels around the drawing (margin plus half the widest stroke).
@@ -120,6 +124,8 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
                 |> String.concat " "
 
             line $"""<polygon points="%s{pts}" fill="%s{Palette.hex color}"/>"""
+        | GeneralizedCylinder _
+        | Surface _ -> ()
 
     flush ()
     line "</svg>"

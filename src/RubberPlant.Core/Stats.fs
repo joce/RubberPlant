@@ -26,6 +26,7 @@ type BranchOrderStats =
 
 type DerivationStats =
     { Steps: int
+      Time: float option
       DerivedModules: int
       DrawingModules: int
       MaxBracketDepth: int
@@ -40,6 +41,8 @@ type GeometryStats =
       AspectRatio: float option
       SegmentCount: int
       PolygonCount: int
+      GcCount: int
+      SurfaceCount: int
       TotalSegmentLength: float
       WidthMin: float option
       WidthMax: float option
@@ -103,6 +106,25 @@ let private maxBracketDepthOf (derived: LString) : int =
 
     maxDepth
 
+/// Transforms a canonical surface control point into world space (v0.3-organs-animation.md §4.4).
+let private transformSurfacePoint (inst: SurfaceInstance) (q: Vec3) : Vec3 =
+    inst.Origin
+    + (inst.Scale.X * q.X) * inst.AxisX
+    + (inst.Scale.Y * q.Y) * inst.AxisY
+    + (inst.Scale.Z * q.Z) * inst.AxisZ
+
+let inline private iterGcSpans (sections: CrossSection list) (f: Vec3 -> Vec3 -> unit) =
+    let rec go (prev: CrossSection) (rest: CrossSection list) =
+        match rest with
+        | [] -> ()
+        | cur :: tail ->
+            f prev.P cur.P
+            go cur tail
+
+    match sections with
+    | first :: rest -> go first rest
+    | [] -> ()
+
 let private computeCenterOfMass (geometry: Geometry) (totalSegLen: float) (pointCount: int) : Vec3 option =
     if pointCount = 0 then
         None
@@ -116,18 +138,22 @@ let private computeCenterOfMass (geometry: Geometry) (totalSegLen: float) (point
         let mutable sy = 0.0
         let mutable sz = 0.0
 
+        let addSpan (p0: Vec3) (p1: Vec3) =
+            let len = scaleSafeLength (p1 - p0)
+
+            if len > 0.0 then
+                let w = Math.ScaleB(len, -e)
+                let m = midpoint p0 p1
+                sx <- sx + w * m.X
+                sy <- sy + w * m.Y
+                sz <- sz + w * m.Z
+
         for prim in geometry do
             match prim with
-            | Segment(p0, p1, _, _) ->
-                let len = scaleSafeLength (p1 - p0)
-
-                if len > 0.0 then
-                    let w = Math.ScaleB(len, -e)
-                    let m = midpoint p0 p1
-                    sx <- sx + w * m.X
-                    sy <- sy + w * m.Y
-                    sz <- sz + w * m.Z
-            | Polygon _ -> ()
+            | Segment(p0, p1, _, _) -> addSpan p0 p1
+            | GeneralizedCylinder gc -> iterGcSpans gc.Sections addSpan
+            | Polygon _
+            | Surface _ -> ()
 
         let direct = Vec3.create (sx / totalScaled) (sy / totalScaled) (sz / totalScaled)
 
@@ -140,18 +166,22 @@ let private computeCenterOfMass (geometry: Geometry) (totalSegLen: float) (point
             let mutable fy = 0.0
             let mutable fz = 0.0
 
+            let addSpanFallback (p0: Vec3) (p1: Vec3) =
+                let len = scaleSafeLength (p1 - p0)
+
+                if len > 0.0 then
+                    let w = len / totalSegLen
+                    let m = midpoint p0 p1
+                    fx <- fx + w * m.X
+                    fy <- fy + w * m.Y
+                    fz <- fz + w * m.Z
+
             for prim in geometry do
                 match prim with
-                | Segment(p0, p1, _, _) ->
-                    let len = scaleSafeLength (p1 - p0)
-
-                    if len > 0.0 then
-                        let w = len / totalSegLen
-                        let m = midpoint p0 p1
-                        fx <- fx + w * m.X
-                        fy <- fy + w * m.Y
-                        fz <- fz + w * m.Z
-                | Polygon _ -> ()
+                | Segment(p0, p1, _, _) -> addSpanFallback p0 p1
+                | GeneralizedCylinder gc -> iterGcSpans gc.Sections addSpanFallback
+                | Polygon _
+                | Surface _ -> ()
 
             Some(normVec (Vec3.create fx fy fz))
     else
@@ -170,6 +200,13 @@ let private computeCenterOfMass (geometry: Geometry) (totalSegLen: float) (point
                 addPt p0
                 addPt p1
             | Polygon(vs, _) -> List.iter addPt vs
+            | GeneralizedCylinder gc ->
+                for s in gc.Sections do
+                    addPt s.P
+            | Surface inst ->
+                for patch in inst.Surface.Patches do
+                    for q in patch.ControlPoints do
+                        addPt (transformSurfacePoint inst q)
 
         let fn = float pointCount
         let direct = Vec3.create (sx / fn) (sy / fn) (sz / fn)
@@ -192,6 +229,13 @@ let private computeCenterOfMass (geometry: Geometry) (totalSegLen: float) (point
                     addScaled p0
                     addScaled p1
                 | Polygon(vs, _) -> List.iter addScaled vs
+                | GeneralizedCylinder gc ->
+                    for s in gc.Sections do
+                        addScaled s.P
+                | Surface inst ->
+                    for patch in inst.Surface.Patches do
+                        for q in patch.ControlPoints do
+                            addScaled (transformSurfacePoint inst q)
 
             Some(normVec (Vec3.create fx fy fz))
 
@@ -233,9 +277,22 @@ let analyze
     let mutable maxZ = -infinity
     let mutable segCount = 0
     let mutable polyCount = 0
+    let mutable gcCount = 0
+    let mutable surfaceCount = 0
     let mutable totalSegLen = 0.0
+    let mutable hasWidth = false
     let mutable widthMin = infinity
     let mutable widthMax = -infinity
+
+    let time =
+        match derivationTrace.Time with
+        | Some t ->
+            if not (Double.IsFinite t) then
+                nonFinite <- true
+                None
+            else
+                Some(normZero t)
+        | None -> None
 
     let visitPoint (p: Vec3) =
         if not (Vec3.isFinite p) then
@@ -249,6 +306,25 @@ let analyze
             if p.Y > maxY then maxY <- p.Y
             if p.Z > maxZ then maxZ <- p.Z
 
+    let visitWidth (w: float) =
+        hasWidth <- true
+
+        if not (Double.IsFinite w) then
+            nonFinite <- true
+        else
+            if w < widthMin then widthMin <- w
+            if w > widthMax then widthMax <- w
+
+    let visitSpan (order: int) (p0: Vec3) (p1: Vec3) =
+        let len = scaleSafeLength (p1 - p0)
+
+        if not (Double.IsFinite len) then
+            nonFinite <- true
+        else
+            totalSegLen <- totalSegLen + len
+            orderSegs[order] <- orderSegs[order] + 1
+            orderLen[order] <- orderLen[order] + len
+
     let mutable idx = 0
 
     for prim in geometry do
@@ -260,25 +336,48 @@ let analyze
             visitPoint p0
             visitPoint p1
             segCount <- segCount + 1
-
-            if not (Double.IsFinite w) then
-                nonFinite <- true
-            else
-                if w < widthMin then widthMin <- w
-                if w > widthMax then widthMax <- w
-
-            let len = scaleSafeLength (p1 - p0)
-
-            if not (Double.IsFinite len) then
-                nonFinite <- true
-            else
-                totalSegLen <- totalSegLen + len
-                orderSegs[order] <- orderSegs[order] + 1
-                orderLen[order] <- orderLen[order] + len
+            visitWidth w
+            visitSpan order p0 p1
         | Polygon(vs, _) ->
             List.iter visitPoint vs
             polyCount <- polyCount + 1
             orderPolys[order] <- orderPolys[order] + 1
+        | GeneralizedCylinder gc ->
+            gcCount <- gcCount + 1
+
+            for s in gc.Sections do
+                visitPoint s.P
+
+                if not (Double.IsFinite s.Width && Double.IsFinite s.ScaleL && Double.IsFinite s.ScaleU) then
+                    hasWidth <- true
+                    nonFinite <- true
+                else
+                    let w =
+                        if s.ScaleL = 1.0 && s.ScaleU = 1.0 then
+                            s.Width
+                        else
+                            s.Width * max s.ScaleL s.ScaleU
+
+                    visitWidth w
+
+            iterGcSpans gc.Sections (visitSpan order)
+        | Surface inst ->
+            surfaceCount <- surfaceCount + 1
+
+            if
+                not (
+                    Vec3.isFinite inst.Origin
+                    && Vec3.isFinite inst.AxisX
+                    && Vec3.isFinite inst.AxisY
+                    && Vec3.isFinite inst.AxisZ
+                    && Vec3.isFinite inst.Scale
+                )
+            then
+                nonFinite <- true
+            else
+                for patch in inst.Surface.Patches do
+                    for q in patch.ControlPoints do
+                        visitPoint (transformSurfacePoint inst q)
 
     if not (Double.IsFinite totalSegLen) then
         nonFinite <- true
@@ -357,6 +456,7 @@ let analyze
 
         let derivationStats =
             { Steps = derivationTrace.Steps
+              Time = time
               DerivedModules = derived.Length
               DrawingModules = drawing.Length
               MaxBracketDepth = maxBracketDepthOf derived
@@ -371,9 +471,11 @@ let analyze
               AspectRatio = aspectRatio
               SegmentCount = segCount
               PolygonCount = polyCount
+              GcCount = gcCount
+              SurfaceCount = surfaceCount
               TotalSegmentLength = normZero totalSegLen
-              WidthMin = if segCount > 0 then Some(normZero widthMin) else None
-              WidthMax = if segCount > 0 then Some(normZero widthMax) else None
+              WidthMin = if hasWidth then Some(normZero widthMin) else None
+              WidthMax = if hasWidth then Some(normZero widthMax) else None
               CenterOfMass = centerOfMass
               Lean = lean
               BranchOrder = branchOrder }
@@ -417,6 +519,7 @@ let toJson (pretty: bool) (stats: Stats) : string =
      // derivation
      w.WriteStartObject "derivation"
      w.WriteNumber("steps", stats.Derivation.Steps)
+     writeOptFloat "time" stats.Derivation.Time
      w.WriteNumber("derived_modules", stats.Derivation.DerivedModules)
      w.WriteNumber("drawing_modules", stats.Derivation.DrawingModules)
      w.WriteNumber("max_bracket_depth", stats.Derivation.MaxBracketDepth)
@@ -453,6 +556,8 @@ let toJson (pretty: bool) (stats: Stats) : string =
      writeOptFloat "aspect_ratio" g.AspectRatio
      w.WriteNumber("segment_count", g.SegmentCount)
      w.WriteNumber("polygon_count", g.PolygonCount)
+     w.WriteNumber("gc_count", g.GcCount)
+     w.WriteNumber("surface_count", g.SurfaceCount)
      w.WriteNumber("total_segment_length", normZero g.TotalSegmentLength)
      writeOptFloat "width_min" g.WidthMin
      writeOptFloat "width_max" g.WidthMax
