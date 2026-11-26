@@ -40,13 +40,16 @@ let private spanWidth (s0: CrossSection) (s1: CrossSection) =
     let sum = w0 + w1
     if Double.IsFinite sum then 0.5 * sum else 0.5 * w0 + 0.5 * w1
 
-let private points (g: Geometry) =
+let private points (surfacePolys: ResizeArray<Vec3[][]>) (g: Geometry) =
     g
     |> Seq.collect (function
-        | Segment(p0, p1, _, _) -> [ p0; p1 ]
-        | Polygon(vs, _) -> vs
-        | GeneralizedCylinder gc -> gc.Sections |> List.map _.P
-        | Surface _ -> [])
+        | Segment(p0, p1, _, _) -> Seq.ofList [ p0; p1 ]
+        | Polygon(vs, _) -> Seq.ofList vs
+        | GeneralizedCylinder gc -> gc.Sections |> Seq.map _.P
+        | Surface inst ->
+            let polys = RubberPlant.Bezier.surfaceBoundaryPolygons inst
+            surfacePolys.Add polys
+            polys |> Seq.collect Array.toSeq)
 
 let private maxStrokeWidth (geometry: Geometry) =
     geometry
@@ -69,7 +72,8 @@ let private maxStrokeWidth (geometry: Geometry) =
 
 /// Draws with `pad` pixels around the drawing (margin plus half the widest stroke).
 let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
-    let pts = points geometry |> Array.ofSeq
+    let surfacePolys = ResizeArray<Vec3[][]>()
+    let pts = points surfacePolys geometry |> Array.ofSeq
 
     let minX, maxX, minY, maxY =
         if pts.Length = 0 then
@@ -132,6 +136,8 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
         path.Append($" L%s{finish}") |> ignore
         lastEnd <- finish
 
+    let mutable surfaceIdx = 0
+
     for prim in geometry do
         match prim with
         | Segment(p0, p1, width, color) -> addSpan p0 p1 width color
@@ -157,7 +163,20 @@ let private draw (options: Options) (pad: float) (geometry: Geometry) : string =
             match gc.Sections with
             | first :: rest -> go first rest
             | [] -> ()
-        | Surface _ -> ()
+        | Surface inst ->
+            flush ()
+            let polys = surfacePolys[surfaceIdx]
+            surfaceIdx <- surfaceIdx + 1
+
+            for poly in polys do
+                let pts =
+                    poly
+                    |> Array.map (fun v ->
+                        let x, y = px v
+                        $"%s{num x},%s{num y}")
+                    |> String.concat " "
+
+                line $"""<polygon points="%s{pts}" fill="%s{Palette.hex inst.Color}"/>"""
 
     flush ()
     line "</svg>"

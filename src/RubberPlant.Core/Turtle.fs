@@ -188,13 +188,14 @@ type TurtleTrace =
       /// for a `Polygon`, depth when `{` was opened.
       PrimitiveDepths: int[] }
 
-/// Interprets a drawing string under `limits`. Returns the geometry, trace, and
-/// any warnings, or an error if the turtle meets a non-finite value, an invalid
-/// width, or exceeds the primitive budget: backends must only ever receive
-/// finite geometry.
-let interpretWithTrace
+/// Interprets a drawing string under `limits` and declared `surfaces`.
+/// Returns the geometry, trace, and any warnings, or an error if the turtle meets
+/// a non-finite value, an invalid width, or exceeds the primitive budget:
+/// backends must only ever receive finite geometry.
+let interpretWithSurfacesTrace
     (limits: Limits)
     (settings: Settings)
+    (surfaces: Map<string, BezierSurface>)
     (drawing: LString)
     : Result<Geometry * TurtleTrace * Diagnostic list, Diagnostic list> =
     let out = ResizeArray<Primitive>()
@@ -210,6 +211,7 @@ let interpretWithTrace
     let mutable unmatchedClose = false
     let mutable vertexOutside = false
     let mutable warnedUnbalancedGC = false
+    let mutable undeclaredSurface = false
     let tHat = normalizeTropism settings.Tropism
 
     let warnUnbalancedGC (msg: string) =
@@ -217,15 +219,19 @@ let interpretWithTrace
             warnedUnbalancedGC <- true
             warnings.Add(Diagnostic.warning Codes.UnbalancedGC None msg)
 
-    let consumeBudget () =
+    let consumeBudget (cost: int) =
         match limits.MaxPrimitives with
-        | Some limit when primitiveCount >= limit ->
+        | Some limit when primitiveCount + cost > limit ->
             raise (TurtleError(Codes.PrimitiveLimitExceeded, $"primitive limit of %s{string limit} exceeded"))
-        | _ -> primitiveCount <- primitiveCount + 1
+        | _ -> primitiveCount <- primitiveCount + cost
 
     let addPrimitive (depth: int) (p: Primitive) =
         out.Add p
         depths.Add depth
+
+    let addPrimitiveWithCost (cost: int) (depth: int) (p: Primitive) =
+        consumeBudget cost
+        addPrimitive depth p
 
     /// `F`, `f` and `G`: emit the segment (`draw`), record the polygon vertex
     /// (`vertex`), then bend toward T (§5.5).
@@ -238,10 +244,10 @@ let interpretWithTrace
         if draw then
             match activeGC with
             | Some gc when polygons.Count = 0 ->
-                consumeBudget ()
+                consumeBudget 1
                 gc.Sections.Add(snapshotSection { t with P = p1 })
             | _ ->
-                consumeBudget ()
+                consumeBudget 1
                 addPrimitive stack.Count (Segment(t.P, p1, t.Width, t.Color))
 
         if vertex && polygons.Count > 0 then
@@ -266,7 +272,11 @@ let interpretWithTrace
         if not (System.Double.IsFinite settings.Elasticity) then
             invalidGeometry $"the elasticity must be finite, got %s{formatNumber settings.Elasticity}"
 
-        for sym in drawing do
+        let mutable i = 0
+
+        while i < drawing.Length do
+            let sym = drawing[i]
+
             match sym with
             | Push ->
                 stack.Push(struct (t, activeGC))
@@ -300,6 +310,65 @@ let interpretWithTrace
                     t <- savedT
                     activeGC <- savedGC
             | Cut -> () // the cut happens in the next derivation step (language.md "Cutting branches")
+            | Mod("~", args) ->
+                if args.Length > 0 && warned.Add(struct ("~", args.Length)) then
+                    warnings.Add(
+                        Diagnostic.warning
+                            Codes.ExtraTurtleParameters
+                            None
+                            $"the turtle ignores the extra parameters of `~` (it uses 0, got %s{string args.Length})"
+                    )
+
+                if i + 1 < drawing.Length then
+                    match drawing[i + 1] with
+                    | Mod(surfName, surfArgs) ->
+                        match surfaces.TryFind surfName with
+                        | Some surf ->
+                            i <- i + 1
+
+                            if surfArgs.Length > 3 && warned.Add(struct (surfName, surfArgs.Length)) then
+                                warnings.Add(
+                                    Diagnostic.warning
+                                        Codes.ExtraTurtleParameters
+                                        None
+                                        $"the turtle ignores the extra parameters of `%s{surfName}` (it uses 3, got %s{string surfArgs.Length})"
+                                )
+
+                            let checkFinite (idx: int) =
+                                let v = surfArgs[idx]
+
+                                if not (System.Double.IsFinite v) then
+                                    invalidGeometry
+                                        $"`~%s{format [| drawing[i] |]}`: surface scale parameters must be finite"
+
+                                v
+
+                            let sx, sy, sz =
+                                match surfArgs.Length with
+                                | 0 -> 1.0, 1.0, 1.0
+                                | 1 ->
+                                    let s = checkFinite 0
+                                    s, s, s
+                                | 2 -> checkFinite 0, checkFinite 1, 1.0
+                                | _ -> checkFinite 0, checkFinite 1, checkFinite 2
+
+                            let cost = max 1 surf.Patches.Length
+
+                            addPrimitiveWithCost
+                                cost
+                                stack.Count
+                                (Surface
+                                    { Surface = surf
+                                      Origin = t.P
+                                      AxisX = -1.0 * t.L
+                                      AxisY = t.H
+                                      AxisZ = t.U
+                                      Scale = Vec3.create sx sy sz
+                                      Color = t.Color })
+                        | None -> undeclaredSurface <- true
+                    | _ -> undeclaredSurface <- true
+                else
+                    undeclaredSurface <- true
             | Mod(name, args) ->
                 match turtleArity.TryFind name with
                 | None -> () // not a turtle symbol: ignored (§5.2)
@@ -386,7 +455,7 @@ let interpretWithTrace
                     | "}" ->
                         if polygons.Count > 0 then
                             let struct (openDepth, verts) = polygons.Pop()
-                            consumeBudget ()
+                            consumeBudget 1
                             addPrimitive openDepth (Polygon(List.ofSeq verts, t.Color))
                         else
                             unmatchedClose <- true
@@ -466,6 +535,8 @@ let interpretWithTrace
                         | None -> t <- { t with ContourSides = sidesOpt }
                     | _ -> ()
 
+            i <- i + 1
+
     try
         run ()
 
@@ -491,9 +562,28 @@ let interpretWithTrace
         if vertexOutside then
             warnings.Add(Diagnostic.warning Codes.VertexOutsidePolygon None "`.` outside a polygon; ignored")
 
+        if undeclaredSurface then
+            warnings.Add(
+                Diagnostic.warning
+                    Codes.UndeclaredSurface
+                    None
+                    "`~` is not followed by an `include`-declared surface name; ignored"
+            )
+
         Ok(List.ofSeq out, { PrimitiveDepths = depths.ToArray() }, List.ofSeq warnings)
     with TurtleError(code, msg) ->
         Error [ Diagnostic.error code None msg ]
+
+/// Interprets a drawing string under `limits`. Returns the geometry, trace, and
+/// any warnings, or an error if the turtle meets a non-finite value, an invalid
+/// width, or exceeds the primitive budget: backends must only ever receive
+/// finite geometry.
+let interpretWithTrace
+    (limits: Limits)
+    (settings: Settings)
+    (drawing: LString)
+    : Result<Geometry * TurtleTrace * Diagnostic list, Diagnostic list> =
+    interpretWithSurfacesTrace limits settings Map.empty drawing
 
 /// Interprets a drawing string under `limits`. Returns the geometry and any
 /// warnings, or an error if the turtle meets a non-finite value, an invalid

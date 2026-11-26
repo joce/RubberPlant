@@ -80,7 +80,7 @@ let gcUCupMorph =
     let l = v -1.0 0.0 0.0
     let u = v 0.0 0.0 1.0
 
-    { Sides = 6; WidthScale = Some 1.0 },
+    { defaultMeshOptions with Sides = 6; WidthScale = Some 1.0 },
     [ GeneralizedCylinder
           { Sides = 0
             Sections =
@@ -102,6 +102,76 @@ let gcVFoldColors =
                 sec (v 0.0 1.0 0.0) h l u 1.0 1.0 1.0 2 (VFold 0.5)
                 sec (v 0.0 2.0 0.0) h l u 0.4 1.0 1.0 2 (VFold 0.5) ] } ]
 
+let private noNeighbors: PatchNeighbors =
+    { TopLeft = None
+      Top = None
+      TopRight = None
+      Left = None
+      Right = None
+      BottomLeft = None
+      Bottom = None
+      BottomRight = None }
+
+/// Single-patch bicubic surface with a pinched tip (i = 0 row collapsed to one point).
+let pinchedSurface =
+    let cp =
+        [| for i in 0..3 do
+               for j in 0..3 ->
+                   let u = float i / 3.0
+                   let vCoord = float j / 3.0
+                   v ((vCoord - 0.5) * u) (1.0 - u) (0.25 * u * (1.0 - u)) |]
+
+    let surf: BezierSurface =
+        { Name = "Pinch"
+          DefaultDivisions = (2, 2)
+          EndPoint = v 0.0 1.0 0.0
+          Patches =
+            [| { Name = "p0"
+                 Neighbors = noNeighbors
+                 ControlPoints = cp } |] }
+
+    defaultMeshOptions,
+    [ Surface
+          { Surface = surf
+            Origin = Vec3.zero
+            AxisX = v 1.0 0.0 0.0
+            AxisY = v 0.0 1.0 0.0
+            AxisZ = v 0.0 0.0 1.0
+            Scale = v 1.0 1.0 1.0
+            Color = 1 } ]
+
+/// Two-patch curved bicubic surface joined along a reciprocal B/A seam.
+let seamSurface =
+    let makeGrid (y0: float) (y1: float) (z0: float) (z1: float) =
+        [| for i in 0..3 do
+               let u = float i / 3.0
+               let y = y0 + (y1 - y0) * u
+               let z = z0 + (z1 - z0) * u
+
+               for j in 0..3 -> v (float j / 3.0 - 0.5) y z |]
+
+    let surf: BezierSurface =
+        { Name = "Seam"
+          DefaultDivisions = (2, 2)
+          EndPoint = v 0.0 2.0 1.0
+          Patches =
+            [| { Name = "p0"
+                 Neighbors = { noNeighbors with Bottom = Some "p1" }
+                 ControlPoints = makeGrid 0.0 1.0 0.0 0.0 }
+               { Name = "p1"
+                 Neighbors = { noNeighbors with Top = Some "p0" }
+                 ControlPoints = makeGrid 1.0 2.0 0.0 1.0 } |] }
+
+    defaultMeshOptions,
+    [ Surface
+          { Surface = surf
+            Origin = Vec3.zero
+            AxisX = v 1.0 0.0 0.0
+            AxisY = v 0.0 1.0 0.0
+            AxisZ = v 0.0 0.0 1.0
+            Scale = v 1.0 1.0 1.0
+            Color = 1 } ]
+
 let all =
     [ "one-cylinder", oneCylinder
       "bent-chain", bentChain
@@ -110,4 +180,6 @@ let all =
       "gc-circle", gcCircle
       "gc-flat-pinched", gcFlatPinched
       "gc-ucup-morph", gcUCupMorph
-      "gc-vfold-colors", gcVFoldColors ]
+      "gc-vfold-colors", gcVFoldColors
+      "pinched-surface", pinchedSurface
+      "seam-surface", seamSurface ]

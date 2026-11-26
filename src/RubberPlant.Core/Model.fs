@@ -133,7 +133,7 @@ module ContextFilter =
 /// Predefined turtle module names and symbols (§5.2).
 /// These pass through untimed in timed DOL-systems and cannot be `at` predecessors.
 let turtleModuleNames =
-    set [ "F"; "f"; "G"; "."; "$"; "+"; "-"; "&"; "^"; "\\"; "/"; "|"; "{"; "}"; "!"; "'" ]
+    set [ "F"; "f"; "G"; "."; "$"; "+"; "-"; "&"; "^"; "\\"; "/"; "|"; "{"; "}"; "!"; "'"; "~" ]
 
 type Model =
     { Settings: Settings

@@ -57,6 +57,8 @@ Render options:
       --size <px>         SVG: size of the longer side of the image (default 800)
       --sides <n>         meshes: facets around each cylinder, at least 3
                           (default 12)
+      --surface-div <n>   meshes: bicubic patch subdivision per axis, at least 1
+                          (default: .s file PRECISION or 6)
       --width-scale <k>   meshes: world units per line width unit, or auto
                           (default) to match the SVG's proportions
 
@@ -99,6 +101,7 @@ type Args =
       Format: Format option
       Size: float option
       Sides: int option
+      SurfaceDiv: int option
       /// Some None: auto.
       WidthScale: float option option
       Drawing: bool
@@ -150,6 +153,7 @@ let private parseArgs (argv: string list) : Args =
           Format = None
           Size = None
           Sides = None
+          SurfaceDiv = None
           WidthScale = None
           Drawing = false
           Pretty = false
@@ -186,6 +190,10 @@ let private parseArgs (argv: string list) : Args =
             match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
             | true, n when n >= 3 -> go rest { acc with Sides = Some n }
             | _ -> raise (UsageError $"--sides expects an integer of at least 3, got '%s{v}'")
+        | "--surface-div" :: v :: rest ->
+            match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
+            | true, n when n >= 1 -> go rest { acc with SurfaceDiv = Some n }
+            | _ -> raise (UsageError $"--surface-div expects an integer of at least 1, got '%s{v}'")
         | "--width-scale" :: v :: rest ->
             if v = "auto" then
                 go rest { acc with WidthScale = Some None }
@@ -264,6 +272,7 @@ let private parseArgs (argv: string list) : Args =
           "--format", args.Format.IsSome
           "--size", args.Size.IsSome
           "--sides", args.Sides.IsSome
+          "--surface-div", args.SurfaceDiv.IsSome
           "--width-scale", args.WidthScale.IsSome ]
 
     if args.Command <> Render then
@@ -308,6 +317,7 @@ let private outputFormat (args: Args) : Format =
     match format with
     | SvgFormat ->
         if args.Sides.IsSome then raise (UsageError "--sides doesn't apply to SVG output")
+        if args.SurfaceDiv.IsSome then raise (UsageError "--surface-div doesn't apply to SVG output")
         if args.WidthScale.IsSome then raise (UsageError "--width-scale doesn't apply to SVG output")
     | ObjFormat
     | GltfFormat
@@ -381,103 +391,128 @@ let private run (args: Args) : int =
             else
                 report args.Input warnings
 
-                let model =
-                    { model with
-                        Settings = applyOverrides args model.Settings }
+                let baseDir = Path.GetDirectoryName args.Input
 
-                let limits =
-                    { MaxModules = defaultArg args.MaxModules Limits.defaults.MaxModules
-                      MaxPrimitives = defaultArg args.MaxPrimitives Limits.defaults.MaxPrimitives }
+                let readSurfaceFile (relPath: string) =
+                    let normalized =
+                        relPath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)
 
-                match args.Command with
-                | Check -> 0
-                | Derive ->
-                    let derivedResult =
-                        if timed then
-                            TimedDerivation.deriveWith limits model
+                    let fullPath =
+                        if String.IsNullOrEmpty baseDir then
+                            normalized
                         else
-                            Derivation.deriveWith limits model
+                            Path.Combine(baseDir, normalized)
 
-                    let result =
-                        derivedResult
-                        |> Result.bind (fun derived ->
-                            if args.Drawing then
-                                Derivation.interpretWith limits model derived
+                    try
+                        Ok(File.ReadAllText fullPath)
+                    with e ->
+                        Error e.Message
+
+                match Pipeline.loadSurfaces readSurfaceFile model with
+                | Error diags ->
+                    report args.Input diags
+                    1
+                | Ok(model, surfaceWarnings) ->
+                    report args.Input surfaceWarnings
+
+                    let model =
+                        { model with
+                            Settings = applyOverrides args model.Settings }
+
+                    let limits =
+                        { MaxModules = defaultArg args.MaxModules Limits.defaults.MaxModules
+                          MaxPrimitives = defaultArg args.MaxPrimitives Limits.defaults.MaxPrimitives }
+
+                    match args.Command with
+                    | Check -> 0
+                    | Derive ->
+                        let derivedResult =
+                            if timed then
+                                TimedDerivation.deriveWith limits model
                             else
-                                Ok derived)
+                                Derivation.deriveWith limits model
 
-                    match result with
-                    | Error diags ->
-                        report args.Input diags
-                        1
-                    | Ok s ->
-                        printfn "%s" (LString.format s)
-                        0
-                | Stats ->
-                    match Pipeline.runWith limits model with
-                    | Error diags ->
-                        report args.Input diags
-                        1
-                    | Ok output ->
-                        report args.Input output.Warnings
+                        let result =
+                            derivedResult
+                            |> Result.bind (fun derived ->
+                                if args.Drawing then
+                                    Derivation.interpretWith limits model derived
+                                else
+                                    Ok derived)
 
-                        match
-                            Stats.analyze
-                                output.Derived
-                                output.Drawing
-                                output.DerivationTrace
-                                output.Geometry
-                                output.TurtleTrace
-                        with
+                        match result with
                         | Error diags ->
                             report args.Input diags
                             1
-                        | Ok stats ->
-                            Console.Out.Write(Stats.toJson args.Pretty stats)
+                        | Ok s ->
+                            printfn "%s" (LString.format s)
                             0
-                | Render ->
-                    match Pipeline.runWith limits model with
-                    | Error diags ->
-                        report args.Input diags
-                        1
-                    | Ok output ->
-                        report args.Input output.Warnings
-
-                        let format = outputFormat args
-
-                        let outPath =
-                            defaultArg args.Output (Path.ChangeExtension(args.Input, "." + formatName format))
-
-                        let meshOptions =
-                            { Mesh.defaultMeshOptions with
-                                Sides = defaultArg args.Sides Mesh.defaultMeshOptions.Sides
-                                WidthScale = defaultArg args.WidthScale model.Settings.WidthScale }
-
-                        let files =
-                            match format with
-                            | SvgFormat ->
-                                let options =
-                                    { Svg.defaultOptions with
-                                        Size = defaultArg args.Size Svg.defaultOptions.Size }
-
-                                Svg.render options output.Geometry |> Result.map (fun svg -> [ outPath, utf8 svg ])
-                            | ObjFormat ->
-                                let mtlPath = Path.ChangeExtension(outPath, ".mtl")
-
-                                Obj.render meshOptions (Path.GetFileName mtlPath) output.Geometry
-                                |> Result.map (fun o -> [ outPath, utf8 o.Obj; mtlPath, utf8 o.Mtl ])
-                            | GltfFormat ->
-                                Gltf.renderText meshOptions output.Geometry
-                                |> Result.map (fun text -> [ outPath, utf8 text ])
-                            | GlbFormat ->
-                                Gltf.renderBinary meshOptions output.Geometry
-                                |> Result.map (fun bytes -> [ outPath, bytes ])
-
-                        match files with
-                        | Error msg ->
-                            eprintfn "%s: error: %s" args.Input msg
+                    | Stats ->
+                        match Pipeline.runWith limits model with
+                        | Error diags ->
+                            report args.Input diags
                             1
-                        | Ok files -> if writeAll files then 0 else 1
+                        | Ok output ->
+                            report args.Input output.Warnings
+
+                            match
+                                Stats.analyze
+                                    output.Derived
+                                    output.Drawing
+                                    output.DerivationTrace
+                                    output.Geometry
+                                    output.TurtleTrace
+                            with
+                            | Error diags ->
+                                report args.Input diags
+                                1
+                            | Ok stats ->
+                                Console.Out.Write(Stats.toJson args.Pretty stats)
+                                0
+                    | Render ->
+                        match Pipeline.runWith limits model with
+                        | Error diags ->
+                            report args.Input diags
+                            1
+                        | Ok output ->
+                            report args.Input output.Warnings
+
+                            let format = outputFormat args
+
+                            let outPath =
+                                defaultArg args.Output (Path.ChangeExtension(args.Input, "." + formatName format))
+
+                            let meshOptions =
+                                { Mesh.defaultMeshOptions with
+                                    Sides = defaultArg args.Sides Mesh.defaultMeshOptions.Sides
+                                    WidthScale = defaultArg args.WidthScale model.Settings.WidthScale
+                                    SurfaceDiv = args.SurfaceDiv }
+
+                            let files =
+                                match format with
+                                | SvgFormat ->
+                                    let options =
+                                        { Svg.defaultOptions with
+                                            Size = defaultArg args.Size Svg.defaultOptions.Size }
+
+                                    Svg.render options output.Geometry |> Result.map (fun svg -> [ outPath, utf8 svg ])
+                                | ObjFormat ->
+                                    let mtlPath = Path.ChangeExtension(outPath, ".mtl")
+
+                                    Obj.render meshOptions (Path.GetFileName mtlPath) output.Geometry
+                                    |> Result.map (fun o -> [ outPath, utf8 o.Obj; mtlPath, utf8 o.Mtl ])
+                                | GltfFormat ->
+                                    Gltf.renderText meshOptions output.Geometry
+                                    |> Result.map (fun text -> [ outPath, utf8 text ])
+                                | GlbFormat ->
+                                    Gltf.renderBinary meshOptions output.Geometry
+                                    |> Result.map (fun bytes -> [ outPath, bytes ])
+
+                            match files with
+                            | Error msg ->
+                                eprintfn "%s: error: %s" args.Input msg
+                                1
+                            | Ok files -> if writeAll files then 0 else 1
 
 /// Runs one command and returns its exit code. A usage error prints the message, and the
 /// usage text too when `withUsage`.

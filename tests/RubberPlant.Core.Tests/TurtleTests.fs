@@ -879,6 +879,152 @@ let tests =
                     Expect.isOk (Pipeline.runWith Limits.unlimited m) "unlimited"
                 } ]
 
+          testList
+              "v0.3 surfaces (~H)"
+              [ let sampleSurface =
+                    let pts =
+                        [ for i in 0..3 do
+                              for j in 0..3 -> $"%g{float j / 3.0} %g{float i / 3.0} 0" ]
+                        |> String.concat "\n"
+
+                    $"""0 1 0 1 0 0
+CONTACT POINT: 0 0 0
+END POINT: 0 1 0
+HEADING: 0 1 0
+UP: 0 0 1
+SIZE: 1
+p0
+%s{pts}
+"""
+
+                let multiPatchSurface =
+                    let pts =
+                        [ for i in 0..3 do
+                              for j in 0..3 -> $"%g{float j / 3.0} %g{float i / 3.0} 0" ]
+                        |> String.concat "\n"
+
+                    $"""0 1 0 1 0 0
+CONTACT POINT: 0 0 0
+END POINT: 0 1 0
+HEADING: 0 1 0
+UP: 0 0 1
+SIZE: 1
+p0
+B: p1
+%s{pts}
+p1
+A: p0
+%s{pts}
+p2
+%s{pts}
+"""
+
+                let compileWithSurfaces (files: Map<string, string>) (src: string) =
+                    let m, _ = compileOk src
+
+                    let reader path =
+                        match files.TryFind path with
+                        | Some txt -> Ok txt
+                        | None -> Error $"not found: %s{path}"
+
+                    Pipeline.loadSurfaces reader m
+
+                test "Pipeline.loadSurfaces loads .s files and reports RP0208 on missing or malformed .s" {
+                    let m, _ = compileOk "include L = \"leaf.s\";\naxiom: ~L;"
+
+                    match Pipeline.loadSurfaces (fun _ -> Error "missing") m with
+                    | Error [ d ] ->
+                        Expect.equal d.Code Codes.SurfaceLoadError "RP0208"
+                        Expect.equal d.Pos (Some { Line = 1; Column = 1 }) "at include pos"
+                    | r -> failtestf "expected RP0208, got %A" r
+
+                    match Pipeline.loadSurfaces (fun _ -> Ok "bad") m with
+                    | Error [ d ] -> Expect.equal d.Code Codes.SurfaceLoadError "RP0208 parse"
+                    | r -> failtestf "expected RP0208, got %A" r
+                }
+
+                test "~H scale arities 0, 1, 2, 3, >3 and negative/zero allowed" {
+                    let m, _ =
+                        compileWithSurfaces
+                            (Map.ofList [ "leaf.s", sampleSurface ])
+                            "include L = \"leaf.s\";\naxiom: ~L ~L(2) ~L(2, 3) ~L(-1, 2, 0) ~L(1, 2, 3, exp(1000)) ~L(1, 2, 3, 4);"
+                        |> Expect.wantOk
+                        <| "load"
+
+                    let o = Pipeline.run m |> Expect.wantOk <| "run"
+                    // Two calls with 4 args -> one RP0302 warning.
+                    Expect.equal (o.Warnings |> List.map _.Code) [ Codes.ExtraTurtleParameters ] "one warning per (name, argCount)"
+
+                    let scales =
+                        o.Geometry
+                        |> List.choose (function
+                            | Surface inst -> Some inst.Scale
+                            | _ -> None)
+
+                    Expect.equal
+                        scales
+                        [ v 1 1 1; v 2 2 2; v 2 3 1; v -1 2 0; v 1 2 3; v 1 2 3 ]
+                        "scales"
+                }
+
+                test "~H non-finite consumed scale raises RP0205" {
+                    let m, _ =
+                        compileWithSurfaces
+                            (Map.ofList [ "leaf.s", sampleSurface ])
+                            "include L = \"leaf.s\";\naxiom: ~L(1, exp(1000));"
+                        |> Expect.wantOk
+                        <| "load"
+
+                    match Pipeline.run m with
+                    | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "RP0205"
+                    | r -> failtestf "expected RP0205, got %A" r
+                }
+
+                test "~H uses frame (-L, H, U) without altering turtle pose" {
+                    let m, _ =
+                        compileWithSurfaces
+                            (Map.ofList [ "leaf.s", sampleSurface ])
+                            "include L = \"leaf.s\";\naxiom: +(90) F(2) '(3) ~L F(1);"
+                        |> Expect.wantOk
+                        <| "load"
+
+                    let o = Pipeline.run m |> Expect.wantOk <| "run"
+
+                    match o.Geometry with
+                    | [ Segment(_, _, _, 0); Surface inst; Segment(p0, p1, _, 3) ] ->
+                        Expect.isTrue (close inst.Origin (v -2 0 0)) "origin at turtle P"
+                        // After +(90): H = (-1, 0, 0), L = (0, -1, 0), U = (0, 0, 1).
+                        Expect.isTrue (close inst.AxisX (v 0 1 0)) "AxisX = -L"
+                        Expect.isTrue (close inst.AxisY (v -1 0 0)) "AxisY = H"
+                        Expect.isTrue (close inst.AxisZ (v 0 0 1)) "AxisZ = U"
+                        Expect.equal inst.Color 3 "turtle color"
+                        Expect.isTrue (close p0 (v -2 0 0) && close p1 (v -3 0 0)) "turtle pose unchanged"
+                    | g -> failtestf "unexpected geometry %A" g
+                }
+
+                test "undeclared ~ warns RP0306 once per drawing and leaves following symbol unconsumed" {
+                    let m, _ = compileOk "axiom: ~ F ~ [ F ] ~;"
+                    let o = Pipeline.run m |> Expect.wantOk <| "run"
+                    Expect.equal (o.Warnings |> List.map _.Code) [ Codes.UndeclaredSurface ] "one RP0306"
+                    Expect.equal (segments o.Geometry |> List.length) 2 "both Fs still drawn"
+                }
+
+                test "surface counts max 1 patches.Length toward MaxPrimitives (RP0207)" {
+                    let m, _ =
+                        compileWithSurfaces
+                            (Map.ofList [ "m.s", multiPatchSurface ])
+                            "include M = \"m.s\";\naxiom: F ~M;"
+                        |> Expect.wantOk
+                        <| "load"
+
+                    // 1 segment + 3 patches = 4 primitive budget.
+                    Expect.isOk (Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 4 } m) "budget 4 passes"
+
+                    match Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 3 } m with
+                    | Error [ d ] -> Expect.equal d.Code Codes.PrimitiveLimitExceeded "budget 3 fails RP0207"
+                    | r -> failtestf "expected RP0207, got %A" r
+                } ]
+
           testProperty "rotations keep the frame orthonormal and right-handed" frameStaysOrthonormal
           v02
           v03GC ]

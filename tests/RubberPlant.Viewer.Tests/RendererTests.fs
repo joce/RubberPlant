@@ -232,6 +232,30 @@ let gpuTests =
                       Expect.equal decM.TopDownPixels[y * 301 + 300] 0uy $"mask right border y=%d{y}")
           }
 
+          test "viewer loads included .s surfaces and renders them with --surface-div" {
+              withTempDir (fun dir ->
+                  let pts =
+                      [ for i in 0..3 do
+                            for j in 0..3 -> $"%g{float j / 3.0 - 0.5} %g{float i / 3.0} 0" ]
+                      |> String.concat "\n"
+
+                  File.WriteAllText(
+                      Path.Combine(dir, "leaf.s"),
+                      $"0 1 0 1 0 0\nPRECISION S: 2 T: 2\nCONTACT POINT: 0 0 0\nEND POINT: 0 1 0\nHEADING: 0 1 0\nUP: 0 0 1\nSIZE: 1\np0\n%s{pts}\n"
+                  )
+
+                  let rpPath = Path.Combine(dir, "leaf.rp")
+                  File.WriteAllText(rpPath, "include L = \"leaf.s\";\naxiom: '(1) ~L;\n")
+                  let snapPath = Path.Combine(dir, "leaf.png")
+
+                  let code, _, err =
+                      runCli [ "snapshot"; rpPath; "-o"; snapPath; "--size"; "128"; "--no-grid"; "--surface-div"; "4" ]
+
+                  Expect.equal code 0 $"surface snapshot exit 0 (stderr: %s{err})"
+                  let dec = PngTests.decodePng (File.ReadAllBytes snapPath)
+                  Expect.isGreaterThan (countNonBackgroundRgb dec) 100 "surface renders foreground pixels")
+          }
+
           test "empty and degenerate-only models render pure background" {
               withTempDir (fun dir ->
                   let degenPath = Path.Combine(dir, "degen.rp")

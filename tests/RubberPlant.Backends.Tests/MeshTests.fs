@@ -61,7 +61,7 @@ let private cylinderTests =
           test "2s vertices and 2s triangles for s sides" {
               for s in [ 3; 4; 7; 32 ] do
                   let g =
-                      build { Sides = s; WidthScale = Some 1.0 } [ seg (v 0.0 0.0 0.0) (v 0.0 0.0 1.0) 1.0 0 ]
+                      build { defaultMeshOptions with Sides = s; WidthScale = Some 1.0 } [ seg (v 0.0 0.0 0.0) (v 0.0 0.0 1.0) 1.0 0 ]
                       |> ok
                       |> single
 
@@ -492,6 +492,57 @@ let private fixtureTests =
               let m = build options geometry |> ok
               Expect.equal (m.Groups |> List.map _.Color) [ 1; 2 ] ""
               Expect.equal (m.Groups[1].Positions.Length) 48 "colors 2 and 10 share entry 2"
+          }
+
+          test "pinched surface" {
+              let options, geometry = pinchedSurface
+              let g = build options geometry |> ok |> single
+              Expect.equal g.Color 1 ""
+
+              for n in g.Normals do
+                  Expect.isTrue (Vec3.isFinite n) "finite normal"
+                  close (Vec3.length n) 1.0 "unit normal"
+          }
+
+          test "seam surface" {
+              let options, geometry = seamSurface
+              let g = build options geometry |> ok |> single
+              Expect.equal g.Color 1 ""
+              Expect.equal g.Triangles.Length (2 * 2 * 2 * 2 * 3) "2 patches x 2x2 quads x 2 tris"
+              // Seam vertices: row a=2 of p0 (indices 6..8) match row a=0 of p1 (indices 9..11).
+              for k in 0..2 do
+                  closeVec g.Normals[6 + k] g.Normals[9 + k] "averaged seam normal"
+          } ]
+
+let private surfaceTests =
+    let baseInst =
+        match snd pinchedSurface with
+        | [ Surface inst ] -> inst
+        | _ -> failtest "expected pinchedSurface"
+
+    testList
+        "surfaces"
+        [ test "SurfaceDiv overrides DefaultDivisions and validates >= 1" {
+              let gDefault = build defaultMeshOptions [ Surface baseInst ] |> ok |> single
+              let gDiv4 = build { defaultMeshOptions with SurfaceDiv = Some 4 } [ Surface baseInst ] |> ok |> single
+              Expect.equal gDefault.Positions.Length 9 "3x3 grid for div=2"
+              Expect.equal gDiv4.Positions.Length 25 "5x5 grid for div=4"
+              Expect.equal gDiv4.Triangles.Length (4 * 4 * 2 * 3 - 4 * 3) "pinched top row drops 4 zero-area triangles"
+              build { defaultMeshOptions with SurfaceDiv = Some 0 } [ Surface baseInst ] |> failsWith "at least 1"
+          }
+
+          test "anisotropic, mirrored, and flattened scales produce valid normals; zero scale drops all triangles" {
+              for sc in [ v 2.0 0.5 3.0; v -1.0 1.0 1.0; v 1.0 1.0 0.0 ] do
+                  let inst = { baseInst with Scale = sc }
+                  let g = build defaultMeshOptions [ Surface inst ] |> ok |> single
+
+                  for n in g.Normals do
+                      Expect.isTrue (Vec3.isFinite n) $"finite normal for scale %A{sc}"
+                      close (Vec3.length n) 1.0 $"unit normal for scale %A{sc}"
+
+              let collapsed = { baseInst with Scale = Vec3.zero }
+              let m = build defaultMeshOptions [ Surface collapsed ] |> ok
+              Expect.isEmpty m.Groups "collapsed surface emits no triangles"
           } ]
 
 let private gcTests =
@@ -695,4 +746,4 @@ let private gcTests =
 
 [<Tests>]
 let tests =
-    testList "Mesh" [ cylinderTests; polygonTests; widthScaleTests; scaleTests; groupTests; fixtureTests; gcTests ]
+    testList "Mesh" [ cylinderTests; polygonTests; widthScaleTests; scaleTests; groupTests; fixtureTests; gcTests; surfaceTests ]
