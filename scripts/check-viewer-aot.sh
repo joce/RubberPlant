@@ -129,3 +129,10 @@ view_stats=$(printf '%s\n' "${view_lines[2]}" | sha)
 [ "${view_lines[3]}" = "exit 0" ] || { echo "FAIL view line 3: ${view_lines[3]}" >&2; exit 1; }
 [ "${view_lines[4]}" = "exit 0" ] || { echo "FAIL view line 4: ${view_lines[4]}" >&2; exit 1; }
 echo "ok       interactive view live stdin bridge, snapshot, and stats"
+
+# 4. Headless sequence export with zero-padded frames and batch step
+viewer sequence examples/fig3-5-capsella.rp -o "$out/cap-" --from 0 --to 8 --step 4 --size 128 > "$raw_out/seq.out"
+check_png "$out/cap-0000.png" "sequence frame 0000"
+check_png "$out/cap-0001.png" "sequence frame 0001"
+check_png "$out/cap-0002.png" "sequence frame 0002"
+echo "ok       headless sequence PNG export"

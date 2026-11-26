@@ -44,52 +44,78 @@ let private effectiveWidth (s: CrossSection) =
     else
         s.Width * max s.ScaleL s.ScaleU
 
-let private points (geometry: Geometry) =
-    geometry
-    |> Seq.collect (function
-        | Segment(p0, p1, _, _) -> Seq.ofList [ p0; p1 ]
-        | Polygon(vs, _) -> Seq.ofList vs
-        | GeneralizedCylinder gc -> gc.Sections |> Seq.map _.P
-        | Surface inst -> Bezier.instanceControlPoints inst)
+/// Accumulates the world-space AABB of geometry control points and the maximum
+/// stroke/contour width (`Segment` width or `GeneralizedCylinder` effective width).
+let geometryBoundsAndMaxWidth (geometry: Geometry) : struct (Vec3 * Vec3 * bool * float) =
+    let mutable minX = infinity
+    let mutable minY = infinity
+    let mutable minZ = infinity
+    let mutable maxX = -infinity
+    let mutable maxY = -infinity
+    let mutable maxZ = -infinity
+    let mutable hasPoints = false
+    let mutable widest = 0.0
+
+    let inline addPoint (p: Vec3) =
+        hasPoints <- true
+        if p.X < minX then minX <- p.X
+        if p.Y < minY then minY <- p.Y
+        if p.Z < minZ then minZ <- p.Z
+        if p.X > maxX then maxX <- p.X
+        if p.Y > maxY then maxY <- p.Y
+        if p.Z > maxZ then maxZ <- p.Z
+
+    for prim in geometry do
+        match prim with
+        | Segment(p0, p1, w, _) ->
+            addPoint p0
+            addPoint p1
+            widest <- max widest w
+        | Polygon(vs, _) ->
+            for v in vs do
+                addPoint v
+        | GeneralizedCylinder gc ->
+            for s in gc.Sections do
+                addPoint s.P
+                widest <- max widest (effectiveWidth s)
+        | Surface inst ->
+            for p in Bezier.instanceControlPoints inst do
+                addPoint p
+
+    if hasPoints then
+        struct (Vec3.create minX minY minZ, Vec3.create maxX maxY maxZ, true, widest)
+    else
+        struct (Vec3.zero, Vec3.zero, false, widest)
+
+/// Computes the automatic `width_scale` from X/Y extent and widest stroke width,
+/// matching `Svg.defaultOptions` proportions (§4.4).
+let resolveAutoWidthScale (extentXY: float) (widest: float) : Result<float, string> =
+    let svg = Svg.defaultOptions
+    let denominator = svg.Size - 2.0 * (svg.Margin + widest / 2.0)
+
+    if not (denominator > 0.0) then
+        Error
+            $"the widest line (%s{string widest}) is too wide for the automatic width scale (it wouldn't fit in a %s{string svg.Size} px SVG); use --width-scale"
+    else
+        Ok(if extentXY = 0.0 then 1.0 else extentXY / denominator)
 
 /// The width scale k (§4.4).
-let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<float, string> =
+let resolveWidthScale (options: MeshOptions) (geometry: Geometry) : Result<float, string> =
     match options.WidthScale with
     | Some k when Double.IsFinite k && k > 0.0 -> Ok k
     | Some k -> Error $"the width scale must be a finite number greater than 0, got %s{string k}"
     | None ->
         // Match the SVG that the default options would draw: same extent, same
         // margins, half the widest line reserved on each side.
-        let svg = Svg.defaultOptions
+        let struct (minP, maxP, hasPoints, widest) = geometryBoundsAndMaxWidth geometry
 
-        let widest =
-            geometry
-            |> List.fold
-                (fun acc p ->
-                    match p with
-                    | Segment(_, _, w, _) -> max acc w
-                    | GeneralizedCylinder gc ->
-                        gc.Sections |> List.fold (fun a s -> max a (effectiveWidth s)) acc
-                    | Polygon _
-                    | Surface _ -> acc)
+        let extentXY =
+            if not hasPoints then
                 0.0
+            else
+                max (maxP.X - minP.X) (maxP.Y - minP.Y)
 
-        let denominator = svg.Size - 2.0 * (svg.Margin + widest / 2.0)
-
-        if not (denominator > 0.0) then
-            Error
-                $"the widest line (%s{string widest}) is too wide for the automatic width scale (it wouldn't fit in a %s{string svg.Size} px SVG); use --width-scale"
-        else
-            let pts = points geometry |> Array.ofSeq
-
-            let extent (coord: Vec3 -> float) =
-                if pts.Length = 0 then
-                    0.0
-                else
-                    (pts |> Array.maxBy coord |> coord) - (pts |> Array.minBy coord |> coord)
-
-            let e = max (extent _.X) (extent _.Y)
-            Ok(if e = 0.0 then 1.0 else e / denominator)
+        resolveAutoWidthScale extentXY widest
 
 // ------------------------------------------------------------------ cylinders
 
@@ -300,7 +326,7 @@ let build (options: MeshOptions) (geometry: Geometry) : Result<Mesh, string> =
         match options.SurfaceDiv with
         | Some d when d < 1 -> Error $"surface subdivision must be at least 1, got %s{string d}"
         | _ ->
-            widthScale options geometry
+            resolveWidthScale options geometry
             |> Result.map (fun k ->
                 let ring = ringDirections options.Sides
                 let groups = Dictionary<int, GroupBuilder>()

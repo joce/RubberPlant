@@ -5,14 +5,21 @@ module RubberPlant.Viewer.Program
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
+open System.Diagnostics
+open System.Globalization
 open System.IO
 open System.Text
 open System.Threading
 open RubberPlant
 open RubberPlant.Backends
 
-type private LoadedViewerModel =
-    Protocol.LoadedModel<Scene.MeshScene * Scene.GridGeometry option>
+type private ViewerScenePayload =
+    { Scene: Scene.MeshScene
+      Grid: Scene.GridGeometry option
+      CompiledModel: Model.Model
+      TargetFrame: Scene.ReferenceFrame }
+
+type private LoadedViewerModel = Protocol.LoadedModel<ViewerScenePayload>
 
 let private utf8NoBom = UTF8Encoding(false)
 
@@ -44,13 +51,13 @@ let private readSourceWithRetry (retries: int) (delayMs: int) (path: string) : R
 
     attempt retries
 
-let private loadModelWithRetries
+let private compileAndLoadModelWithRetries
     (retries: int)
     (delayMs: int)
     (input: string)
     (opts: Protocol.LoadOptions)
     (stderr: TextWriter)
-    : Result<LoadedViewerModel, unit> =
+    : Result<Model.Model, unit> =
     match readSourceWithRetry retries delayMs input with
     | Error msg ->
         stderr.WriteLine($"%s{input}: error: %s{msg}")
@@ -61,72 +68,183 @@ let private loadModelWithRetries
             report input diags stderr
             Error()
         | Ok(model, warnings) ->
-            report input warnings stderr
+            let timed = Model.Model.isTimed model
 
-            let baseDir = Path.GetDirectoryName input
-
-            let readSurfaceFile (relPath: string) =
-                let normalized =
-                    relPath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)
-
-                let fullPath =
-                    if String.IsNullOrEmpty baseDir then
-                        normalized
-                    else
-                        Path.Combine(baseDir, normalized)
-
-                readSourceWithRetry retries delayMs fullPath
-
-            match Pipeline.loadSurfaces readSurfaceFile model with
-            | Error diags ->
-                report input diags stderr
+            if opts.Time.IsSome && not timed then
+                stderr.WriteLine($"%s{input}: error: --time cannot be used with a discrete model")
                 Error()
-            | Ok(model, surfaceWarnings) ->
-                report input surfaceWarnings stderr
+            elif opts.Derivations.IsSome && timed then
+                stderr.WriteLine($"%s{input}: error: --derivations (-n) cannot be used with a timed model")
+                Error()
+            else
+                report input warnings stderr
 
-                let model =
-                    { model with
-                        Settings = Protocol.applySettingsOverrides opts model.Settings }
+                let baseDir = Path.GetDirectoryName input
 
-                let limits = Protocol.toLimits opts
+                let readSurfaceFile (relPath: string) =
+                    let normalized =
+                        relPath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)
 
-                match Pipeline.runWith limits model with
+                    let fullPath =
+                        if String.IsNullOrEmpty baseDir then
+                            normalized
+                        else
+                            Path.Combine(baseDir, normalized)
+
+                    readSourceWithRetry retries delayMs fullPath
+
+                match Pipeline.loadSurfaces readSurfaceFile model with
                 | Error diags ->
                     report input diags stderr
                     Error()
-                | Ok output ->
-                    report input output.Warnings stderr
+                | Ok(model, surfaceWarnings) ->
+                    report input surfaceWarnings stderr
 
-                    match
-                        Stats.analyze
-                            output.Derived
-                            output.Drawing
-                            output.DerivationTrace
-                            output.Geometry
-                            output.TurtleTrace
-                    with
-                    | Error diags ->
-                        report input diags stderr
+                    Ok
+                        { model with
+                            Settings = Protocol.applySettingsOverrides opts model.Settings }
+
+let private buildModelAtStage
+    (input: string)
+    (opts: Protocol.LoadOptions)
+    (compiledModel: Model.Model)
+    (stage: Protocol.StageInfo)
+    (frameOpt: Scene.ReferenceFrame option)
+    (stderr: TextWriter)
+    : Result<LoadedViewerModel, unit> =
+    let modelAtStage =
+        match stage with
+        | Protocol.DiscreteStage(n, _) ->
+            { compiledModel with
+                Settings = { compiledModel.Settings with Derivations = n } }
+        | Protocol.TimedStage(t, _) ->
+            { compiledModel with
+                Settings = { compiledModel.Settings with Time = Some t } }
+
+    let limits = Protocol.toLimits opts
+
+    match Pipeline.runWith limits modelAtStage with
+    | Error diags ->
+        report input diags stderr
+        Error()
+    | Ok output ->
+        report input output.Warnings stderr
+
+        match
+            Stats.analyze
+                output.Derived
+                output.Drawing
+                output.DerivationTrace
+                output.Geometry
+                output.TurtleTrace
+        with
+        | Error diags ->
+            report input diags stderr
+            Error()
+        | Ok stats ->
+            let baseMeshOpts = Protocol.toMeshOptionsWithSettings modelAtStage.Settings opts
+
+            match frameOpt with
+            | Some frame when not frame.Bounds.IsEmpty ->
+                let meshOpts = { baseMeshOpts with WidthScale = Some frame.WidthScale }
+
+                match Mesh.build meshOpts output.Geometry with
+                | Error msg ->
+                    stderr.WriteLine($"%s{input}: error: %s{msg}")
+                    Error()
+                | Ok mesh ->
+                    match Scene.fromMeshWithFrame frame mesh with
+                    | Error msg ->
+                        stderr.WriteLine($"%s{input}: error: %s{msg}")
                         Error()
-                    | Ok stats ->
-                        match Mesh.build (Protocol.toMeshOptionsWithSettings model.Settings opts) output.Geometry with
+                    | Ok scene ->
+                        let grid = Scene.buildGrid scene
+
+                        Ok
+                            { Input = input
+                              Load = opts
+                              Stage = stage
+                              Bounds = scene.Bounds
+                              Stats = stats
+                              Scene =
+                                { Scene = scene
+                                  Grid = grid
+                                  CompiledModel = compiledModel
+                                  TargetFrame = frame } }
+            | _ ->
+                match Mesh.resolveWidthScale baseMeshOpts output.Geometry with
+                | Error msg ->
+                    stderr.WriteLine($"%s{input}: error: %s{msg}")
+                    Error()
+                | Ok widthScale ->
+                    let meshOpts = { baseMeshOpts with WidthScale = Some widthScale }
+
+                    match Mesh.build meshOpts output.Geometry with
+                    | Error msg ->
+                        stderr.WriteLine($"%s{input}: error: %s{msg}")
+                        Error()
+                    | Ok mesh ->
+                        match Scene.fromMesh mesh with
                         | Error msg ->
                             stderr.WriteLine($"%s{input}: error: %s{msg}")
                             Error()
-                        | Ok mesh ->
-                            match Scene.fromMesh mesh with
-                            | Error msg ->
-                                stderr.WriteLine($"%s{input}: error: %s{msg}")
-                                Error()
-                            | Ok scene ->
-                                let grid = Scene.buildGrid scene
+                        | Ok scene ->
+                            let grid = Scene.buildGrid scene
 
-                                Ok
-                                    { Input = input
-                                      Load = opts
-                                      Bounds = scene.Bounds
-                                      Stats = stats
-                                      Scene = (scene, grid) }
+                            let targetFrame: Scene.ReferenceFrame =
+                                { Center = scene.Center
+                                  Extent = scene.Extent
+                                  Bounds = scene.Bounds
+                                  WidthScale = widthScale }
+
+                            let preservedFrame =
+                                match frameOpt with
+                                | Some prev when prev.Bounds.IsEmpty -> targetFrame
+                                | Some prev -> prev
+                                | None -> targetFrame
+
+                            Ok
+                                { Input = input
+                                  Load = opts
+                                  Stage = stage
+                                  Bounds = scene.Bounds
+                                  Stats = stats
+                                  Scene =
+                                    { Scene = scene
+                                      Grid = grid
+                                      CompiledModel = compiledModel
+                                      TargetFrame = preservedFrame } }
+
+let private loadModelWithRetries
+    (retries: int)
+    (delayMs: int)
+    (input: string)
+    (opts: Protocol.LoadOptions)
+    (stderr: TextWriter)
+    : Result<LoadedViewerModel, unit> =
+    compileAndLoadModelWithRetries retries delayMs input opts stderr
+    |> Result.bind (fun model ->
+        let stage =
+            if Model.Model.isTimed model then
+                let t = defaultArg model.Settings.Time 0.0
+                Protocol.TimedStage(t, t)
+            else
+                Protocol.DiscreteStage(model.Settings.Derivations, model.Settings.Derivations)
+
+        buildModelAtStage input opts model stage None stderr)
+
+let private evaluateStage
+    (loaded: LoadedViewerModel)
+    (nextStage: Protocol.StageInfo)
+    (stderr: TextWriter)
+    : Result<LoadedViewerModel, unit> =
+    buildModelAtStage
+        loaded.Input
+        loaded.Load
+        loaded.Scene.CompiledModel
+        nextStage
+        (Some loaded.Scene.TargetFrame)
+        stderr
 
 let private loadModel
     (input: string)
@@ -296,19 +414,227 @@ let private runHeadlessOneShot
             1
         | Ok renderer ->
             use r = renderer
-            let scene, grid = loaded.Scene
-            r.UploadScene scene grid
+            let payload = loaded.Scene
+            r.UploadScene payload.Scene payload.Grid
 
-            match renderFn r scene with
+            match renderFn r payload.Scene with
             | Error msg ->
                 stderr.WriteLine($"rubberplant-viewer: %s{msg}")
                 1
             | Ok pngBytes -> writeRenderOutputs baseSpec.Output pngBytes loaded.Stats baseSpec.Stats stdout stderr
 
+let private frameModelAt (model: Model.Model) (schedule: Protocol.SequenceSchedule) (index: int) : Model.Model =
+    match Protocol.sequenceFrameStage schedule index with
+    | Protocol.FrameDiscrete n ->
+        { model with Settings = { model.Settings with Derivations = n } }
+    | Protocol.FrameTimed t ->
+        { model with Settings = { model.Settings with Time = Some t } }
+
+let private executeSequence
+    (renderer: Renderer.IOffscreenRenderer)
+    (inputPath: string)
+    (model: Model.Model)
+    (loadOpts: Protocol.LoadOptions)
+    (outputPrefix: string)
+    (schedule: Protocol.SequenceSchedule)
+    (mode: Protocol.SequenceMode)
+    (snapSize: int * int)
+    (sheetSize: int)
+    (showGrid: bool)
+    (wireframe: bool)
+    (resolveCam: Camera.Bounds -> float -> Camera.Camera)
+    (stdout: TextWriter)
+    (stderr: TextWriter)
+    : int =
+    let frameCount = Protocol.sequenceFrameCount schedule
+    let baseMeshOpts = Protocol.toMeshOptionsWithSettings model.Settings loadOpts
+
+    let precheckError =
+        if baseMeshOpts.Sides < 3 then
+            Some $"a cylinder needs at least 3 sides, got %s{string baseMeshOpts.Sides}"
+        else
+            match baseMeshOpts.SurfaceDiv with
+            | Some d when d < 1 -> Some $"surface subdivision must be at least 1, got %s{string d}"
+            | _ ->
+                match baseMeshOpts.WidthScale with
+                | Some k when not (Double.IsFinite k && k > 0.0) ->
+                    Some $"the width scale must be a finite number greater than 0, got %s{string k}"
+                | _ ->
+                    try
+                        let samplePath = $"%s{outputPrefix}0000.png"
+
+                        if Directory.Exists samplePath then
+                            Some $"%s{samplePath}: is a directory"
+                        else
+                            let fullSample = Path.GetFullPath samplePath
+                            let dir = Path.GetDirectoryName fullSample
+
+                            if String.IsNullOrEmpty dir then
+                                Some $"%s{samplePath}: invalid output path"
+                            elif not (Directory.Exists dir) then
+                                Some $"Could not find a part of the path '%s{dir}'."
+                            else
+                                None
+                    with ex ->
+                        Some ex.Message
+
+    match precheckError with
+    | Some msg ->
+        stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+        1
+    | None ->
+        let limits = Protocol.toLimits loadOpts
+
+        let accumulateExactBounds (fixedScale: float) : Result<Scene.ReferenceFrame, unit> =
+            let meshOpts = { baseMeshOpts with WidthScale = Some fixedScale }
+            let mutable accBounds: (Geometry.Vec3 * Geometry.Vec3) option = None
+            let mutable failed = false
+
+            for i = 0 to frameCount - 1 do
+                if not failed then
+                    let frameModel = frameModelAt model schedule i
+
+                    match Pipeline.runWith limits frameModel with
+                    | Error diags ->
+                        report inputPath diags stderr
+                        failed <- true
+                    | Ok output ->
+                        match Mesh.build meshOpts output.Geometry with
+                        | Error msg ->
+                            stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                            failed <- true
+                        | Ok mesh ->
+                            match Scene.validateAndAccumulateMeshBounds mesh accBounds with
+                            | Error msg ->
+                                stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                                failed <- true
+                            | Ok nextAcc -> accBounds <- nextAcc
+
+            if failed then
+                Error()
+            else
+                match Scene.referenceFrameOfBounds fixedScale accBounds with
+                | Error msg ->
+                    stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                    Error()
+                | Ok frame -> Ok frame
+
+        // Pass 1 (O(1) memory, no retained meshes): derive fixed WidthScale and ReferenceFrame.
+        let frameRes =
+            match baseMeshOpts.WidthScale with
+            | Some k -> accumulateExactBounds k
+            | None ->
+                let mutable hasPts = false
+                let mutable minX = infinity
+                let mutable minY = infinity
+                let mutable maxX = -infinity
+                let mutable maxY = -infinity
+                let mutable maxWidest = 0.0
+                let mutable failed = false
+
+                for i = 0 to frameCount - 1 do
+                    if not failed then
+                        let frameModel = frameModelAt model schedule i
+
+                        match Pipeline.runWith limits frameModel with
+                        | Error diags ->
+                            report inputPath diags stderr
+                            failed <- true
+                        | Ok output ->
+                            let struct (gMin, gMax, gHas, gWidest) =
+                                Mesh.geometryBoundsAndMaxWidth output.Geometry
+
+                            maxWidest <- max maxWidest gWidest
+
+                            if gHas then
+                                hasPts <- true
+                                minX <- min minX gMin.X
+                                minY <- min minY gMin.Y
+                                maxX <- max maxX gMax.X
+                                maxY <- max maxY gMax.Y
+
+                if failed then
+                    Error()
+                else
+                    let extentXY = if hasPts then max (maxX - minX) (maxY - minY) else 0.0
+
+                    match Mesh.resolveAutoWidthScale extentXY maxWidest with
+                    | Error msg ->
+                        stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                        Error()
+                    | Ok autoK -> accumulateExactBounds autoK
+
+        match frameRes with
+        | Error() -> 1
+        | Ok frame ->
+            // Pass 2 (O(1) memory): re-evaluate each frame with fixed WidthScale and ReferenceFrame, render, and write atomically.
+            let seqMeshOpts = { baseMeshOpts with WidthScale = Some frame.WidthScale }
+            let w, h = snapSize
+            let cam = resolveCam frame.Bounds (float w / float h)
+            let mutable failed = false
+
+            for i = 0 to frameCount - 1 do
+                if not failed then
+                    let frameModel = frameModelAt model schedule i
+
+                    match Pipeline.runWith limits frameModel with
+                    | Error diags ->
+                        report inputPath diags stderr
+                        failed <- true
+                    | Ok output ->
+                        report inputPath output.Warnings stderr
+
+                        match Mesh.build seqMeshOpts output.Geometry with
+                        | Error msg ->
+                            stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                            failed <- true
+                        | Ok mesh ->
+                            match Scene.fromMeshWithFrame frame mesh with
+                            | Error msg ->
+                                stderr.WriteLine($"%s{inputPath}: error: %s{msg}")
+                                failed <- true
+                            | Ok scene ->
+                                let grid =
+                                    if mode = Protocol.SeqSilhouette || not showGrid then
+                                        None
+                                    else
+                                        Scene.buildGrid scene
+
+                                renderer.UploadScene scene grid
+
+                                let pngRes =
+                                    match mode with
+                                    | Protocol.SeqSnapshot ->
+                                        renderer.RenderShaded w h cam showGrid wireframe
+                                        |> Result.map (Png.encodeRgb24 w h)
+                                    | Protocol.SeqContactSheet ->
+                                        renderContactSheet renderer frame.Bounds sheetSize showGrid wireframe
+                                    | Protocol.SeqSilhouette ->
+                                        renderer.RenderSilhouette w h cam
+                                        |> Result.map (Png.encodeGray8 w h)
+
+                                match pngRes with
+                                | Error msg ->
+                                    stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                                    failed <- true
+                                | Ok pngBytes ->
+                                    let idxStr = i.ToString("D4", CultureInfo.InvariantCulture)
+                                    let outPath = $"%s{outputPrefix}%s{idxStr}.png"
+
+                                    match writeAtomic [ outPath, pngBytes ] with
+                                    | Error msg ->
+                                        stderr.WriteLine($"error: can't write the output: %s{msg}")
+                                        failed <- true
+                                    | Ok paths ->
+                                        for p in paths do
+                                            stdout.WriteLine($"wrote %s{p}")
+
+            if failed then 1 else 0
+
 let private runBatchCmd
     (renderer: Renderer.IOffscreenRenderer)
     (fitAspect: float)
-    (state: Protocol.SessionState<Scene.MeshScene * Scene.GridGeometry option> byref)
+    (state: Protocol.SessionState<ViewerScenePayload> byref)
     (cmd: Protocol.BatchCommand)
     (stdout: TextWriter)
     (stderr: TextWriter)
@@ -320,8 +646,8 @@ let private runBatchCmd
         match Protocol.tryLoad loader fitAspect input opts keepCamera state with
         | Error() -> 1
         | Ok nextState ->
-            let scene, grid = nextState.Loaded.Value.Scene
-            renderer.UploadScene scene grid
+            let p = nextState.Loaded.Value.Scene
+            renderer.UploadScene p.Scene p.Grid
             state <- nextState
             0
     | Protocol.Reload keepCamera ->
@@ -331,10 +657,54 @@ let private runBatchCmd
             1
         | Error(Choice2Of2()) -> 1
         | Ok nextState ->
-            let scene, grid = nextState.Loaded.Value.Scene
-            renderer.UploadScene scene grid
+            let p = nextState.Loaded.Value.Scene
+            renderer.UploadScene p.Scene p.Grid
             state <- nextState
             0
+    | Protocol.Step n ->
+        match Protocol.requireLoaded state with
+        | Error msg ->
+            stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+            1
+        | Ok loaded ->
+            if Model.Model.isTimed loaded.Scene.CompiledModel then
+                stderr.WriteLine($"%s{loaded.Input}: error: step cannot be used with a timed model")
+                1
+            else
+                let target =
+                    match loaded.Stage with
+                    | Protocol.DiscreteStage(_, tgt) -> tgt
+                    | Protocol.TimedStage _ -> loaded.Scene.CompiledModel.Settings.Derivations
+
+                match evaluateStage loaded (Protocol.DiscreteStage(n, target)) stderr with
+                | Error() -> 1
+                | Ok nextLoaded ->
+                    let p = nextLoaded.Scene
+                    renderer.UploadScene p.Scene p.Grid
+                    state <- { state with Loaded = Some nextLoaded }
+                    0
+    | Protocol.Time t ->
+        match Protocol.requireLoaded state with
+        | Error msg ->
+            stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+            1
+        | Ok loaded ->
+            if not (Model.Model.isTimed loaded.Scene.CompiledModel) then
+                stderr.WriteLine($"%s{loaded.Input}: error: time cannot be used with a discrete model")
+                1
+            else
+                let target =
+                    match loaded.Stage with
+                    | Protocol.TimedStage(_, tgt) -> tgt
+                    | Protocol.DiscreteStage _ -> t
+
+                match evaluateStage loaded (Protocol.TimedStage(t, target)) stderr with
+                | Error() -> 1
+                | Ok nextLoaded ->
+                    let p = nextLoaded.Scene
+                    renderer.UploadScene p.Scene p.Grid
+                    state <- { state with Loaded = Some nextLoaded }
+                    0
     | Protocol.SetCamera spec ->
         state <- Protocol.applySetCamera fitAspect spec state
         0
@@ -361,7 +731,7 @@ let private runBatchCmd
             stderr.WriteLine($"rubberplant-viewer: %s{msg}")
             1
         | Ok loaded ->
-            let scene, _ = loaded.Scene
+            let scene = loaded.Scene.Scene
             let w, h = defaultArg s.Size state.DefaultSize
             let cam = Protocol.resolveRenderCamera state scene.Bounds s.Camera (float w / float h)
 
@@ -376,7 +746,7 @@ let private runBatchCmd
             stderr.WriteLine($"rubberplant-viewer: %s{msg}")
             1
         | Ok loaded ->
-            let scene, _ = loaded.Scene
+            let scene = loaded.Scene.Scene
             let sheetSize = defaultArg c.Size Protocol.defaultContactSheetSize
 
             match renderContactSheet renderer scene.Bounds sheetSize state.Grid state.Wireframe with
@@ -390,7 +760,7 @@ let private runBatchCmd
             stderr.WriteLine($"rubberplant-viewer: %s{msg}")
             1
         | Ok loaded ->
-            let scene, _ = loaded.Scene
+            let scene = loaded.Scene.Scene
             let w, h = defaultArg m.Size state.DefaultSize
             let cam = Protocol.resolveRenderCamera state scene.Bounds m.Camera (float w / float h)
 
@@ -399,6 +769,43 @@ let private runBatchCmd
                 stderr.WriteLine($"rubberplant-viewer: %s{msg}")
                 1
             | Ok gray -> writeRenderOutputs m.Output (Png.encodeGray8 w h gray) loaded.Stats m.Stats stdout stderr
+    | Protocol.BatchSequence seq ->
+        match Protocol.requireLoaded state with
+        | Error msg ->
+            stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+            1
+        | Ok loaded ->
+            let curState = state
+            let prevPayload = loaded.Scene
+            let isTimed = Model.Model.isTimed prevPayload.CompiledModel
+
+            match Protocol.resolveSequenceSchedule isTimed seq.From seq.To seq.Step seq.Frames with
+            | Error msg ->
+                stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                2
+            | Ok schedule ->
+                let snapSize = defaultArg seq.SnapshotSize curState.DefaultSize
+                let sheetSize = defaultArg seq.ContactSheetSize Protocol.defaultContactSheetSize
+                let resolveCam bounds aspect = Protocol.resolveRenderCamera curState bounds seq.Camera aspect
+
+                try
+                    executeSequence
+                        renderer
+                        loaded.Input
+                        prevPayload.CompiledModel
+                        loaded.Load
+                        seq.OutputPrefix
+                        schedule
+                        seq.Mode
+                        snapSize
+                        sheetSize
+                        curState.Grid
+                        curState.Wireframe
+                        resolveCam
+                        stdout
+                        stderr
+                finally
+                    renderer.UploadScene prevPayload.Scene prevPayload.Grid
     | Protocol.BatchStats pretty ->
         match Protocol.requireLoaded state with
         | Error msg ->
@@ -418,7 +825,7 @@ let internal executeBatch (stdin: TextReader) (stdout: TextWriter) (stderr: Text
         1
     | Ok renderer ->
         use r = renderer
-        let mutable state = Protocol.initialSession<Scene.MeshScene * Scene.GridGeometry option>
+        let mutable state = Protocol.initialSession<ViewerScenePayload>
         let mutable keepRunning = true
 
         let writeExit code =
@@ -614,7 +1021,7 @@ let internal executeViewWithVisibility
                     float (max 1 winW) / float (max 1 winH)
 
             let mutable state =
-                { Protocol.initialSession<Scene.MeshScene * Scene.GridGeometry option> with
+                { Protocol.initialSession<ViewerScenePayload> with
                     Wireframe = args.Wireframe
                     Grid = args.Grid
                     PendingCamera = args.Camera }
@@ -624,8 +1031,8 @@ let internal executeViewWithVisibility
             match initialLoaded with
             | Some loaded ->
                 state <- Protocol.applyLoad initAspect false loaded state
-                let scene, grid = loaded.Scene
-                r.UploadScene scene grid
+                let p = loaded.Scene
+                r.UploadScene p.Scene p.Grid
             | None ->
                 r.UploadScene Scene.emptyScene (Scene.buildGrid Scene.emptyScene)
 
@@ -681,31 +1088,76 @@ let internal executeViewWithVisibility
 
             let mutable dirty = true
             let mutable keepRunning = true
+            let mutable lastPlaybackTick = Stopwatch.GetTimestamp()
+
+            let applyInteractiveStage (nextStage: Protocol.StageInfo) =
+                match state.Loaded with
+                | None -> ()
+                | Some loaded ->
+                    match evaluateStage loaded nextStage stderr with
+                    | Ok nextLoaded ->
+                        stderr.Flush()
+                        let p = nextLoaded.Scene
+                        r.UploadScene p.Scene p.Grid
+                        state <- { state with Loaded = Some nextLoaded }
+                        r.SetTitle(Interaction.windowTitle state.Loaded)
+                        dirty <- true
+                    | Error() ->
+                        stderr.Flush()
+                        interactive <- { interactive with Playing = false }
+
+            let handleInteractiveEffect (eff: Interaction.InteractiveEffect) =
+                match eff with
+                | Interaction.NoEffect -> ()
+                | Interaction.Redraw -> dirty <- true
+                | Interaction.Close ->
+                    keepRunning <- false
+                    r.RequestClose()
+                | Interaction.Reload ->
+                    match Protocol.tryReload loader interactive.LastValidAspect true state with
+                    | Ok nextState ->
+                        stderr.Flush()
+                        let p = nextState.Loaded.Value.Scene
+                        r.UploadScene p.Scene p.Grid
+                        state <- nextState
+                        r.SetTitle(Interaction.windowTitle state.Loaded)
+                        dirty <- true
+                    | Error(Choice1Of2 _) -> ()
+                    | Error(Choice2Of2()) -> stderr.Flush()
+                | Interaction.StepDiscrete n ->
+                    match state.Loaded with
+                    | Some loaded ->
+                        let tgt =
+                            match loaded.Stage with
+                            | Protocol.DiscreteStage(_, t) -> t
+                            | Protocol.TimedStage _ -> loaded.Scene.CompiledModel.Settings.Derivations
+
+                        applyInteractiveStage (Protocol.DiscreteStage(n, tgt))
+                    | None -> ()
+                | Interaction.StepTimed t ->
+                    match state.Loaded with
+                    | Some loaded ->
+                        let tgt =
+                            match loaded.Stage with
+                            | Protocol.TimedStage(_, target) -> target
+                            | Protocol.DiscreteStage _ -> t
+
+                        applyInteractiveStage (Protocol.TimedStage(t, tgt))
+                    | None -> ()
 
             try
                 while keepRunning && not r.ShouldClose do
                     for ev in r.DrainEvents() do
                         if keepRunning && not r.ShouldClose then
+                            let wasPlaying = interactive.Playing
                             let nextSession, nextInteractive, effect = Interaction.handleEvent ev state interactive
                             state <- nextSession
                             interactive <- nextInteractive
 
-                            match effect with
-                            | Interaction.NoEffect -> ()
-                            | Interaction.Redraw -> dirty <- true
-                            | Interaction.Close ->
-                                keepRunning <- false
-                                r.RequestClose()
-                            | Interaction.Reload ->
-                                match Protocol.tryReload loader interactive.LastValidAspect true state with
-                                | Ok nextState ->
-                                    stderr.Flush()
-                                    let scene, grid = nextState.Loaded.Value.Scene
-                                    r.UploadScene scene grid
-                                    state <- nextState
-                                    dirty <- true
-                                | Error(Choice1Of2 _) -> ()
-                                | Error(Choice2Of2()) -> stderr.Flush()
+                            if not wasPlaying && interactive.Playing then
+                                lastPlaybackTick <- Stopwatch.GetTimestamp()
+
+                            handleInteractiveEffect effect
 
                     if
                         keepRunning
@@ -715,9 +1167,11 @@ let internal executeViewWithVisibility
                         match Protocol.tryReload watchLoader interactive.LastValidAspect true state with
                         | Ok nextState ->
                             stderr.Flush()
-                            let scene, grid = nextState.Loaded.Value.Scene
-                            r.UploadScene scene grid
+                            let p = nextState.Loaded.Value.Scene
+                            r.UploadScene p.Scene p.Grid
                             state <- nextState
+                            interactive <- { interactive with Playing = false }
+                            r.SetTitle(Interaction.windowTitle state.Loaded)
                             dirty <- true
                         | Error(Choice1Of2 _) -> ()
                         | Error(Choice2Of2()) -> stderr.Flush()
@@ -739,10 +1193,16 @@ let internal executeViewWithVisibility
                             if code = 0 then
                                 match cmd with
                                 | Protocol.Load _ ->
+                                    interactive <- { interactive with Playing = false }
                                     r.SetTitle(Interaction.windowTitle state.Loaded)
                                     watcher |> Option.iter (fun w -> w.SetTarget(state.Loaded |> Option.map _.Input))
                                     dirty <- true
                                 | Protocol.Reload _
+                                | Protocol.Step _
+                                | Protocol.Time _ ->
+                                    interactive <- { interactive with Playing = false }
+                                    r.SetTitle(Interaction.windowTitle state.Loaded)
+                                    dirty <- true
                                 | Protocol.Fit
                                 | Protocol.SetWireframe _
                                 | Protocol.SetGrid _ -> dirty <- true
@@ -753,10 +1213,21 @@ let internal executeViewWithVisibility
                                 | Protocol.BatchSnapshot _
                                 | Protocol.BatchContactSheet _
                                 | Protocol.BatchSilhouette _
+                                | Protocol.BatchSequence _
                                 | Protocol.BatchStats _
                                 | Protocol.Quit -> ()
 
                             writeExit code
+
+                    if keepRunning && not r.ShouldClose && interactive.Playing then
+                        let now = Stopwatch.GetTimestamp()
+                        let elapsed = float (now - lastPlaybackTick) / float Stopwatch.Frequency
+
+                        if elapsed >= Interaction.playbackIntervalSeconds then
+                            lastPlaybackTick <- now
+                            let nextInteractive, eff = Interaction.advancePlayback state interactive
+                            interactive <- nextInteractive
+                            handleInteractiveEffect eff
 
                     if keepRunning && not r.ShouldClose && dirty then
                         let struct (curW, curH) = r.FramebufferSize()
@@ -776,7 +1247,12 @@ let internal executeViewWithVisibility
                         && cmdQueue.IsEmpty
                         && Volatile.Read(&watchReloadPending) = 0
                     then
-                        r.WaitEvents()
+                        if interactive.Playing then
+                            let elapsed = float (Stopwatch.GetTimestamp() - lastPlaybackTick) / float Stopwatch.Frequency
+                            let remaining = max 0.001 (Interaction.playbackIntervalSeconds - elapsed)
+                            r.WaitEventsTimeout(remaining)
+                        else
+                            r.WaitEvents()
             finally
                 Volatile.Write(&stopping, true)
                 watcher |> Option.iter (fun w -> (w :> IDisposable).Dispose())
@@ -823,6 +1299,37 @@ let internal executeCli (argv: string list) (stdin: TextReader) (stdout: TextWri
                 r.RenderSilhouette w h cam |> Result.map (Png.encodeGray8 w h))
             stdout
             stderr
+    | Ok(Protocol.Sequence seq) ->
+        match compileAndLoadModelWithRetries 0 0 seq.Input seq.Load stderr with
+        | Error() -> 1
+        | Ok model ->
+            match Protocol.resolveSequenceSchedule (Model.Model.isTimed model) seq.From seq.To seq.Step seq.Frames with
+            | Error msg ->
+                stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                2
+            | Ok schedule ->
+                match Renderer.createHeadless () with
+                | Error msg ->
+                    stderr.WriteLine($"rubberplant-viewer: %s{msg}")
+                    1
+                | Ok renderer ->
+                    use r = renderer
+
+                    executeSequence
+                        r
+                        seq.Input
+                        model
+                        seq.Load
+                        seq.OutputPrefix
+                        schedule
+                        seq.Mode
+                        seq.SnapshotSize
+                        seq.ContactSheetSize
+                        seq.Grid
+                        seq.Wireframe
+                        (fun bounds aspect -> Protocol.resolveOneShotCamera bounds seq.Camera aspect)
+                        stdout
+                        stderr
     | Ok(Protocol.View args) -> executeViewWithVisibility true args stdin stdout stderr
 
 [<EntryPoint>]

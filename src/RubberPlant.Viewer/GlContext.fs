@@ -68,6 +68,10 @@ type GlContext =
         if not this.Disposed then
             this.Glfw.WaitEvents()
 
+    member this.WaitEventsTimeout(seconds: float) =
+        if not this.Disposed && Double.IsFinite seconds && seconds >= 0.0 then
+            this.Glfw.WaitEventsTimeout(seconds)
+
     member this.PostEmptyEvent() =
         lock this.LifecycleLock (fun () ->
             if not this.Disposed then

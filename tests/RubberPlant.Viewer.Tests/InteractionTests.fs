@@ -16,27 +16,34 @@ let private dummyStats () =
         (Stats.analyze output.Derived output.Drawing output.DerivationTrace output.Geometry output.TurtleTrace)
         "stats"
 
-let private makeLoadedSession (halfExtents: Vec3) : Protocol.SessionState<string> =
+let private makeLoadedSessionWithStage (halfExtents: Vec3) (stage: Protocol.StageInfo) : Protocol.SessionState<string> =
     let bounds = Camera.boundsOfHalfExtents halfExtents
 
     let loaded: Protocol.LoadedModel<string> =
         { Input = "dir/sub/my-tree.rp"
           Load = Protocol.emptyLoadOptions
+          Stage = stage
           Bounds = bounds
           Stats = dummyStats ()
           Scene = "scene" }
 
     Protocol.applyLoad 1.5 false loaded Protocol.initialSession<string>
 
+let private makeLoadedSession (halfExtents: Vec3) : Protocol.SessionState<string> =
+    makeLoadedSessionWithStage halfExtents (Protocol.DiscreteStage(0, 0))
+
 [<Tests>]
 let tests =
     testList
         "Interaction"
-        [ test "windowTitle formats loaded filename with em-dash or (no model)" {
+        [ test "windowTitle formats loaded filename with em-dash and stage, or (no model)" {
               Expect.equal (windowTitle None) "RubberPlant — (no model)" "unloaded title"
 
-              let s = makeLoadedSession (Vec3.create 1.0 2.0 1.0)
-              Expect.equal (windowTitle s.Loaded) "RubberPlant — my-tree.rp" "loaded title uses basename"
+              let sDiscrete = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.DiscreteStage(3, 10))
+              Expect.equal (windowTitle sDiscrete.Loaded) "RubberPlant — my-tree.rp [step 3/10]" "discrete stage title"
+
+              let sTimed = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.TimedStage(1.25, 2.0))
+              Expect.equal (windowTitle sTimed.Loaded) "RubberPlant — my-tree.rp [t = 1.25]" "timed stage title"
           }
 
           test "left-drag orbits azimuth/elevation and clamps elevation to [-90, 90]" {
@@ -235,4 +242,89 @@ let tests =
               let _, i3, _ = handleEvent (MouseButton(Left, false, false, 25.0, 35.0)) s2 i2
               Expect.equal (activeDragMode i3.Drag) None "released clears drag mode"
               Expect.isFalse i3.Drag.LeftShiftOnPress "LeftShiftOnPress cleared on release"
+          }
+
+          test "discrete stepping shortcuts (Left/Right/Shift/Home/0/End/Space) and playback advance cleanly" {
+              let sTarget = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.DiscreteStage(10, 10))
+              let i0 = createInitialState 1.5 None
+
+              // StepBackward by 1 and Shift+StepBackward by 5
+              let _, i1, eBack1 = handleEvent (KeyPress(StepBackward false)) sTarget i0
+              Expect.equal eBack1 (StepDiscrete 9) "Left steps -1"
+              Expect.isFalse i1.Playing "paused"
+
+              let _, _, eBack5 = handleEvent (KeyPress(StepBackward true)) sTarget i1
+              Expect.equal eBack5 (StepDiscrete 5) "Shift+Left steps -5"
+
+              // Clamps at 0
+              let sAt2 = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.DiscreteStage(2, 10))
+              let _, _, eClamp = handleEvent (KeyPress(StepBackward true)) sAt2 i0
+              Expect.equal eClamp (StepDiscrete 0) "Shift+Left clamps >= 0"
+
+              let sAt0 = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.DiscreteStage(0, 10))
+              let _, _, eAt0 = handleEvent (KeyPress(StepBackward false)) sAt0 i0
+              Expect.equal eAt0 NoEffect "Left at 0 is NoEffect"
+
+              // StepForward by 1 and Shift+StepForward by 5 (allows stepping past target)
+              let _, _, eFwd1 = handleEvent (KeyPress(StepForward false)) sTarget i0
+              Expect.equal eFwd1 (StepDiscrete 11) "Right steps +1 past target"
+              let _, _, eFwd5 = handleEvent (KeyPress(StepForward true)) sTarget i0
+              Expect.equal eFwd5 (StepDiscrete 15) "Shift+Right steps +5"
+
+              // Home/0 and End
+              let _, _, eHome = handleEvent (KeyPress JumpStart) sAt2 i0
+              Expect.equal eHome (StepDiscrete 0) "Home jumps to 0"
+              let _, _, eEnd = handleEvent (KeyPress JumpEnd) sAt2 i0
+              Expect.equal eEnd (StepDiscrete 10) "End jumps to target"
+
+              // Space at target restarts from 0 and begins Playing; Space again pauses; advancePlayback stops at target.
+              let _, iPlayStart, ePlayStart = handleEvent (KeyPress TogglePlay) sTarget i0
+              Expect.isTrue iPlayStart.Playing "Space at target starts Playing"
+              Expect.equal ePlayStart (StepDiscrete 0) "Space at target jumps to 0"
+
+              let _, iPaused, ePause = handleEvent (KeyPress TogglePlay) sAt2 iPlayStart
+              Expect.isFalse iPaused.Playing "Space pauses playback"
+              Expect.equal ePause NoEffect "pause emits NoEffect"
+
+              let _, iPlayMid, ePlayMid = handleEvent (KeyPress TogglePlay) sAt2 iPaused
+              Expect.isTrue iPlayMid.Playing "Space below target starts Playing"
+              Expect.equal ePlayMid NoEffect "starts from current step"
+
+              let sNearEnd = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.DiscreteStage(9, 10))
+              let iAfterTick, eTick = advancePlayback sNearEnd iPlayMid
+              Expect.equal eTick (StepDiscrete 10) "advancePlayback reaches target"
+              Expect.isFalse iAfterTick.Playing "advancePlayback pauses cleanly at target"
+
+              // Manual step pauses Playing
+              let _, iManualStop, _ = handleEvent (KeyPress(StepBackward false)) sAt2 iPlayMid
+              Expect.isFalse iManualStop.Playing "manual step stops playback"
+          }
+
+          test "timed stepping shortcuts and playback use max(0.05, target/60) and 0.2x Shift precision" {
+              let target = 6.0
+              let expectedDt = max 0.05 (target / 60.0) // 0.1
+              let sMid = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.TimedStage(3.0, target))
+              let i0 = createInitialState 1.5 None
+
+              let _, _, eBack = handleEvent (KeyPress(StepBackward false)) sMid i0
+              match eBack with
+              | StepTimed t -> Expect.floatClose Accuracy.veryHigh t (3.0 - expectedDt) "timed backward"
+              | other -> failwith $"expected StepTimed, got %A{other}"
+
+              let _, _, eShiftFwd = handleEvent (KeyPress(StepForward true)) sMid i0
+              match eShiftFwd with
+              | StepTimed t -> Expect.floatClose Accuracy.veryHigh t (3.0 + expectedDt * 0.2) "timed Shift+Right uses 0.2x step"
+              | other -> failwith $"expected StepTimed, got %A{other}"
+
+              let _, _, eHome = handleEvent (KeyPress JumpStart) sMid i0
+              Expect.equal eHome (StepTimed 0.0) "timed Home jumps to 0.0"
+
+              let _, _, eEnd = handleEvent (KeyPress JumpEnd) sMid i0
+              Expect.equal eEnd (StepTimed target) "timed End jumps to target"
+
+              let sAlmost = makeLoadedSessionWithStage (Vec3.create 1.0 2.0 1.0) (Protocol.TimedStage(5.95, target))
+              let iPlay = { i0 with Playing = true }
+              let iDone, eDone = advancePlayback sAlmost iPlay
+              Expect.equal eDone (StepTimed target) "timed playback clamps final tick at target"
+              Expect.isFalse iDone.Playing "timed playback pauses at target"
           } ]
