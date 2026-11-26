@@ -285,6 +285,32 @@ let tests =
               compileOk "axiom: A;\nsettings { width = 0; }" |> ignore
           }
 
+          test "time setting defaults to None and must be finite and non-negative" {
+              let m0, _ = compileOk "axiom: A;"
+              Expect.isNone m0.Settings.Time "default time is None"
+
+              let mZero, _ = compileOk "axiom: A;\nsettings { time = 0; }"
+              Expect.equal mZero.Settings.Time (Some 0.0) "time = 0 allowed"
+
+              let mPos, _ = compileOk "axiom: A;\nsettings { time = 2.5; }"
+              Expect.equal mPos.Settings.Time (Some 2.5) "time = 2.5"
+
+              expectError Codes.InvalidSetting 2 "axiom: A;\nsettings { time = -1; }"
+              expectError Codes.InvalidSetting 2 "axiom: A;\nsettings { time = exp(1000); }"
+          }
+
+          test "width_scale setting defaults to None and must be finite and greater than 0" {
+              let m0, _ = compileOk "axiom: A;"
+              Expect.isNone m0.Settings.WidthScale "default width_scale is None"
+
+              let mPos, _ = compileOk "axiom: A;\nsettings { width_scale = 1; }"
+              Expect.equal mPos.Settings.WidthScale (Some 1.0) "width_scale = 1"
+
+              expectError Codes.InvalidSetting 2 "axiom: A;\nsettings { width_scale = 0; }"
+              expectError Codes.InvalidSetting 2 "axiom: A;\nsettings { width_scale = -1; }"
+              expectError Codes.InvalidSetting 2 "axiom: A;\nsettings { width_scale = exp(1000); }"
+          }
+
           test "invalid setting points at its entry" {
               expectError Codes.InvalidSetting 3 "axiom: A;\nsettings {\n  taper = 120;\n}"
           }

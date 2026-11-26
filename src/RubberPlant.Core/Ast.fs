@@ -96,6 +96,14 @@ type Rule =
     | Production of Head * ProdBody * pos: Pos
     | Interpretation of Head * InterpBody * pos: Pos
 
+/// `ModuleName "at" Expr "->" ActualString` (v0.3, ABOP Ch 6 timed DOL-systems).
+type TimedProduction =
+    { Name: string
+      NamePos: Pos
+      TerminalAge: Expr
+      Successor: ActualString
+      Pos: Pos }
+
 // Prelude and file --------------------------------------------------------
 
 /// Settings whose value is a single expression.
@@ -106,6 +114,10 @@ type ScalarKey =
     | Width
     | Taper
     | Elasticity
+    /// v0.3: finite >= 0
+    | Time
+    /// v0.3: finite > 0
+    | WidthScale
 
 /// Settings whose value is a vector `(x, y, z)` (v0.2).
 type VectorKey = Tropism
@@ -123,11 +135,15 @@ type SettingEntry =
 type Item =
     | Settings of SettingEntry list * pos: Pos
     | Let of name: string * Expr * pos: Pos
+    /// `include Name = "path.s";` (v0.3)
+    | Include of name: string * namePos: Pos * path: string * pos: Pos
     | Ignore of (string * Pos) list * pos: Pos
     /// `consider:` (v0.2)
     | Consider of (string * Pos) list * pos: Pos
     | Axiom of ActualString * pos: Pos
     | RuleItem of Rule
+    /// Timed `at` production (v0.3)
+    | TimedRuleItem of TimedProduction
 
 type File = Item list
 
@@ -140,6 +156,8 @@ module SettingKey =
         | ScalarKey Width -> "width"
         | ScalarKey Taper -> "taper"
         | ScalarKey Elasticity -> "elasticity"
+        | ScalarKey Time -> "time"
+        | ScalarKey WidthScale -> "width_scale"
         | VectorKey Tropism -> "tropism"
 
     let all =
@@ -149,7 +167,9 @@ module SettingKey =
           ScalarKey Width
           ScalarKey Taper
           VectorKey Tropism
-          ScalarKey Elasticity ]
+          ScalarKey Elasticity
+          ScalarKey Time
+          ScalarKey WidthScale ]
 
     let tryParse (s: string) = all |> List.tryFind (fun k -> name k = s)
 

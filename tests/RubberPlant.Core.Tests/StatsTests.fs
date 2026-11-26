@@ -376,6 +376,7 @@ let geometryTests =
               let derived: LString.LString = [||]
               let dTrace =
                   { Steps = 0
+                    Time = Some -0.0
                     FixedPointReached = false
                     TotalRuleFirings = 0
                     RuleFirings = [] }
@@ -434,6 +435,7 @@ let geometryTests =
 
               let expectedDeriv =
                   [ "steps"
+                    "time"
                     "derived_modules"
                     "drawing_modules"
                     "max_bracket_depth"
@@ -448,6 +450,8 @@ let geometryTests =
                     "aspect_ratio"
                     "segment_count"
                     "polygon_count"
+                    "gc_count"
+                    "surface_count"
                     "total_segment_length"
                     "width_min"
                     "width_max"
@@ -485,7 +489,7 @@ let geometryTests =
 
           test "analyze validates TurtleTrace invariants" {
               let emptyLStr: LString.LString = [||]
-              let dTrace = { Steps = 0; FixedPointReached = false; TotalRuleFirings = 0; RuleFirings = [] }
+              let dTrace = { Steps = 0; Time = None; FixedPointReached = false; TotalRuleFirings = 0; RuleFirings = [] }
               let seg = Segment(Vec3.zero, Vec3.create 0.0 1.0 0.0, 1.0, 0)
 
               Expect.throwsT<ArgumentException>
@@ -495,6 +499,349 @@ let geometryTests =
               Expect.throwsT<ArgumentException>
                   (fun () -> Stats.analyze emptyLStr emptyLStr dTrace [ seg ] { PrimitiveDepths = [| -1 |] } |> ignore)
                   "negative depth throws ArgumentException"
+          }
+
+          test "timed trace populates derivation.time and rejects non-finite time" {
+              let emptyLStr: LString.LString = [||]
+
+              let okTrace =
+                  { Steps = 0
+                    Time = Some 2.5
+                    FixedPointReached = false
+                    TotalRuleFirings = 3
+                    RuleFirings = [ { Line = 4; Predecessor = "a"; Arity = 1; Count = 3 } ] }
+
+              let stats =
+                  Expect.wantOk (Stats.analyze emptyLStr emptyLStr okTrace [] { PrimitiveDepths = [||] }) "timed stats"
+
+              Expect.equal stats.Derivation.Time (Some 2.5) "time preserved"
+              let json = Stats.toJson false stats
+              use doc = JsonDocument.Parse json
+              Expect.floatClose Accuracy.veryHigh (doc.RootElement.GetProperty("derivation").GetProperty("time").GetDouble()) 2.5 "json time"
+
+              let badTrace = { okTrace with Time = Some Double.PositiveInfinity }
+
+              match Stats.analyze emptyLStr emptyLStr badTrace [] { PrimitiveDepths = [||] } with
+              | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "non-finite time -> RP0205"
+              | other -> failtestf "expected RP0205, got %A" other
+          }
+
+          test "GeneralizedCylinder telemetry: gc_count, spine spans, effective widths, branch_order, and center_of_mass" {
+              let mkSection p w sL sU =
+                  { P = p
+                    H = Vec3.create 0.0 1.0 0.0
+                    L = Vec3.create -1.0 0.0 0.0
+                    U = Vec3.create 0.0 0.0 1.0
+                    Width = w
+                    ScaleL = sL
+                    ScaleU = sU
+                    Color = 0
+                    Contour = Circle }
+
+              // Spine: (0,0,0) -> (0,4,0) -> (2,4,0); spans of length 4 and 2.
+              // Effective widths: 4*max(1,1)=4, 2*max(1.5,0.5)=3, 1*max(0.5,0.25)=0.5.
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 8
+                        Sections =
+                          [ mkSection (Vec3.create 0.0 0.0 0.0) 4.0 1.0 1.0
+                            mkSection (Vec3.create 0.0 4.0 0.0) 2.0 1.5 0.5
+                            mkSection (Vec3.create 2.0 4.0 0.0) 1.0 0.5 0.25 ] }
+
+              let emptyLStr: LString.LString = [||]
+              let dTrace = { Steps = 0; Time = None; FixedPointReached = false; TotalRuleFirings = 0; RuleFirings = [] }
+
+              let stats =
+                  Expect.wantOk (Stats.analyze emptyLStr emptyLStr dTrace [ gc ] { PrimitiveDepths = [| 1 |] }) "gc stats"
+
+              let g = stats.Geometry
+              Expect.equal g.SegmentCount 0 "segment_count counts Segment primitives"
+              Expect.equal g.GcCount 1 "gc_count"
+              Expect.equal g.SurfaceCount 0 "surface_count"
+              Expect.floatClose Accuracy.high g.TotalSegmentLength 6.0 "spine spans sum to 6"
+              Expect.equal g.WidthMin (Some 0.5) "effective width_min"
+              Expect.equal g.WidthMax (Some 4.0) "effective width_max"
+
+              let bbox = Expect.wantSome g.BBox "bbox"
+              closeVec bbox.Min (Vec3.create 0.0 0.0 0.0)
+              closeVec bbox.Max (Vec3.create 2.0 4.0 0.0)
+
+              // Same length-weighted center of mass as the 2-segment test: (1/3, 8/3, 0).
+              let com = Expect.wantSome g.CenterOfMass "com"
+              closeVec com (Vec3.create (1.0 / 3.0) (8.0 / 3.0) 0.0)
+
+              Expect.equal
+                  g.BranchOrder
+                  [ { Order = 0; SegmentCount = 0; TotalLength = 0.0; PolygonCount = 0 }
+                    { Order = 1; SegmentCount = 2; TotalLength = 6.0; PolygonCount = 0 } ]
+                  "GC spine spans attributed to opening depth"
+
+              let json = Stats.toJson false stats
+              use doc = JsonDocument.Parse json
+              let jg = doc.RootElement.GetProperty "geometry"
+              Expect.equal (jg.GetProperty("gc_count").GetInt32()) 1 "json gc_count"
+              Expect.equal (jg.GetProperty("surface_count").GetInt32()) 0 "json surface_count"
+          }
+
+          test "Surface telemetry: surface_count, world-space control points bbox and fallback center_of_mass" {
+              let noNeighbors =
+                  { TopLeft = None
+                    Top = None
+                    TopRight = None
+                    Left = None
+                    Right = None
+                    BottomLeft = None
+                    Bottom = None
+                    BottomRight = None }
+
+              let surf =
+                  { Name = "leaf"
+                    DefaultDivisions = (4, 4)
+                    EndPoint = Vec3.create 0.0 1.0 0.0
+                    Patches =
+                      [| { Name = "p0"
+                           Neighbors = noNeighbors
+                           ControlPoints =
+                             [| Vec3.create 0.0 0.0 0.0
+                                Vec3.create 1.0 0.0 0.0
+                                Vec3.create 0.0 1.0 0.0
+                                Vec3.create 1.0 1.0 1.0 |] } |] }
+
+              // Origin=(1,2,3), AxisX=(1,0,0), AxisY=(0,1,0), AxisZ=(0,0,1), Scale=(2,4,6)
+              // World points: (1,2,3), (3,2,3), (1,6,3), (3,6,9)
+              // BBox: min=(1,2,3), max=(3,6,9), extent=(2,4,6), height=4, crown_width=6
+              // Mean: (2, 4, 4.5)
+              let inst =
+                  Surface
+                      { Surface = surf
+                        Origin = Vec3.create 1.0 2.0 3.0
+                        AxisX = Vec3.create 1.0 0.0 0.0
+                        AxisY = Vec3.create 0.0 1.0 0.0
+                        AxisZ = Vec3.create 0.0 0.0 1.0
+                        Scale = Vec3.create 2.0 4.0 6.0
+                        Color = 0 }
+
+              let emptyLStr: LString.LString = [||]
+              let dTrace = { Steps = 0; Time = None; FixedPointReached = false; TotalRuleFirings = 0; RuleFirings = [] }
+
+              let stats =
+                  Expect.wantOk (Stats.analyze emptyLStr emptyLStr dTrace [ inst ] { PrimitiveDepths = [| 0 |] }) "surface stats"
+
+              let g = stats.Geometry
+              Expect.equal g.SegmentCount 0 "no segments"
+              Expect.equal g.GcCount 0 "no GCs"
+              Expect.equal g.SurfaceCount 1 "one surface"
+              Expect.isNone g.WidthMin "no widths"
+              Expect.isNone g.WidthMax "no widths"
+
+              let bbox = Expect.wantSome g.BBox "bbox"
+              closeVec bbox.Min (Vec3.create 1.0 2.0 3.0)
+              closeVec bbox.Max (Vec3.create 3.0 6.0 9.0)
+              Expect.floatClose Accuracy.high (Expect.wantSome g.Height "height") 4.0 "height"
+              Expect.floatClose Accuracy.high (Expect.wantSome g.CrownWidth "crown_width") 6.0 "crown_width"
+              Expect.floatClose Accuracy.high (Expect.wantSome g.AspectRatio "aspect_ratio") (4.0 / 6.0) "aspect_ratio"
+              closeVec (Expect.wantSome g.CenterOfMass "com") (Vec3.create 2.0 4.0 4.5)
+
+              // Non-finite surface transform -> RP0205
+              let badInst =
+                  Surface
+                      { Surface = surf
+                        Origin = Vec3.create nan 0.0 0.0
+                        AxisX = Vec3.create 1.0 0.0 0.0
+                        AxisY = Vec3.create 0.0 1.0 0.0
+                        AxisZ = Vec3.create 0.0 0.0 1.0
+                        Scale = Vec3.create 1.0 1.0 1.0
+                        Color = 0 }
+
+              match Stats.analyze emptyLStr emptyLStr dTrace [ badInst ] { PrimitiveDepths = [| 0 |] } with
+              | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "non-finite surface -> RP0205"
+              | other -> failtestf "expected RP0205, got %A" other
+          }
+
+          test "mixed Segment, Polygon, GeneralizedCylinder, and Surface stats and GC edge cases" {
+              let mkSection p w sL sU =
+                  { P = p
+                    H = Vec3.create 0.0 1.0 0.0
+                    L = Vec3.create -1.0 0.0 0.0
+                    U = Vec3.create 0.0 0.0 1.0
+                    Width = w
+                    ScaleL = sL
+                    ScaleU = sU
+                    Color = 0
+                    Contour = UCup 0.5 }
+
+              let noNeighbors =
+                  { TopLeft = None
+                    Top = None
+                    TopRight = None
+                    Left = None
+                    Right = None
+                    BottomLeft = None
+                    Bottom = None
+                    BottomRight = None }
+
+              let surf =
+                  { Name = "petal"
+                    DefaultDivisions = (4, 4)
+                    EndPoint = Vec3.create 0.0 1.0 0.0
+                    Patches =
+                      [| { Name = "p0"
+                           Neighbors = noNeighbors
+                           ControlPoints = [| Vec3.create 10.0 0.0 0.0 |] } |] }
+
+              let prims =
+                  [ Segment(Vec3.create 0.0 0.0 0.0, Vec3.create 0.0 2.0 0.0, 2.0, 0)
+                    Polygon([ Vec3.create -5.0 0.0 0.0; Vec3.create -5.0 1.0 0.0; Vec3.create -4.0 0.0 0.0 ], 1)
+                    GeneralizedCylinder
+                        { Sides = 6
+                          Sections =
+                            [ mkSection (Vec3.create 0.0 2.0 0.0) 1.0 1.0 0.5
+                              mkSection (Vec3.create 0.0 4.0 0.0) 0.5 1.0 0.5 ] }
+                    Surface
+                        { Surface = surf
+                          Origin = Vec3.zero
+                          AxisX = Vec3.create 1.0 0.0 0.0
+                          AxisY = Vec3.create 0.0 1.0 0.0
+                          AxisZ = Vec3.create 0.0 0.0 1.0
+                          Scale = Vec3.create 1.0 1.0 1.0
+                          Color = 2 } ]
+
+              let emptyLStr: LString.LString = [||]
+              let dTrace = { Steps = 0; Time = None; FixedPointReached = false; TotalRuleFirings = 0; RuleFirings = [] }
+
+              let stats =
+                  Expect.wantOk (Stats.analyze emptyLStr emptyLStr dTrace prims { PrimitiveDepths = [| 0; 1; 0; 1 |] }) "mixed"
+
+              let g = stats.Geometry
+              Expect.equal g.SegmentCount 1 "1 segment"
+              Expect.equal g.PolygonCount 1 "1 polygon"
+              Expect.equal g.GcCount 1 "1 gc"
+              Expect.equal g.SurfaceCount 1 "1 surface"
+              Expect.floatClose Accuracy.high g.TotalSegmentLength 4.0 "segment(2) + gc span(2)"
+              Expect.equal g.WidthMin (Some 0.5) "min width from GC"
+              Expect.equal g.WidthMax (Some 2.0) "max width from Segment"
+
+              let bbox = Expect.wantSome g.BBox "bbox"
+              closeVec bbox.Min (Vec3.create -5.0 0.0 0.0)
+              closeVec bbox.Max (Vec3.create 10.0 4.0 0.0)
+
+              // Length-weighted CoM uses segment mid=(0,1,0) len=2 and GC span mid=(0,3,0) len=2 -> (0,2,0).
+              closeVec (Expect.wantSome g.CenterOfMass "weighted com") (Vec3.create 0.0 2.0 0.0)
+
+              Expect.equal
+                  g.BranchOrder
+                  [ { Order = 0; SegmentCount = 2; TotalLength = 4.0; PolygonCount = 0 }
+                    { Order = 1; SegmentCount = 0; TotalLength = 0.0; PolygonCount = 1 } ]
+                  "branch orders"
+
+              // Zero-length GC falls back to unweighted mean of section points.
+              let zeroGc =
+                  GeneralizedCylinder
+                      { Sides = 6
+                        Sections =
+                          [ mkSection (Vec3.create 2.0 4.0 6.0) 1.0 1.0 1.0
+                            mkSection (Vec3.create 2.0 4.0 6.0) 1.0 1.0 1.0 ] }
+
+              let zStats =
+                  Expect.wantOk (Stats.analyze emptyLStr emptyLStr dTrace [ zeroGc ] { PrimitiveDepths = [| 0 |] }) "zero gc"
+
+              closeVec (Expect.wantSome zStats.Geometry.CenterOfMass "zero gc com") (Vec3.create 2.0 4.0 6.0)
+
+              // Non-finite GC width/scale returns RP0205.
+              let badGc =
+                  GeneralizedCylinder
+                      { Sides = 6
+                        Sections = [ mkSection Vec3.zero 1.0 Double.PositiveInfinity 1.0 ] }
+
+              match Stats.analyze emptyLStr emptyLStr dTrace [ badGc ] { PrimitiveDepths = [| 0 |] } with
+              | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "non-finite GC scale -> RP0205"
+              | other -> failtestf "expected RP0205, got %A" other
+
+              // Effective width product overflow (1e200 * 1e200 = +inf) returns RP0205.
+              let overflowGc =
+                  GeneralizedCylinder
+                      { Sides = 6
+                        Sections = [ mkSection Vec3.zero 1e200 1e200 1.0 ] }
+
+              match Stats.analyze emptyLStr emptyLStr dTrace [ overflowGc ] { PrimitiveDepths = [| 0 |] } with
+              | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "GC effective width overflow -> RP0205"
+              | other -> failtestf "expected RP0205, got %A" other
+
+              // Empty GC and empty Surface keep counts while leaving point/width metrics null.
+              let emptyGc = GeneralizedCylinder { Sides = 6; Sections = [] }
+
+              let emptySurf =
+                  Surface
+                      { Surface =
+                          { Name = "empty"
+                            DefaultDivisions = (4, 4)
+                            EndPoint = Vec3.zero
+                            Patches = [||] }
+                        Origin = Vec3.zero
+                        AxisX = Vec3.create 1.0 0.0 0.0
+                        AxisY = Vec3.create 0.0 1.0 0.0
+                        AxisZ = Vec3.create 0.0 0.0 1.0
+                        Scale = Vec3.create 1.0 1.0 1.0
+                        Color = 0 }
+
+              let emptyStats =
+                  Expect.wantOk
+                      (Stats.analyze emptyLStr emptyLStr dTrace [ emptyGc; emptySurf ] { PrimitiveDepths = [| 0; 0 |] })
+                      "empty gc and surface"
+
+              Expect.equal emptyStats.Geometry.GcCount 1 "empty gc counted"
+              Expect.equal emptyStats.Geometry.SurfaceCount 1 "empty surface counted"
+              Expect.isNone emptyStats.Geometry.BBox "no points -> bbox null"
+              Expect.isNone emptyStats.Geometry.WidthMin "no sections -> width_min null"
+
+              // Rotated/mirrored/flattened Surface basis and non-finite control point check.
+              let rotSurf =
+                  Surface
+                      { Surface =
+                          { Name = "rot"
+                            DefaultDivisions = (4, 4)
+                            EndPoint = Vec3.zero
+                            Patches =
+                              [| { Name = "p0"
+                                   Neighbors = noNeighbors
+                                   ControlPoints = [| Vec3.create 1.0 2.0 3.0; Vec3.create 0.0 0.0 0.0 |] } |] }
+                        Origin = Vec3.create 1.0 0.0 0.0
+                        AxisX = Vec3.create 0.0 1.0 0.0
+                        AxisY = Vec3.create -1.0 0.0 0.0
+                        AxisZ = Vec3.create 0.0 0.0 1.0
+                        Scale = Vec3.create -2.0 3.0 0.0
+                        Color = 0 }
+
+              // q0=(1,2,3) -> (1,0,0) + (-2)*(0,1,0) + (6)*(-1,0,0) + 0*(0,0,1) = (-5, -2, 0)
+              // q1=(0,0,0) -> (1, 0, 0)
+              let rotStats =
+                  Expect.wantOk (Stats.analyze emptyLStr emptyLStr dTrace [ rotSurf ] { PrimitiveDepths = [| 0 |] }) "rot surface"
+
+              let rotBox = Expect.wantSome rotStats.Geometry.BBox "rot bbox"
+              closeVec rotBox.Min (Vec3.create -5.0 -2.0 0.0)
+              closeVec rotBox.Max (Vec3.create 1.0 0.0 0.0)
+              closeVec (Expect.wantSome rotStats.Geometry.CenterOfMass "rot com") (Vec3.create -2.0 -1.0 0.0)
+
+              let badPtSurf =
+                  Surface
+                      { Surface =
+                          { Name = "badpt"
+                            DefaultDivisions = (4, 4)
+                            EndPoint = Vec3.zero
+                            Patches =
+                              [| { Name = "p0"
+                                   Neighbors = noNeighbors
+                                   ControlPoints = [| Vec3.create 0.0 Double.NaN 0.0 |] } |] }
+                        Origin = Vec3.zero
+                        AxisX = Vec3.create 1.0 0.0 0.0
+                        AxisY = Vec3.create 0.0 1.0 0.0
+                        AxisZ = Vec3.create 0.0 0.0 1.0
+                        Scale = Vec3.create 1.0 1.0 1.0
+                        Color = 0 }
+
+              match Stats.analyze emptyLStr emptyLStr dTrace [ badPtSurf ] { PrimitiveDepths = [| 0 |] } with
+              | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "non-finite control point -> RP0205"
+              | other -> failtestf "expected RP0205, got %A" other
           } ]
 
 [<Tests>]

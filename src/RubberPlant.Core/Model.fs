@@ -63,6 +63,17 @@ type CRule =
 
     member r.HasContext = not r.Left.IsEmpty || not r.Right.IsEmpty
 
+type IncludeDecl =
+    { Name: string
+      Path: string
+      Pos: Pos }
+
+type CTimedRule =
+    { Name: string
+      TerminalAge: float
+      Successor: LString
+      Pos: Pos }
+
 type Settings =
     { Derivations: int
       Angle: float
@@ -74,6 +85,10 @@ type Settings =
       Tropism: Vec3
       /// Elasticity e; 0 disables tropism.
       Elasticity: float
+      /// v0.3: None unless timed model or `time = ...` set.
+      Time: float option
+      /// v0.3: None means "auto".
+      WidthScale: float option
       /// Not a file setting: a run parameter supplied by the host (§4.7).
       Seed: int64 }
 
@@ -88,6 +103,8 @@ let defaultSettings =
       Taper = 30.0
       Tropism = Vec3.create 0.0 -1.0 0.0
       Elasticity = 0.0
+      Time = None
+      WidthScale = None
       Seed = 0L }
 
 /// Which modules exist during context matching (§4.5). Brackets always do.
@@ -115,9 +132,12 @@ module ContextFilter =
 
 type Model =
     { Settings: Settings
+      Includes: IncludeDecl list
+      Surfaces: Map<string, BezierSurface>
       Context: ContextFilter
       Axiom: LString
       Productions: CRule list
+      TimedProductions: CTimedRule list
       Interpretations: CRule list }
 
 /// Execution budgets guarding against runaway derivation or geometry (core-hardening.md §2).
@@ -125,7 +145,7 @@ type Model =
 type Limits =
     { /// Maximum number of symbols (`Sym`) in an L-string (axiom, derivation, interpretation).
       MaxModules: int option
-      /// Maximum number of primitives (`Segment` + `Polygon`) emitted by the turtle.
+      /// Maximum number of primitives emitted by the turtle.
       MaxPrimitives: int option }
 
 module Limits =

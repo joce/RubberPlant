@@ -44,7 +44,13 @@ let rec eval (args: float[]) (e: CExpr) : float =
         | Mod when y = 0.0 -> raise (EvalError(Codes.DivisionByZero, "division by zero"))
         | Div -> x / y |> check
         | Mod -> x % y |> check
-        | Pow -> x ** y |> check
+        | Pow ->
+            // Special-case `x ^ 0.5` to IEEE-754 exact `sqrt` so cross-platform
+            // phyllotaxis (`n^0.5`) and Ch 1 examples produce identical bits everywhere.
+            if y = 0.5 && x >= 0.0 then
+                sqrt (x + 0.0) |> check
+            else
+                x ** y |> check
         | And
         | Or -> failwith "unreachable"
 

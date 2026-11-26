@@ -14,6 +14,7 @@
     <Compile Include="TurtleTests.fs" />
     <Compile Include="StatsTests.fs" />
     <Compile Include="TrigTests.fs" />
+    <Compile Include="ExpLogTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 

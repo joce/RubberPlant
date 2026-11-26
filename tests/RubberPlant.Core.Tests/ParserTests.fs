@@ -361,7 +361,7 @@ let prelude =
         [ test "settings, with a position per entry" {
               match
                   parseOk
-                      "settings { derivations = 5; angle = 360/7;\n  step = 2; width = 3; taper = 10;\n  tropism = (0, -1, 0); elasticity = 0.22; }"
+                      "settings { derivations = 5; angle = 360/7;\n  step = 2; width = 3; taper = 10;\n  tropism = (0, -1, 0); elasticity = 0.22;\n  time = 1.5; width_scale = 1; }"
               with
               | [ Settings(entries, p) ] ->
                   Expect.equal p { Line = 1; Column = 1 } "block"
@@ -369,13 +369,18 @@ let prelude =
 
                   Expect.equal
                       (entries |> List.map (fun e -> (SettingEntry.pos e).Line, (SettingEntry.pos e).Column))
-                      [ 1, 12; 1, 29; 2, 3; 2, 13; 2, 24; 3, 3; 3, 25 ]
+                      [ 1, 12; 1, 29; 2, 3; 2, 13; 2, 24; 3, 3; 3, 25; 4, 3; 4, 15 ]
                       "entry positions"
 
-                  match entries[1], entries[5] with
-                  | ScalarEntry(Angle, angle, _), VectorEntry(Tropism, x, y, z, _) ->
+                  match entries[1], entries[5], entries[7], entries[8] with
+                  | ScalarEntry(Angle, angle, _),
+                    VectorEntry(Tropism, x, y, z, _),
+                    ScalarEntry(Time, t, _),
+                    ScalarEntry(WidthScale, ws, _) ->
                       Expect.equal (showExpr angle) "(360/7)" ""
                       Expect.equal (List.map showExpr [ x; y; z ]) [ "0"; "(-1)"; "0" ] ""
+                      Expect.equal (showExpr t) "1.5" ""
+                      Expect.equal (showExpr ws) "1" ""
                   | e -> failtestf "unexpected %A" e
               | r -> failtestf "unexpected %A" r
           }
@@ -408,10 +413,12 @@ let prelude =
                   |> List.map (function
                       | Settings _ -> "settings"
                       | Let(n, _, _) -> n
+                      | Include _ -> "include"
                       | Ignore _ -> "ignore"
                       | Consider _ -> "consider"
                       | Axiom _ -> "axiom"
-                      | RuleItem _ -> "rule")
+                      | RuleItem _ -> "rule"
+                      | TimedRuleItem _ -> "timed")
 
               Expect.equal kinds [ "a"; "settings"; "b"; "ignore"; "c"; "axiom"; "rule" ] ""
           }

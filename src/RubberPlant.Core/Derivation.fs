@@ -18,6 +18,7 @@ type RuleFiring =
 
 type DerivationTrace =
     { Steps: int
+      Time: float option
       FixedPointReached: bool
       TotalRuleFirings: int
       RuleFirings: RuleFiring list }
@@ -465,6 +466,7 @@ let deriveWithTrace (limits: Limits) (model: Model) : Result<LString * Derivatio
 
         let trace =
             { Steps = model.Settings.Derivations
+              Time = None
               FixedPointReached = fixedPointReached
               TotalRuleFirings = Array.sum counts
               RuleFirings = ruleFirings }
