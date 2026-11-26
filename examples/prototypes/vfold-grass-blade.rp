@@ -1,0 +1,21 @@
+(* Provisional organ probe (BP.3 / 3A): V-folded grass blade.
+   Uses ContourV with crisp midrib crease and arching gravity curve. *)
+settings {
+  derivations = 15;
+  width_scale = 1;
+}
+
+let segs = 14;
+let blade_len = 6.0;
+let base_w = 0.45;
+
+axiom: '(1) ContourV(0.65) !(base_w) StartGC B(0);
+
+B(k) :
+  when k < segs ->
+    &(6.5)
+    ContourV(0.65 * (1 - 0.5 * k / segs))
+    !(base_w * (1 - (k + 1) / segs))
+    F(blade_len / segs)
+    B(k + 1)
+  else -> EndGC;

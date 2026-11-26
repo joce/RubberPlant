@@ -29,9 +29,10 @@ let private ok (name: string) (r: Result<'a, string>) =
 
 /// `<example> <obj+mtl digest> <gltf digest>`.
 let private digestLine (name: string) =
-    let geometry = Examples.geometry name
-    let obj = Obj.render defaultMeshOptions (name + ".mtl") geometry |> ok name
-    let gltf = Gltf.renderText defaultMeshOptions geometry |> ok name
+    let output = Examples.run name
+    let opts = { defaultMeshOptions with WidthScale = output.Model.Settings.WidthScale }
+    let obj = Obj.render opts (name + ".mtl") output.Geometry |> ok name
+    let gltf = Gltf.renderText opts output.Geometry |> ok name
     $"%s{name} %s{sha (Array.append (utf8 obj.Obj) (utf8 obj.Mtl))} %s{sha (utf8 gltf)}"
 
 [<Tests>]

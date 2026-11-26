@@ -140,4 +140,43 @@ let tests =
               let svg = Svg.render options [] |> ok
               Expect.stringContains svg "<svg" ""
               Expect.stringContains svg "</svg>" ""
+          }
+
+          test "generalized cylinders draw spine spans with averaged effective widths and s_i color" {
+              let sec p w sL sU c =
+                  { P = p
+                    H = Vec3.create 0.0 1.0 0.0
+                    L = Vec3.create -1.0 0.0 0.0
+                    U = Vec3.create 0.0 0.0 1.0
+                    Width = w
+                    ScaleL = sL
+                    ScaleU = sU
+                    Color = c
+                    Contour = Circle }
+
+              let gc =
+                  GeneralizedCylinder
+                      { Sides = 0
+                        Sections =
+                          [ sec (Vec3.create 0.0 0.0 0.0) 2.0 2.0 0.5 0 // eff 4
+                            sec (Vec3.create 0.0 1.0 0.0) 2.0 1.0 1.0 1 // eff 2 -> span 0 avg = 3, color 0
+                            sec (Vec3.create 0.0 2.0 0.0) 4.0 1.0 1.0 1 ] } // eff 4 -> span 1 avg = 3, color 1
+
+              let svg = Svg.render options [ gc ] |> ok
+              Expect.stringContains svg """stroke="#1a1a1a" stroke-width="3" """ "span 0 width 3, color 0"
+              Expect.stringContains svg """stroke="#2e7d32" stroke-width="3" """ "span 1 width 3, color 1"
+
+              // Single-section GC emits no stroke
+              let singleSec = GeneralizedCylinder { Sides = 0; Sections = [ sec Vec3.zero 800.0 1.0 1.0 0 ] }
+              Expect.isOk (Svg.render Svg.defaultOptions [ singleSec ]) "1-section GC draws nothing"
+
+              // Span width >= 780 on default 800 px canvas fails cleanly
+              let tooWide =
+                  GeneralizedCylinder
+                      { Sides = 0
+                        Sections =
+                          [ sec (Vec3.create 0.0 0.0 0.0) 800.0 1.0 1.0 0
+                            sec (Vec3.create 0.0 1.0 0.0) 800.0 1.0 1.0 0 ] }
+
+              Expect.isError (Svg.render Svg.defaultOptions [ tooWide ]) "too-wide GC rejected"
           } ]

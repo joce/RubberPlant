@@ -1,0 +1,106 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "RubberPlant"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "color2",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.15292615199615014,
+          0.07227185068231748,
+          0.05286064702318025,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      },
+      "doubleSided": true
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC3",
+      "min": [
+        -0.2,
+        0,
+        -0.17320508
+      ],
+      "max": [
+        0.7778175,
+        1.7778175,
+        0.17320508
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 72,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 216,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 216,
+      "byteLength": 216,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 432,
+      "byteLength": 288,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 720,
+      "uri": "data:application/octet-stream;base64,zcxMvgAAAAAAAAAAzczMvQAAAACsXDE+bOiNvXysgz+BBQU+bOgNvvdYhz8AAAAAzczMPQAAAACsXDE+bOiNPQmneD+BBQU+zcxMPgAAAAAAAAAAbOgNPhJOcT8AAAAAzczMPQAAAACsXDG+bOiNPQmneD+BBQW+zczMvQAAAACsXDG+bOiNvXysgz+BBQW+5/crPwAJ3z+sXLE92+oiP4aP4z8AAAAA/xE+P/T71T+sXLE9DB9HP2110T8AAAAA/xE+P/T71T+sXLG95/crPwAJ3z+sXLG9p/Z8v19oZT0RaxI+1xO9vqpMUT1Zi20/lqUGv6wgMj6HIFU/cqprvyH1xD5Qdoq9au8hP3VQaj3Eu0U/iHTJPuq3Hr5N+2c/zdJ8P/Dgez3b+BO+0Yd0P0Ukk74r65A9dYi6Pth+VD0hCW6/7GULP5uik72d7FW/1GMiv3B2WD2WcEW/By6+vrEvgz5ZdGS/ruPwvjhUBz+Q3zQ/ns8pv7pYNz/pJF6+OhloPvpzI75U93U/fH83PyibKL9mfGo+LTcGP1w87L7fODe/iRc4vo55ez712nO/AAAAAAEAAAACAAAAAAAAAAIAAAADAAAAAQAAAAQAAAAFAAAAAQAAAAUAAAACAAAABAAAAAYAAAAHAAAABAAAAAcAAAAFAAAABgAAAAgAAAAJAAAABgAAAAkAAAAHAAAACAAAAAoAAAALAAAACAAAAAsAAAAJAAAACgAAAAAAAAADAAAACgAAAAMAAAALAAAAAwAAAAIAAAAMAAAAAwAAAAwAAAANAAAAAgAAAAUAAAAOAAAAAgAAAA4AAAAMAAAABQAAAAcAAAAPAAAABQAAAA8AAAAOAAAABwAAAAkAAAAQAAAABwAAABAAAAAPAAAACQAAAAsAAAARAAAACQAAABEAAAAQAAAACwAAAAMAAAANAAAACwAAAA0AAAARAAAA"
+    }
+  ]
+}

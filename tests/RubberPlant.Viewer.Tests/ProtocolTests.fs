@@ -310,6 +310,14 @@ let tests =
               Expect.equal mo.Sides 16 "sides"
               Expect.equal mo.WidthScale (Some 0.05) "widthScale"
 
+              let settingsWithScale = { Model.defaultSettings with WidthScale = Some 1.0 }
+              let moFallback = toMeshOptionsWithSettings settingsWithScale emptyLoadOptions
+              Expect.equal moFallback.WidthScale (Some 1.0) "falls back to model.Settings.WidthScale"
+              let moAuto = toMeshOptionsWithSettings settingsWithScale { emptyLoadOptions with WidthScale = Some None }
+              Expect.equal moAuto.WidthScale None "--width-scale auto overrides settings.WidthScale"
+              let moExplicit = toMeshOptionsWithSettings settingsWithScale { emptyLoadOptions with WidthScale = Some(Some 0.25) }
+              Expect.equal moExplicit.WidthScale (Some 0.25) "--width-scale <k> overrides settings.WidthScale"
+
               let lim = toLimits opts
               Expect.equal lim.MaxModules None "maxModules unlimited"
               Expect.equal lim.MaxPrimitives (Some 1000) "maxPrimitives"

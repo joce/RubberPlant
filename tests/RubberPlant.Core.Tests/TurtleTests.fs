@@ -369,6 +369,205 @@ let v02 =
 
                 testProperty "bending keeps the frame orthonormal and right-handed" bendKeepsFrameOrthonormal ] ]
 
+let private v03GC =
+    let drawWithTrace (src: string) =
+        let m, _ = compileOk src
+
+        match Pipeline.run m with
+        | Ok o -> o.Geometry, o.TurtleTrace, o.Warnings
+        | Error ds -> failtestf "failed:\n%s" (formatDiags ds)
+
+    let gcsOf (g: Geometry) =
+        g
+        |> List.choose (function
+            | GeneralizedCylinder gc -> Some gc
+            | _ -> None)
+
+    testList
+        "v0.3 generalized cylinders"
+        [ test "all 8 GC modules are predefined by the turtle" {
+              for name in
+                  [ "StartGC"
+                    "EndGC"
+                    "ContourCircle"
+                    "ContourFlat"
+                    "ContourCup"
+                    "ContourV"
+                    "ScaleContour"
+                    "ContourSides" ] do
+                  expectError Codes.NamespaceClash 1 $"let %s{name} = 1;\naxiom: F;"
+          }
+
+          test "StartGC/EndGC lifecycle: 0-1 sections emit nothing, 2+ sections emit GeneralizedCylinder" {
+              let g0, ws0 = draw "axiom: StartGC EndGC;"
+              Expect.isEmpty g0 "1 section emits nothing"
+              Expect.isEmpty ws0 "no warning on 1-section StartGC EndGC"
+
+              let g1, ws1 = draw "axiom: StartGC f EndGC;"
+              Expect.isEmpty g1 "f moves without adding GC section"
+              Expect.isEmpty ws1 "no warning"
+
+              let g2, ws2 = draw "axiom: StartGC F G(2) EndGC;"
+              Expect.isEmpty ws2 "no warning"
+
+              match gcsOf g2 with
+              | [ gc ] ->
+                  Expect.equal gc.Sides 0 "default Sides = 0 (use MeshOptions.Sides)"
+                  Expect.equal gc.Sections.Length 3 "3 cross-sections"
+                  Expect.isTrue (close gc.Sections[0].P (v 0 0 0)) "sec 0"
+                  Expect.isTrue (close gc.Sections[1].P (v 0 1 0)) "sec 1"
+                  Expect.isTrue (close gc.Sections[2].P (v 0 3 0)) "sec 2"
+                  Expect.equal gc.Sections[0].Contour Circle "default contour is Circle"
+              | other -> failtestf "expected 1 GC, got %A" other
+          }
+
+          test "ScaleContour arities 0, 1, 2 and persistence across ! and !(w)" {
+              let g, ws =
+                  draw
+                      "settings { width = 4; taper = 50; }\n\
+                       axiom: ScaleContour(2, 0.25) StartGC F ! F !(10) F ScaleContour(3) F ScaleContour F EndGC;"
+
+              Expect.isEmpty ws "no warnings"
+              let gc = gcsOf g |> List.exactlyOne
+              Expect.equal gc.Sections.Length 6 "6 sections"
+              Expect.equal (gc.Sections[0].Width, gc.Sections[0].ScaleL, gc.Sections[0].ScaleU) (4.0, 2.0, 0.25) "sec 0"
+              Expect.equal (gc.Sections[1].Width, gc.Sections[1].ScaleL, gc.Sections[1].ScaleU) (4.0, 2.0, 0.25) "sec 1"
+              Expect.equal (gc.Sections[2].Width, gc.Sections[2].ScaleL, gc.Sections[2].ScaleU) (2.0, 2.0, 0.25) "bare ! preserves ScaleContour"
+              Expect.equal (gc.Sections[3].Width, gc.Sections[3].ScaleL, gc.Sections[3].ScaleU) (10.0, 2.0, 0.25) "!(w) preserves ScaleContour"
+              Expect.equal (gc.Sections[4].Width, gc.Sections[4].ScaleL, gc.Sections[4].ScaleU) (10.0, 3.0, 1.0) "1-arg ScaleContour -> (sL, 1)"
+              Expect.equal (gc.Sections[5].Width, gc.Sections[5].ScaleL, gc.Sections[5].ScaleU) (10.0, 1.0, 1.0) "0-arg ScaleContour -> (1, 1)"
+
+              Expect.equal (drawError "axiom: ScaleContour(-1, 1) F;").Code Codes.InvalidGeometry "negative sL"
+              Expect.equal (drawError "axiom: ScaleContour(1, -0.1) F;").Code Codes.InvalidGeometry "negative sU"
+              Expect.equal (drawError "axiom: ScaleContour(log(0), 1) F;").Code Codes.InvalidGeometry "non-finite sL"
+          }
+
+          test "ContourSides truncation, default reset, and RP0205 validation" {
+              let g, ws =
+                  draw
+                      "axiom: ContourSides(6.9) StartGC F EndGC \
+                       ContourSides(3) StartGC F EndGC \
+                       ContourSides StartGC F EndGC;"
+
+              Expect.isEmpty ws "no warnings"
+              Expect.equal (gcsOf g |> List.map _.Sides) [ 6; 3; 0 ] "sides truncated / reset"
+
+              for bad in [ "ContourSides(2.9)"; "ContourSides(0)"; "ContourSides(-4)"; "ContourSides(log(0))" ] do
+                  Expect.equal (drawError $"axiom: %s{bad} F;").Code Codes.InvalidGeometry bad
+          }
+
+          test "ContourCircle, ContourFlat, ContourCup, ContourV defaults and depth morphing" {
+              let g, ws =
+                  draw
+                      "axiom: ContourCup StartGC F ContourCup(0.9) F EndGC \
+                       ContourV StartGC F ContourV(-0.2) F EndGC \
+                       ContourFlat StartGC F EndGC \
+                       ContourCircle StartGC F EndGC;"
+
+              Expect.isEmpty ws "no warnings"
+              let gcs = gcsOf g
+              Expect.equal gcs.Length 4 "4 GCs"
+              Expect.equal (gcs[0].Sections |> List.map _.Contour) [ UCup 0.5; UCup 0.5; UCup 0.9 ] "UCup morph"
+              Expect.equal (gcs[1].Sections |> List.map _.Contour) [ VFold 0.5; VFold 0.5; VFold -0.2 ] "VFold morph"
+              Expect.equal (gcs[2].Sections |> List.map _.Contour) [ Flat; Flat ] "Flat"
+              Expect.equal (gcs[3].Sections |> List.map _.Contour) [ Circle; Circle ] "Circle"
+
+              Expect.equal (drawError "axiom: ContourCup(exp(1000)) F;").Code Codes.InvalidGeometry "non-finite cup depth"
+              Expect.equal (drawError "axiom: ContourV(log(0)) F;").Code Codes.InvalidGeometry "non-finite v depth"
+          }
+
+          test "mid-GC contour variant or ContourSides switch warns RP0305 once and is ignored" {
+              let g1, ws1 = draw "axiom: ContourFlat StartGC F ContourCircle F ContourSides(5) F EndGC;"
+              Expect.equal (ws1 |> List.map _.Code) [ Codes.UnbalancedGC ] "one RP0305 warning"
+              let gc1 = gcsOf g1 |> List.exactlyOne
+              Expect.equal gc1.Sides 0 "ContourSides(5) ignored"
+              Expect.isTrue (gc1.Sections |> List.forall (fun s -> s.Contour = Flat)) "contour stayed Flat"
+
+              // Calling the same variant mid-GC (Circle -> Circle, Flat -> Flat) is not a switch
+              let _, ws2 = draw "axiom: ContourCircle StartGC F ContourCircle F EndGC ContourFlat StartGC F ContourFlat F EndGC;"
+              Expect.isEmpty ws2 "same variant mid-GC does not warn"
+          }
+
+          test "pre-tropism ring capture snapshots H before bend" {
+              let g, ws = draw (sideways 0.5 + "axiom: StartGC F F EndGC;")
+              Expect.isEmpty ws ""
+              let gc = gcsOf g |> List.exactlyOne
+              Expect.isTrue (close gc.Sections[0].H (v 0 1 0)) "sec 0 H"
+              Expect.isTrue (close gc.Sections[1].H (v 0 1 0)) "sec 1 H captured before bend"
+              Expect.isTrue (close gc.Sections[2].H (v s30 c30 0)) "sec 2 H from bent heading before second bend"
+          }
+
+          test "polygons suspend active GC without losing sections" {
+              let g, ws = draw "axiom: StartGC F { . F G . } F EndGC;"
+              Expect.isEmpty ws ""
+              let segs = segments g
+              Expect.equal segs.Length 2 "F and G inside {...} emitted segments"
+              Expect.equal (polygonsOf g).Length 1 "polygon emitted"
+              let gc = gcsOf g |> List.exactlyOne
+              Expect.equal gc.Sections.Length 3 "only F before and F after {...} added sections"
+          }
+
+          test "branching [/] forks GC cleanly, auto-emits on ], and allows StartGC replacement at 1 section" {
+              let g, trace, ws = drawWithTrace "axiom: StartGC F [ + F ] [ + ] [ EndGC ContourFlat StartGC F EndGC ] [ + StartGC F F EndGC ] F EndGC;"
+              Expect.isEmpty ws "no warnings on valid forks and replacements"
+              let gcs = gcsOf g
+              Expect.equal gcs.Length 4 "3 branch GCs + 1 trunk GC"
+              // Branch 0: forked Circle at depth 1
+              Expect.equal gcs[0].Sections.Length 2 "forked branch"
+              Expect.equal gcs[0].Sections[0].Contour Circle "forked contour"
+              // Branch 1: replaced via EndGC + ContourFlat + StartGC at depth 1
+              Expect.equal gcs[1].Sections[0].Contour Flat "replaced with Flat"
+              // Branch 2: replaced 1-section fork directly with StartGC at depth 1
+              Expect.equal gcs[2].Sections.Length 3 "explicit replacement GC"
+              // Trunk at depth 0
+              Expect.equal gcs[3].Sections.Length 3 "trunk continued with 3 sections"
+              Expect.equal trace.PrimitiveDepths [| 1; 1; 1; 0 |] "openDepth recorded per GC"
+          }
+
+          test "unbalanced GC warnings: unmatched EndGC, nested StartGC, unclosed StartGC in branch and at EOF" {
+              let _, wsEnd = draw "axiom: EndGC EndGC;"
+              Expect.equal (wsEnd |> List.map _.Code) [ Codes.UnbalancedGC ] "unmatched EndGC warns once"
+
+              let gNested, wsNested = draw "axiom: StartGC F StartGC F EndGC;"
+              Expect.equal (wsNested |> List.map _.Code) [ Codes.UnbalancedGC ] "nested StartGC warns once"
+              Expect.equal (gcsOf gNested |> List.exactlyOne).Sections.Length 3 "nested StartGC ignored"
+
+              let gFork2, wsFork2 = draw "axiom: StartGC F [ + F StartGC F ] F EndGC;"
+              Expect.equal (wsFork2 |> List.map _.Code) [ Codes.UnbalancedGC ] "StartGC after 2 sections on fork warns once"
+              Expect.equal (gcsOf gFork2).Length 2 "both fork and trunk still emitted"
+
+              let gUnclosedBranch, wsUnclosedBranch = draw "axiom: [ StartGC F F ] F;"
+              Expect.equal (wsUnclosedBranch |> List.map _.Code) [ Codes.UnbalancedGC ] "unclosed StartGC in branch"
+              Expect.isEmpty (gcsOf gUnclosedBranch) "unclosed explicit GC dropped"
+              Expect.equal (segments gUnclosedBranch).Length 1 "outer segment still drawn"
+
+              let gUnclosedEof, wsUnclosedEof = draw "axiom: StartGC F F;"
+              Expect.equal (wsUnclosedEof |> List.map _.Code) [ Codes.UnbalancedGC ] "unclosed StartGC at EOF"
+              Expect.isEmpty (gcsOf gUnclosedEof) "dropped at EOF"
+          }
+
+          test "mid-GC color switch sets outgoing span color" {
+              let g, ws = draw "axiom: StartGC F '(1) F '(2) F EndGC;"
+              Expect.isEmpty ws ""
+              let gc = gcsOf g |> List.exactlyOne
+              Expect.equal (gc.Sections |> List.map _.Color) [ 0; 1; 2; 2 ] "section colors match outgoing spans"
+          }
+
+          test "GC spans consume MaxPrimitives budget (RP0207)" {
+              let m, _ = compileOk "axiom: F StartGC F F EndGC;"
+              Expect.isOk (Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 3 } m) "1 seg + 2 GC spans = 3"
+
+              match Pipeline.runWith { Limits.defaults with MaxPrimitives = Some 2 } m with
+              | Error [ d ] -> Expect.equal d.Code Codes.PrimitiveLimitExceeded "RP0207 at limit 2"
+              | r -> failtestf "expected RP0207, got %A" r
+          }
+
+          test "extra parameters on GC modules emit RP0302 and ignore unused non-finite args" {
+              let g, ws = draw "axiom: ContourCup StartGC(log(0)) F ContourCup(0.4, log(0)) F EndGC(1);"
+              Expect.equal (gcsOf g).Length 1 "GC still emitted"
+              Expect.equal (ws |> List.map _.Code) [ Codes.ExtraTurtleParameters; Codes.ExtraTurtleParameters; Codes.ExtraTurtleParameters ] "RP0302 per shape"
+          } ]
+
 [<Tests>]
 let tests =
     testList
@@ -681,4 +880,5 @@ let tests =
                 } ]
 
           testProperty "rotations keep the frame orthonormal and right-handed" frameStaysOrthonormal
-          v02 ]
+          v02
+          v03GC ]

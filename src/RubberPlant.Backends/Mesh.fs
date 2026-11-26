@@ -7,6 +7,7 @@ open System
 open System.Collections.Generic
 open RubberPlant
 open RubberPlant.Geometry
+open RubberPlant.Backends.SweptMesh
 
 type MeshOptions =
     { /// Facets around a cylinder; at least 3.
@@ -28,48 +29,22 @@ type MeshGroup =
 /// Groups in ascending Color; colors with no triangles are omitted.
 type Mesh = { Groups: MeshGroup list }
 
-// Scale-safe vector arithmetic (§4). Squaring the components of a finite vector
-// can overflow (1e200) or underflow (1e-200); scaling by a power of two first
-// can't, and it's exact, so the results are otherwise the same bits as the
-// direct computation.
-
-/// v scaled by 2^-e, where 2^e <= max |component| < 2^(e+1); and e. v must not be 0.
-let private scaled (v: Vec3) =
-    let m = max (abs v.X) (max (abs v.Y) (abs v.Z))
-    let e = Math.ILogB m
-    Vec3.create (Math.ScaleB(v.X, -e)) (Math.ScaleB(v.Y, -e)) (Math.ScaleB(v.Z, -e)), e
-
-/// True when the direct computation is safe: the largest component squared is a
-/// normal number, so nothing overflows, and whatever underflows is far below its
-/// last bit. Then the scaled computation is unnecessary; skipping it is faster.
-let private isSafe (v: Vec3) =
-    let m = max (abs v.X) (max (abs v.Y) (abs v.Z))
-    m > 1e-150 && m < 1e150
-
-/// v / |v|, without overflow or underflow. v must not be 0.
-let private normalize (v: Vec3) =
-    if isSafe v then
-        (1.0 / Vec3.length v) * v
-    else
-        let w, _ = scaled v
-        (1.0 / Vec3.length w) * w
-
 let private isFinite (v: Vec3) = Vec3.isFinite v
 
-/// Vertices and triangles being collected for one palette entry.
-type private GroupBuilder() =
-    member val Positions = ResizeArray<Vec3>()
-    member val Normals = ResizeArray<Vec3>()
-    member val Triangles = ResizeArray<int>()
-
 // ---------------------------------------------------------------- width scale
+
+let private effectiveWidth (s: CrossSection) =
+    if s.ScaleL = 1.0 && s.ScaleU = 1.0 then
+        s.Width
+    else
+        s.Width * max s.ScaleL s.ScaleU
 
 let private points (geometry: Geometry) =
     geometry
     |> Seq.collect (function
         | Segment(p0, p1, _, _) -> [ p0; p1 ]
         | Polygon(vs, _) -> vs
-        | GeneralizedCylinder _
+        | GeneralizedCylinder gc -> gc.Sections |> List.map _.P
         | Surface _ -> [])
 
 /// The width scale k (§4.4).
@@ -88,8 +63,9 @@ let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<floa
                 (fun acc p ->
                     match p with
                     | Segment(_, _, w, _) -> max acc w
+                    | GeneralizedCylinder gc ->
+                        gc.Sections |> List.fold (fun a s -> max a (effectiveWidth s)) acc
                     | Polygon _
-                    | GeneralizedCylinder _
                     | Surface _ -> acc)
                 0.0
 
@@ -111,12 +87,6 @@ let private widthScale (options: MeshOptions) (geometry: Geometry) : Result<floa
             Ok(if e = 0.0 then 1.0 else e / denominator)
 
 // ------------------------------------------------------------------ cylinders
-
-/// (cos, sin) of 360° j / s, for j = 0 … s − 1.
-let private ringDirections (sides: int) =
-    Array.init sides (fun j ->
-        let struct (s, c) = Builtins.sinCosDeg (360.0 * float j / float sides)
-        struct (c, s))
 
 let private xAxis = Vec3.create 1.0 0.0 0.0
 let private yAxis = Vec3.create 0.0 1.0 0.0
@@ -329,7 +299,7 @@ let build (options: MeshOptions) (geometry: Geometry) : Result<Mesh, string> =
                 match prim with
                 | Segment(p0, p1, w, color) -> addCylinder (groupOf color) ring p0 p1 (k * w / 2.0)
                 | Polygon(vs, color) -> addPolygon (groupOf color) vs
-                | GeneralizedCylinder _
+                | GeneralizedCylinder gc -> SweptMesh.addCylinder groupOf options.Sides k gc
                 | Surface _ -> ()
 
             { Groups =

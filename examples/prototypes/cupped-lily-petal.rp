@@ -1,0 +1,22 @@
+(* Provisional organ probe (BP.3 / 3A): Cupped lily petal using UCup contour.
+   Morphs ContourCup depth smoothly from flat base to deep mid-cup to flat tip. *)
+settings {
+  derivations = 11;
+  width_scale = 1;
+}
+
+let steps = 10;
+let petal_len = 4.0;
+let max_w = 1.4;
+let max_cup = 0.75;
+
+axiom: '(4) ContourCup(0) !(0.15) StartGC P(0);
+
+P(k) :
+  when k < steps ->
+    &(4.0 + k * 0.8)
+    ContourCup(max_cup * sin(180 * (k + 1) / steps))
+    !(0.15 + max_w * sin(180 * (k + 1) / steps))
+    F(petal_len / steps)
+    P(k + 1)
+  else -> !(0) F(0.25) EndGC;
