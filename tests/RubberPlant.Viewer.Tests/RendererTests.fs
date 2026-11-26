@@ -868,4 +868,172 @@ let gpuTests =
 
                   Expect.equal exitCode 0 $"view --watch exits 0 (stderr: %s{stderr.AllText()})"
                   Expect.isNonEmpty (stderr.AllText()) "broken syntax emitted error to stderr")
+          }
+
+          test "sequence renders discrete Capsella (with empty frame 0) and timed sequences, enforcing exit codes 1 and 2" {
+              withTempDir (fun dir ->
+                  // 1. Discrete Capsella with empty step 0 and grid stability
+                  let capsella = examplePath "fig3-5-capsella.rp"
+                  let noGridPrefix = Path.Combine(dir, "cap-nogrid-")
+
+                  let codeCap, outCap, errCap =
+                      runCli [ "sequence"; capsella; "-o"; noGridPrefix; "--from"; "0"; "--to"; "16"; "--step"; "8"; "--size"; "128"; "--no-grid" ]
+
+                  Expect.equal codeCap 0 $"Capsella sequence exit 0 (stderr: %s{errCap})"
+
+                  Expect.equal
+                      (splitNonEmptyLines outCap)
+                      [| $"wrote %s{noGridPrefix}0000.png"
+                         $"wrote %s{noGridPrefix}0001.png"
+                         $"wrote %s{noGridPrefix}0002.png" |]
+                      "Capsella sequence wrote lines"
+
+                  let c0 = PngTests.decodePng (File.ReadAllBytes($"%s{noGridPrefix}0000.png"))
+                  let c1 = PngTests.decodePng (File.ReadAllBytes($"%s{noGridPrefix}0001.png"))
+                  let c2 = PngTests.decodePng (File.ReadAllBytes($"%s{noGridPrefix}0002.png"))
+                  Expect.equal (countNonBackgroundRgb c0) 0 "step 0 of Capsella is empty without grid"
+                  Expect.isGreaterThan (countNonBackgroundRgb c1) 50 "step 8 of Capsella has foreground"
+                  Expect.isGreaterThan (countNonBackgroundRgb c2) (countNonBackgroundRgb c1) "step 16 grows larger than step 8"
+
+                  // With grid enabled, step 0 renders the stabilized full-sequence grid (non-blank).
+                  let gridPrefix = Path.Combine(dir, "cap-grid-")
+
+                  let codeGrid, _, errGrid =
+                      runCli [ "sequence"; capsella; "-o"; gridPrefix; "--from"; "0"; "--to"; "16"; "--step"; "16"; "--size"; "128" ]
+
+                  Expect.equal codeGrid 0 $"Capsella grid sequence exit 0 (stderr: %s{errGrid})"
+                  let g0 = PngTests.decodePng (File.ReadAllBytes($"%s{gridPrefix}0000.png"))
+                  Expect.isGreaterThan (countNonBackgroundRgb g0) 50 "empty step 0 keeps stabilized grid"
+
+                  // --frames on discrete exits 2; --time on discrete exits 1.
+                  let codeFramesDisc, _, _ =
+                      runCli [ "sequence"; capsella; "-o"; Path.Combine(dir, "bad-"); "--from"; "0"; "--to"; "4"; "--frames"; "3" ]
+
+                  Expect.equal codeFramesDisc 2 "--frames on discrete exits 2"
+
+                  let codeTimeOnDisc, _, errTimeOnDisc =
+                      runCli [ "snapshot"; capsella; "-o"; Path.Combine(dir, "bad.png"); "--time"; "1.0" ]
+
+                  Expect.equal codeTimeOnDisc 1 "--time on discrete exits 1"
+                  Expect.stringContains errTimeOnDisc "discrete" "error mentions discrete"
+
+                  // 2. Timed model sequence (--frames and --step + silhouette)
+                  let timedPath = Path.Combine(dir, "timed.rp")
+
+                  File.WriteAllText(
+                      timedPath,
+                      "settings { time = 2.0; width_scale = 0.05; }\naxiom: a(0);\na at 1.0 -> s(0) a(0);\na(t) as F(t);\ns(t) as F(1 + 0.5 * t);\n"
+                  )
+
+                  let timedPrefix = Path.Combine(dir, "timed-")
+
+                  let codeTimed, outTimed, errTimed =
+                      runCli [ "sequence"; timedPath; "-o"; timedPrefix; "--from"; "0"; "--to"; "2"; "--frames"; "5"; "--size"; "128"; "--no-grid" ]
+
+                  Expect.equal codeTimed 0 $"timed sequence exit 0 (stderr: %s{errTimed})"
+                  Expect.equal (splitNonEmptyLines outTimed).Length 5 "5 timed frames written"
+
+                  let t0 = PngTests.decodePng (File.ReadAllBytes($"%s{timedPrefix}0000.png"))
+                  let t4 = PngTests.decodePng (File.ReadAllBytes($"%s{timedPrefix}0004.png"))
+                  Expect.equal (countNonBackgroundRgb t0) 0 "t=0 has zero length"
+                  Expect.isGreaterThan (countNonBackgroundRgb t4) 50 "t=2 has foreground"
+
+                  let silPrefix = Path.Combine(dir, "timed-sil-")
+
+                  let codeSil, _, errSil =
+                      runCli [ "sequence"; timedPath; "-o"; silPrefix; "--from"; "0"; "--to"; "2"; "--step"; "1"; "--mode"; "silhouette"; "--size"; "128" ]
+
+                  Expect.equal codeSil 0 $"timed silhouette sequence exit 0 (stderr: %s{errSil})"
+                  let s2 = PngTests.decodePng (File.ReadAllBytes($"%s{silPrefix}0002.png"))
+                  Expect.equal (s2.BitDepth, s2.ColorType) (8uy, 0uy) "Gray8 silhouette frame"
+                  Expect.isTrue (s2.TopDownPixels |> Array.exists ((=) 255uy)) "silhouette has foreground"
+
+                  // Timed without --step or --frames exits 2; -n on timed exits 1.
+                  let codeMissingStep, _, _ =
+                      runCli [ "sequence"; timedPath; "-o"; Path.Combine(dir, "badt-"); "--from"; "0"; "--to"; "2" ]
+
+                  Expect.equal codeMissingStep 2 "timed sequence without --step/--frames exits 2"
+
+                  let codeNOnTimed, _, errNOnTimed =
+                      runCli [ "snapshot"; timedPath; "-o"; Path.Combine(dir, "badn.png"); "-n"; "3" ]
+
+                  Expect.equal codeNOnTimed 1 "-n on timed exits 1"
+                  Expect.stringContains errNOnTimed "timed" "error mentions timed")
+          }
+
+          test "batch step, time, and sequence preserve transactional state on errors and keep camera/scene intact" {
+              withTempDir (fun dir ->
+                  let capsella = examplePath "fig3-5-capsella.rp"
+                  let timedPath = Path.Combine(dir, "timed.rp")
+
+                  File.WriteAllText(
+                      timedPath,
+                      "settings { time = 2.0; width_scale = 0.05; }\naxiom: a(0);\na at 1.0 -> s(0) a(0);\na(t) as F(t);\ns(t) as F(1 + 0.5 * t);\n"
+                  )
+
+                  let snapStep16 = Path.Combine(dir, "snap16.png")
+                  let snapAfterSeq = Path.Combine(dir, "snap-after-seq.png")
+                  let seqPrefix = Path.Combine(dir, "bseq-")
+                  let timedSnap = Path.Combine(dir, "timed-snap.png")
+
+                  let code, outStr, errStr =
+                      runBatch
+                          [ $"load \"%s{capsella}\""
+                            "grid off"
+                            "step 0"
+                            "step 16"
+                            "stats"
+                            "time 1.0" // error: discrete model -> exit 1
+                            $"sequence \"%s{seqPrefix}\" --from 0 --to 4 --frames 3" // error: --frames on discrete -> exit 2
+                            $"snapshot \"%s{snapStep16}\" --size 128"
+                            $"sequence \"%s{seqPrefix}\" --from 0 --to 4 --step 2 --size 128"
+                            $"snapshot \"%s{snapAfterSeq}\" --size 128"
+                            $"load \"%s{timedPath}\""
+                            "time 0.5"
+                            "time 2.0"
+                            "stats"
+                            "step 3" // error: timed model -> exit 1
+                            $"snapshot \"%s{timedSnap}\" --size 128"
+                            "quit" ]
+
+                  Expect.equal code 0 $"batch exits 0 (stderr: %s{errStr})"
+                  let lines = splitNonEmptyLines outStr
+
+                  let expectedLines =
+                      [| "exit 0" // load capsella
+                         "exit 0" // grid off
+                         "exit 0" // step 0
+                         "exit 0" // step 16
+                         lines[4] // stats JSON step 16
+                         "exit 0"
+                         "exit 1" // time on discrete
+                         "exit 2" // sequence --frames on discrete
+                         $"wrote %s{snapStep16}"
+                         "exit 0"
+                         $"wrote %s{seqPrefix}0000.png"
+                         $"wrote %s{seqPrefix}0001.png"
+                         $"wrote %s{seqPrefix}0002.png"
+                         "exit 0" // sequence
+                         $"wrote %s{snapAfterSeq}"
+                         "exit 0"
+                         $"exit 0" // load timed
+                         "exit 0" // time 0.5
+                         "exit 0" // time 2.0
+                         lines[19] // stats JSON timed
+                         "exit 0"
+                         "exit 1" // step on timed
+                         $"wrote %s{timedSnap}"
+                         "exit 0"
+                         "exit 0" |] // quit
+
+                  Expect.equal lines expectedLines "exact batch step/time/sequence framing"
+
+                  use docDisc = JsonDocument.Parse(lines[4])
+                  Expect.equal (docDisc.RootElement.GetProperty("derivation").GetProperty("steps").GetInt32()) 16 "step 16 stats"
+
+                  use docTimed = JsonDocument.Parse(lines[19])
+                  Expect.floatClose Accuracy.veryHigh (docTimed.RootElement.GetProperty("derivation").GetProperty("time").GetDouble()) 2.0 "time 2.0 stats"
+
+                  Expect.equal (File.ReadAllBytes snapAfterSeq) (File.ReadAllBytes snapStep16) "batch sequence restores active scene"
+                  Expect.isGreaterThan (countNonBackgroundRgb (PngTests.decodePng (File.ReadAllBytes timedSnap))) 50 "timed snapshot after failed step works")
           } ]

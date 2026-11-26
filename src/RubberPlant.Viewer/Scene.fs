@@ -40,6 +40,14 @@ type GridGeometry =
       /// Max Euclidean distance from local (0, 0, 0) to the four grid corners.
       Extent: float }
 
+/// Shared world-space reference frame and fixed width scale across an animation
+/// sequence (docs/v0.3-organs-animation.md §5.3).
+type ReferenceFrame =
+    { Center: Vec3
+      Extent: Vec3
+      Bounds: Camera.Bounds
+      WidthScale: float }
+
 let emptyScene =
     { Vertices = [||]
       Indices = [||]
@@ -49,16 +57,21 @@ let emptyScene =
       Bounds = Camera.emptyBounds
       IsEmpty = true }
 
-/// Packs a backend `Mesh` into origin-centered GPU buffers (§4.1).
-/// Returns `Error` if coordinates are non-finite or centered half-extents exceed float32.
-let fromMesh (mesh: Mesh) : Result<MeshScene, string> =
+type private ValidatedGroups =
+    { Groups: MeshGroup list
+      TotalVerts: int64
+      TotalIndices: int64
+      Min: Vec3
+      Max: Vec3 }
+
+let private validateMeshGroups (mesh: Mesh) : Result<ValidatedGroups option, string> =
     let groups =
         mesh.Groups
         |> List.filter (fun g -> g.Positions.Length > 0 && g.Triangles.Length > 0)
         |> List.sortBy (fun g -> g.Color)
 
     if groups.IsEmpty then
-        Ok emptyScene
+        Ok None
     else
         let mutable totalVerts = 0L
         let mutable totalIndices = 0L
@@ -112,79 +125,159 @@ let fromMesh (mesh: Mesh) : Result<MeshScene, string> =
         | None when totalIndices > int64 Array.MaxLength ->
             Error "mesh exceeds maximum GPU index buffer size"
         | None ->
-            // Overflow-safe midpoint and half-extents in double precision (§4.1).
-            let cx = 0.5 * minX + 0.5 * maxX
-            let cy = 0.5 * minY + 0.5 * maxY
-            let cz = 0.5 * minZ + 0.5 * maxZ
-            let hx = 0.5 * maxX - 0.5 * minX
-            let hy = 0.5 * maxY - 0.5 * minY
-            let hz = 0.5 * maxZ - 0.5 * minZ
-            let center = Vec3.create cx cy cz
-            let half = Vec3.create hx hy hz
+            Ok(
+                Some
+                    { Groups = groups
+                      TotalVerts = totalVerts
+                      TotalIndices = totalIndices
+                      Min = Vec3.create minX minY minZ
+                      Max = Vec3.create maxX maxY maxZ }
+            )
 
-            if
-                not (Vec3.isFinite center)
-                || not (Vec3.isFinite half)
-                || not (Single.IsFinite(float32 hx))
-                || not (Single.IsFinite(float32 hy))
-                || not (Single.IsFinite(float32 hz))
-            then
-                Error "mesh extent exceeds single-precision GPU range"
-            else
-                let vertices = Array.zeroCreate<float32> (int (totalVerts * 6L))
-                let indices = Array.zeroCreate<uint32> (int totalIndices)
-                let ranges = ResizeArray<DrawRange>(groups.Length)
-                let mutable vOffset = 0
-                let mutable iOffset = 0
-                let mutable overflowed = false
+let private packMeshGroups
+    (v: ValidatedGroups)
+    (center: Vec3)
+    (extent: Vec3)
+    (bounds: Camera.Bounds)
+    : Result<MeshScene, string> =
+    let vertices = Array.zeroCreate<float32> (int (v.TotalVerts * 6L))
+    let indices = Array.zeroCreate<uint32> (int v.TotalIndices)
+    let ranges = ResizeArray<DrawRange>(v.Groups.Length)
+    let mutable vOffset = 0
+    let mutable iOffset = 0
+    let mutable overflowed = false
 
-                for g in groups do
-                    let baseVertex = uint32 vOffset
+    for g in v.Groups do
+        let baseVertex = uint32 vOffset
 
-                    for i = 0 to g.Positions.Length - 1 do
-                        let p = g.Positions[i]
-                        let n = g.Normals[i]
-                        let lx = float32 (p.X - cx)
-                        let ly = float32 (p.Y - cy)
-                        let lz = float32 (p.Z - cz)
+        for i = 0 to g.Positions.Length - 1 do
+            let p = g.Positions[i]
+            let n = g.Normals[i]
+            let lx = float32 (p.X - center.X)
+            let ly = float32 (p.Y - center.Y)
+            let lz = float32 (p.Z - center.Z)
 
-                        if not (Single.IsFinite lx && Single.IsFinite ly && Single.IsFinite lz) then
-                            overflowed <- true
+            if not (Single.IsFinite lx && Single.IsFinite ly && Single.IsFinite lz) then
+                overflowed <- true
 
-                        let o = (vOffset + i) * 6
-                        vertices[o] <- lx
-                        vertices[o + 1] <- ly
-                        vertices[o + 2] <- lz
-                        vertices[o + 3] <- float32 n.X
-                        vertices[o + 4] <- float32 n.Y
-                        vertices[o + 5] <- float32 n.Z
+            let o = (vOffset + i) * 6
+            vertices[o] <- lx
+            vertices[o + 1] <- ly
+            vertices[o + 2] <- lz
+            vertices[o + 3] <- float32 n.X
+            vertices[o + 4] <- float32 n.Y
+            vertices[o + 5] <- float32 n.Z
 
-                    let firstIndex = iOffset
+        let firstIndex = iOffset
 
-                    for i = 0 to g.Triangles.Length - 1 do
-                        indices[iOffset + i] <- baseVertex + uint32 g.Triangles[i]
+        for i = 0 to g.Triangles.Length - 1 do
+            indices[iOffset + i] <- baseVertex + uint32 g.Triangles[i]
 
-                    ranges.Add
-                        { Color = g.Color
-                          FirstIndex = firstIndex
-                          IndexCount = g.Triangles.Length }
+        ranges.Add
+            { Color = g.Color
+              FirstIndex = firstIndex
+              IndexCount = g.Triangles.Length }
 
-                    vOffset <- vOffset + g.Positions.Length
-                    iOffset <- iOffset + g.Triangles.Length
+        vOffset <- vOffset + g.Positions.Length
+        iOffset <- iOffset + g.Triangles.Length
 
-                if overflowed then
-                    Error "mesh extent exceeds single-precision GPU range"
-                else
-                    let extent = Vec3.create (2.0 * hx) (2.0 * hy) (2.0 * hz)
+    if overflowed then
+        Error "mesh extent exceeds single-precision GPU range"
+    else
+        Ok
+            { Vertices = vertices
+              Indices = indices
+              Ranges = List.ofSeq ranges
+              Center = center
+              Extent = extent
+              Bounds = bounds
+              IsEmpty = false }
 
-                    Ok
-                        { Vertices = vertices
-                          Indices = indices
-                          Ranges = List.ofSeq ranges
-                          Center = center
-                          Extent = extent
-                          Bounds = Camera.boundsOfHalfExtents half
-                          IsEmpty = false }
+let private frameGeometryOfAabb (minP: Vec3) (maxP: Vec3) : Result<Vec3 * Vec3 * Camera.Bounds, string> =
+    // Overflow-safe midpoint and half-extents in double precision (§4.1).
+    let cx = 0.5 * minP.X + 0.5 * maxP.X
+    let cy = 0.5 * minP.Y + 0.5 * maxP.Y
+    let cz = 0.5 * minP.Z + 0.5 * maxP.Z
+    let hx = 0.5 * maxP.X - 0.5 * minP.X
+    let hy = 0.5 * maxP.Y - 0.5 * minP.Y
+    let hz = 0.5 * maxP.Z - 0.5 * minP.Z
+    let center = Vec3.create cx cy cz
+    let half = Vec3.create hx hy hz
+
+    if
+        not (Vec3.isFinite center)
+        || not (Vec3.isFinite half)
+        || not (Single.IsFinite(float32 hx))
+        || not (Single.IsFinite(float32 hy))
+        || not (Single.IsFinite(float32 hz))
+    then
+        Error "mesh extent exceeds single-precision GPU range"
+    else
+        let extent = Vec3.create (2.0 * hx) (2.0 * hy) (2.0 * hz)
+        Ok(center, extent, Camera.boundsOfHalfExtents half)
+
+/// Validates a mesh and accumulates its world-space AABB into `acc` (for Pass 1 of `sequence`).
+let validateAndAccumulateMeshBounds
+    (mesh: Mesh)
+    (acc: (Vec3 * Vec3) option)
+    : Result<(Vec3 * Vec3) option, string> =
+    validateMeshGroups mesh
+    |> Result.map (function
+        | None -> acc
+        | Some v ->
+            match acc with
+            | None -> Some(v.Min, v.Max)
+            | Some(aMin, aMax) ->
+                let minP = Vec3.create (min aMin.X v.Min.X) (min aMin.Y v.Min.Y) (min aMin.Z v.Min.Z)
+                let maxP = Vec3.create (max aMax.X v.Max.X) (max aMax.Y v.Max.Y) (max aMax.Z v.Max.Z)
+                Some(minP, maxP))
+
+/// Constructs a `ReferenceFrame` from an accumulated world-space AABB and fixed `WidthScale`.
+let referenceFrameOfBounds (widthScale: float) (boundsOpt: (Vec3 * Vec3) option) : Result<ReferenceFrame, string> =
+    match boundsOpt with
+    | None ->
+        Ok
+            { Center = Vec3.zero
+              Extent = Vec3.zero
+              Bounds = Camera.emptyBounds
+              WidthScale = widthScale }
+    | Some(minP, maxP) ->
+        frameGeometryOfAabb minP maxP
+        |> Result.map (fun (center, extent, bounds) ->
+            { Center = center
+              Extent = extent
+              Bounds = bounds
+              WidthScale = widthScale })
+
+/// Packs a backend `Mesh` into origin-centered GPU buffers (§4.1).
+/// Returns `Error` if coordinates are non-finite or centered half-extents exceed float32.
+let fromMesh (mesh: Mesh) : Result<MeshScene, string> =
+    validateMeshGroups mesh
+    |> Result.bind (function
+        | None -> Ok emptyScene
+        | Some v ->
+            frameGeometryOfAabb v.Min v.Max
+            |> Result.bind (fun (center, extent, bounds) -> packMeshGroups v center extent bounds))
+
+/// Packs a backend `Mesh` centered against a shared `ReferenceFrame`, preserving
+/// `frame.Center`, `frame.Extent`, and `frame.Bounds` even when `mesh.Groups` is empty
+/// (docs/v0.3-organs-animation.md §5.3).
+let fromMeshWithFrame (frame: ReferenceFrame) (mesh: Mesh) : Result<MeshScene, string> =
+    if not (Vec3.isFinite frame.Center && Vec3.isFinite frame.Extent) then
+        Error "reference frame contains non-finite coordinates"
+    else
+        validateMeshGroups mesh
+        |> Result.bind (function
+            | None ->
+                Ok
+                    { Vertices = [||]
+                      Indices = [||]
+                      Ranges = []
+                      Center = frame.Center
+                      Extent = frame.Extent
+                      Bounds = frame.Bounds
+                      IsEmpty = true }
+            | Some v -> packMeshGroups v frame.Center frame.Extent frame.Bounds)
 
 // Ground grid sRGB line colors (§4.2, tuned for #f2f2f0 background).
 let private minorColor = struct (0.847f, 0.847f, 0.831f) // #d8d8d4
@@ -228,7 +321,7 @@ let niceGridStep (span: float) : float =
 /// coordinates, or `None` if `|center.Y|` or any endpoint exceeds finite `float32` (§4.2).
 let buildGrid (scene: MeshScene) : GridGeometry option =
     let span =
-        if scene.IsEmpty then
+        if scene.Extent = Vec3.zero then
             1.0
         else
             let s = max scene.Extent.X (max scene.Extent.Z (scene.Extent.Y * 0.5))

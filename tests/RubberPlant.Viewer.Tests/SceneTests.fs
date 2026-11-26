@@ -281,4 +281,60 @@ let tests =
                           Triangles = [| 0; 1; -1 |] } ] }
 
               Expect.isError (fromMesh badIdx) "negative triangle index"
+          }
+
+          test "fromMeshWithFrame preserves frame center/extent/bounds on empty meshes and keeps buildGrid stable" {
+              let fullMesh = { Groups = [ unitTriAt (Vec3.create 10.0 2.0 4.0) 0 ] }
+              let fullScene = Expect.wantOk (fromMesh fullMesh) "full scene"
+              let frame: ReferenceFrame =
+                  { Center = fullScene.Center
+                    Extent = fullScene.Extent
+                    Bounds = fullScene.Bounds
+                    WidthScale = 0.25 }
+
+              // Empty frame (e.g. step 0 of Capsella) must keep Center, Extent, Bounds, and non-unit grid.
+              let emptyFrameScene = Expect.wantOk (fromMeshWithFrame frame { Groups = [] }) "empty frame scene"
+              Expect.isTrue emptyFrameScene.IsEmpty "IsEmpty is true"
+              Expect.isEmpty emptyFrameScene.Vertices "no vertices"
+              Expect.isEmpty emptyFrameScene.Indices "no indices"
+              Expect.isEmpty emptyFrameScene.Ranges "no ranges"
+              Expect.equal emptyFrameScene.Center frame.Center "Center preserved"
+              Expect.equal emptyFrameScene.Extent frame.Extent "Extent preserved"
+              Expect.equal emptyFrameScene.Bounds frame.Bounds "Bounds preserved"
+              Expect.isFalse emptyFrameScene.Bounds.IsEmpty "Bounds.IsEmpty stays false"
+
+              let fullGrid = Expect.wantSome (buildGrid fullScene) "full grid"
+              let emptyFrameGrid = Expect.wantSome (buildGrid emptyFrameScene) "empty frame grid"
+              Expect.equal emptyFrameGrid.Step fullGrid.Step "grid step matches full sequence"
+              Expect.equal emptyFrameGrid.Vertices fullGrid.Vertices "grid vertices match full sequence"
+
+              // Non-empty frame centers against frame.Center rather than its own AABB center.
+              let earlyMesh = { Groups = [ unitTriAt (Vec3.create 0.0 2.0 4.0) 1 ] }
+              let earlyScene = Expect.wantOk (fromMeshWithFrame frame earlyMesh) "early frame scene"
+              Expect.isFalse earlyScene.IsEmpty "non-empty"
+              Expect.equal earlyScene.Center frame.Center "Center preserved on early frame"
+              Expect.equal earlyScene.Extent frame.Extent "Extent preserved on early frame"
+              Expect.equal earlyScene.Bounds frame.Bounds "Bounds preserved on early frame"
+              // fullScene.Center.X = 11.0, earlyMesh v0.X = 0.0 -> local x = -11.0f
+              Expect.equal earlyScene.Vertices[0] -11.0f "vertex centered against frame.Center.X"
+          }
+
+          test "validateAndAccumulateMeshBounds and referenceFrameOfBounds compute union AABB across frames" {
+              let emptyMesh = { Groups = [] }
+              let m1 = { Groups = [ unitTriAt (Vec3.create 0.0 0.0 0.0) 0 ] }
+              let m2 = { Groups = [ unitTriAt (Vec3.create 10.0 4.0 -2.0) 0 ] }
+
+              let acc0 = Expect.wantOk (validateAndAccumulateMeshBounds emptyMesh None) "empty"
+              Expect.equal acc0 None "empty leaves None"
+              let acc1 = Expect.wantOk (validateAndAccumulateMeshBounds m1 acc0) "m1"
+              let acc2 = Expect.wantOk (validateAndAccumulateMeshBounds m2 acc1) "m2"
+              let frame = Expect.wantOk (referenceFrameOfBounds 0.5 acc2) "frame"
+              // Union X: [0, 12], Y: [0, 8], Z: [-2, 0] -> Center = (6, 4, -1), Extent = (12, 8, 2)
+              Expect.equal frame.Center (Vec3.create 6.0 4.0 -1.0) "union center"
+              Expect.equal frame.Extent (Vec3.create 12.0 8.0 2.0) "union extent"
+              Expect.equal frame.WidthScale 0.5 "width scale"
+              Expect.isFalse frame.Bounds.IsEmpty "non-empty bounds"
+
+              let emptyFrame = Expect.wantOk (referenceFrameOfBounds 1.0 None) "all-empty frame"
+              Expect.isTrue emptyFrame.Bounds.IsEmpty "all-empty frame has empty bounds"
           } ]

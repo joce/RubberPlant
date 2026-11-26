@@ -18,6 +18,7 @@ let private sampleStats (source: string) =
 let private makeLoaded (name: string) (opts: LoadOptions) (half: Vec3) (stats: Stats.Stats) : LoadedModel<string> =
     { Input = name
       Load = opts
+      Stage = DiscreteStage(0, 0)
       Bounds = Camera.boundsOfHalfExtents half
       Stats = stats
       Scene = name }
@@ -447,6 +448,7 @@ let tests =
                                   Ok
                                       { Input = src
                                         Load = opts
+                                        Stage = DiscreteStage(0, 0)
                                         Bounds = sc.Bounds
                                         Stats = stats
                                         Scene = "loaded" }
@@ -479,4 +481,103 @@ let tests =
               Expect.equal resetCam.AzimuthDeg Camera.defaultAzimuthDeg "reload resets az to 3/4 ISO"
               Expect.equal resetCam.ElevationDeg Camera.defaultElevationDeg "reload resets el to 3/4 ISO"
               Expect.equal resetCam.Target Vec3.zero "reload resets target"
+          }
+
+          test "--time option parsing, overrides, and mutual exclusion with -n/--derivations" {
+              match Expect.wantOk (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--time"; "1.25" ]) "snapshot --time" with
+              | Snapshot s ->
+                  Expect.equal s.Base.Load.Time (Some 1.25) "time parsed"
+                  Expect.isTrue (hasAnyLoadOption s.Base.Load) "hasAnyLoadOption includes Time"
+                  let settings = applySettingsOverrides s.Base.Load Model.defaultSettings
+                  Expect.equal settings.Time (Some 1.25) "applySettingsOverrides sets Time"
+              | other -> failwith $"expected Snapshot, got %A{other}"
+
+              Expect.isOk (parseCli [ "view"; "a.rp"; "--time"; "0" ]) "--time 0 ok"
+              Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--time"; "-0.1" ]) "negative --time rejected"
+              Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--time"; "NaN" ]) "NaN --time rejected"
+              Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "--time" ]) "missing --time value rejected"
+              Expect.isError (parseCli [ "snapshot"; "a.rp"; "-o"; "o.png"; "-n"; "2"; "--time"; "1" ]) "-n and --time mutually exclusive"
+              Expect.isError (parseCli [ "view"; "a.rp"; "--derivations"; "2"; "--time"; "1" ]) "--derivations and --time mutually exclusive on view"
+              Expect.isError (parseBatchLine "load a.rp -n 2 --time 1") "-n and --time mutually exclusive in batch load"
+          }
+
+          test "sequence CLI parsing, batch step/time/sequence parsing, and discrete/timed schedule resolution" {
+              // CLI sequence valid forms
+              match Expect.wantOk (parseCli [ "sequence"; "a.rp"; "-o"; "frames/f_"; "--from"; "0"; "--to"; "10"; "--step"; "2"; "--size"; "320x240"; "--camera"; "35,25"; "--wireframe"; "--no-grid" ]) "sequence snapshot" with
+              | Sequence s ->
+                  Expect.equal s.Input "a.rp" "input"
+                  Expect.equal s.OutputPrefix "frames/f_" "prefix"
+                  Expect.equal s.From 0.0 "from"
+                  Expect.equal s.To 10.0 "to"
+                  Expect.equal s.Step (Some 2.0) "sequence --step parsed, not LoadOptions.Step"
+                  Expect.equal s.Load.Step None "LoadOptions.Step remains None"
+                  Expect.equal s.Mode SeqSnapshot "default mode snapshot"
+                  Expect.equal s.SnapshotSize (320, 240) "snapshot size"
+                  Expect.isTrue s.Wireframe "wireframe"
+                  Expect.isFalse s.Grid "no-grid"
+              | other -> failwith $"expected Sequence, got %A{other}"
+
+              match Expect.wantOk (parseCli [ "sequence"; "a.rp"; "-o"; "s_"; "--from"; "0"; "--to"; "2.5"; "--frames"; "6"; "--size"; "512"; "--mode"; "contact-sheet" ]) "sequence contact-sheet" with
+              | Sequence s ->
+                  Expect.equal s.Mode SeqContactSheet "mode contact-sheet"
+                  Expect.equal s.Frames (Some 6) "frames"
+                  Expect.equal s.ContactSheetSize 512 "contact-sheet size"
+              | other -> failwith $"expected Sequence, got %A{other}"
+
+              // CLI sequence errors
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--to"; "5" ]) "missing --from"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0" ]) "missing --to"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "5"; "--to"; "2" ]) "from > to"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "-1"; "--to"; "2" ]) "negative from"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--step"; "0" ]) "step <= 0"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--frames"; "1" ]) "frames < 2"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--step"; "1"; "--frames"; "3" ]) "both step and frames"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--stats" ]) "--stats rejected"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--stats-out"; "s.json" ]) "--stats-out rejected"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--pretty" ]) "--pretty rejected"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--watch" ]) "--watch rejected"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "-n"; "3" ]) "-n rejected"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--time"; "1" ]) "--time rejected"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--mode"; "contact-sheet"; "--camera"; "0,0" ]) "contact-sheet rejects --camera"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--mode"; "contact-sheet"; "--size"; "300x200" ]) "contact-sheet rejects WxH size"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--mode"; "silhouette"; "--wireframe" ]) "silhouette rejects --wireframe"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--mode"; "silhouette"; "--no-grid" ]) "silhouette rejects --no-grid"
+              Expect.isError (parseCli [ "sequence"; "a.rp"; "-o"; "f_"; "--from"; "0"; "--to"; "2"; "--mode"; "bogus" ]) "unknown --mode"
+
+              // batch step / time / sequence
+              Expect.equal (parseBatchLine "step 0") (Ok(Step 0)) "step 0"
+              Expect.equal (parseBatchLine "step 12") (Ok(Step 12)) "step 12"
+              Expect.isError (parseBatchLine "step -1") "negative step"
+              Expect.isError (parseBatchLine "step 1.5") "fractional step"
+              Expect.isError (parseBatchLine "step") "missing step arg"
+              Expect.isError (parseBatchLine "step 1 2") "extra step arg"
+
+              Expect.equal (parseBatchLine "time 0") (Ok(Time 0.0)) "time 0"
+              Expect.equal (parseBatchLine "time 1.25") (Ok(Time 1.25)) "time 1.25"
+              Expect.isError (parseBatchLine "time -0.1") "negative time"
+              Expect.isError (parseBatchLine "time NaN") "NaN time"
+              Expect.isError (parseBatchLine "time") "missing time arg"
+
+              match Expect.wantOk (parseBatchLine "sequence frames/f_ --from 0 --to 4 --step 2 --mode silhouette --size 128") "batch sequence" with
+              | BatchSequence b ->
+                  Expect.equal b.OutputPrefix "frames/f_" "prefix"
+                  Expect.equal b.Mode SeqSilhouette "mode"
+                  Expect.equal b.SnapshotSize (Some(128, 128)) "size"
+              | other -> failwith $"expected BatchSequence, got %A{other}"
+
+              Expect.isError (parseBatchLine "sequence f_ --from 0 --to 2 --wireframe") "batch sequence rejects --wireframe"
+              Expect.isError (parseBatchLine "sequence f_ --from 0 --to 2 --no-grid") "batch sequence rejects --no-grid"
+              Expect.isError (parseBatchLine "sequence f_ --from 0 --to 2 --stats") "batch sequence rejects --stats"
+
+              // resolveSequenceSchedule discrete vs timed
+              Expect.equal (resolveSequenceSchedule false 0.0 4.0 None None) (Ok(DiscreteSteps [ 0; 1; 2; 3; 4 ])) "discrete default step 1"
+              Expect.equal (resolveSequenceSchedule false 1.0 5.0 (Some 2.0) None) (Ok(DiscreteSteps [ 1; 3; 5 ])) "discrete step 2"
+              Expect.isError (resolveSequenceSchedule false 0.0 4.0 None (Some 3)) "discrete rejects --frames"
+              Expect.isError (resolveSequenceSchedule false 0.0 4.0 (Some 0.5) None) "discrete rejects fractional --step"
+              Expect.isError (resolveSequenceSchedule false 0.5 4.0 None None) "discrete rejects fractional --from"
+              Expect.isError (resolveSequenceSchedule false 0.0 4.5 None None) "discrete rejects fractional --to"
+
+              Expect.isError (resolveSequenceSchedule true 0.0 1.0 None None) "timed requires --step or --frames"
+              Expect.equal (resolveSequenceSchedule true 0.0 0.3 (Some 0.1) None) (Ok(TimedPoints [ 0.0; 0.1; 0.2; 0.3 ])) "timed step 0.1 hits endpoint cleanly"
+              Expect.equal (resolveSequenceSchedule true 1.0 3.0 None (Some 5)) (Ok(TimedPoints [ 1.0; 1.5; 2.0; 2.5; 3.0 ])) "timed frames 5"
           } ]

@@ -39,6 +39,7 @@ type IInteractiveRenderer =
     abstract SetTitle: string -> unit
     abstract FramebufferSize: unit -> struct (int * int)
     abstract WaitEvents: unit -> unit
+    abstract WaitEventsTimeout: seconds: float -> unit
     abstract PostWakeup: unit -> unit
     abstract DrainEvents: unit -> Interaction.WindowEvent list
     abstract RenderToWindow: camera: Camera.Camera -> showGrid: bool -> wireframe: bool -> unit
@@ -624,7 +625,7 @@ type private GlRendererCore(ctx: GlContext, shaders: ShaderSet, isInteractive: b
         member this.RenderSilhouette w h cam = this.RenderSilhouette w h cam
         member this.Dispose() = this.Dispose()
 
-let private mapShortcut (key: Keys) : Interaction.ShortcutKey option =
+let private mapShortcut (key: Keys) (shift: bool) : Interaction.ShortcutKey option =
     match key with
     | Keys.Number1
     | Keys.Keypad1 -> Some Interaction.ViewFront
@@ -640,6 +641,15 @@ let private mapShortcut (key: Keys) : Interaction.ShortcutKey option =
     | Keys.R -> Some Interaction.ReloadModel
     | Keys.Escape
     | Keys.Q -> Some Interaction.CloseWindow
+    | Keys.Left
+    | Keys.LeftBracket -> Some(Interaction.StepBackward shift)
+    | Keys.Right
+    | Keys.RightBracket -> Some(Interaction.StepForward shift)
+    | Keys.Home
+    | Keys.Number0
+    | Keys.Keypad0 -> Some Interaction.JumpStart
+    | Keys.End -> Some Interaction.JumpEnd
+    | Keys.Space -> Some Interaction.TogglePlay
     | _ -> None
 
 type private GlInteractiveRenderer(ctx: GlContext, shaders: ShaderSet) =
@@ -686,7 +696,9 @@ type private GlInteractiveRenderer(ctx: GlContext, shaders: ShaderSet) =
                 mods &&& (KeyModifiers.Control ||| KeyModifiers.Alt ||| KeyModifiers.Super)
 
             if action = InputAction.Press && unsupportedMods = enum 0 then
-                match mapShortcut key with
+                let shift = (mods &&& KeyModifiers.Shift) <> enum 0
+
+                match mapShortcut key shift with
                 | Some k -> events.Enqueue(Interaction.KeyPress k)
                 | None -> ())
 
@@ -722,6 +734,7 @@ type private GlInteractiveRenderer(ctx: GlContext, shaders: ShaderSet) =
         member _.SetTitle title = ctx.SetTitle(title)
         member _.FramebufferSize() = ctx.GetFramebufferSize()
         member _.WaitEvents() = ctx.WaitEvents()
+        member _.WaitEventsTimeout seconds = ctx.WaitEventsTimeout(seconds)
         member _.PostWakeup() = ctx.PostEmptyEvent()
 
         member _.DrainEvents() =

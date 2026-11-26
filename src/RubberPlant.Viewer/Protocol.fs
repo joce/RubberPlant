@@ -21,6 +21,7 @@ let usage =
   rubberplant-viewer contact-sheet <file.rp> -o <out.png> [options]
   rubberplant-viewer snapshot      <file.rp> -o <out.png> [options]
   rubberplant-viewer silhouette    <file.rp> -o <out.png> [options]
+  rubberplant-viewer sequence      <file.rp> -o <prefix> --from <a0> --to <a1> [options]
   rubberplant-viewer batch
 
 Commands:
@@ -28,10 +29,12 @@ Commands:
   contact-sheet  Render a 2x2 shared-scale PNG (Front, Side +90, 3/4 Iso, Top).
   snapshot       Render a single shaded PNG.
   silhouette     Render a 1x non-MSAA binary 8-bit grayscale mask PNG.
+  sequence       Render a developmental frame sequence (<prefix>0000.png, ...) with a fixed frame.
   batch          Stateful headless protocol over stdin/stdout (`exit <code>` framing).
 
 Load options (override the file's settings; parity with `rubberplant`):
   -n, --derivations <n>           number of derivation steps
+      --time <t>                  evaluation time for timed models
       --angle <degrees>           default turn angle
       --step <d>                  default step length
       --width <w>                 initial line width
@@ -46,14 +49,19 @@ Load options (override the file's settings; parity with `rubberplant`):
       --max-primitives <n|unlimited>  max turtle primitives (default 250000)
 
 Viewer & render options:
-  -o, --output <out.png>          output PNG path (required on one-shot headless commands)
+  -o, --output <out.png|prefix>   output PNG path (or path prefix for sequence)
       --size <px>                 contact-sheet: even integer in [128, 8192] (default 1024)
       --size <w>[x<h>]            snapshot/silhouette: [1, 8192] (default 512x512);
                                   view: initial window size (default 1024x768)
       --camera <az,el[,dist|fit]> camera orbit angles and optional distance or fit
-      --wireframe                 draw wireframe overlay (view, one-shot contact-sheet/snapshot)
-      --no-grid                   hide ground grid (view, one-shot contact-sheet/snapshot)
+      --wireframe                 draw wireframe overlay (view, contact-sheet, snapshot)
+      --no-grid                   hide ground grid (view, contact-sheet, snapshot)
       --watch                     auto-reload the current .rp file on disk changes (view)
+      --from <a0>                 sequence start step or time (>= 0)
+      --to <a1>                   sequence end step or time (>= from)
+      --step <da>                 sequence increment (discrete int >= 1, timed > 0)
+      --frames <k>                timed sequence frame count (>= 2)
+      --mode <mode>               sequence frame mode: snapshot (default), contact-sheet, silhouette
       --stats                     write Stats JSON to stdout instead of `wrote <path>`
       --stats-out <file.json>     write Stats JSON atomically to file
       --pretty                    2-space indented JSON (with --stats, --stats-out, or batch stats)
@@ -62,6 +70,7 @@ Viewer & render options:
 /// Load overrides shared by `view <file.rp>`, one-shot renders, and batch `load` (§6.2).
 type LoadOptions =
     { Derivations: int option
+      Time: float option
       Angle: float option
       Step: float option
       Width: float option
@@ -80,6 +89,7 @@ type LoadOptions =
 
 let emptyLoadOptions =
     { Derivations = None
+      Time = None
       Angle = None
       Step = None
       Width = None
@@ -95,6 +105,7 @@ let emptyLoadOptions =
 
 let hasAnyLoadOption (o: LoadOptions) : bool =
     o.Derivations.IsSome
+    || o.Time.IsSome
     || o.Angle.IsSome
     || o.Step.IsSome
     || o.Width.IsSome
@@ -111,6 +122,10 @@ let hasAnyLoadOption (o: LoadOptions) : bool =
 let applySettingsOverrides (o: LoadOptions) (s: Settings) : Settings =
     { s with
         Derivations = defaultArg o.Derivations s.Derivations
+        Time =
+            match o.Time with
+            | Some t -> Some t
+            | None -> s.Time
         Angle = defaultArg o.Angle s.Angle
         Step = defaultArg o.Step s.Step
         Width = defaultArg o.Width s.Width
@@ -180,12 +195,33 @@ type SilhouetteArgs =
       Size: int * int
       Camera: CameraSpec option }
 
+type SequenceMode =
+    | SeqSnapshot
+    | SeqContactSheet
+    | SeqSilhouette
+
+type SequenceArgs =
+    { Input: string
+      Load: LoadOptions
+      OutputPrefix: string
+      From: float
+      To: float
+      Step: float option
+      Frames: int option
+      Mode: SequenceMode
+      SnapshotSize: int * int
+      ContactSheetSize: int
+      Camera: CameraSpec option
+      Wireframe: bool
+      Grid: bool }
+
 type CliCommand =
     | Help of exitCode: int
     | View of ViewArgs
     | ContactSheet of ContactSheetArgs
     | Snapshot of SnapshotArgs
     | Silhouette of SilhouetteArgs
+    | Sequence of SequenceArgs
     | Batch
 
 type BatchSnapshotArgs =
@@ -205,9 +241,22 @@ type BatchSilhouetteArgs =
       Size: (int * int) option
       Stats: StatsOutput }
 
+type BatchSequenceArgs =
+    { OutputPrefix: string
+      From: float
+      To: float
+      Step: float option
+      Frames: int option
+      Mode: SequenceMode
+      SnapshotSize: (int * int) option
+      ContactSheetSize: int option
+      Camera: CameraSpec option }
+
 type BatchCommand =
     | Load of input: string * load: LoadOptions * keepCamera: bool
     | Reload of keepCamera: bool
+    | Step of steps: int
+    | Time of time: float
     | SetCamera of CameraSpec
     | Fit
     | SetSize of width: int * height: int
@@ -216,6 +265,7 @@ type BatchCommand =
     | BatchSnapshot of BatchSnapshotArgs
     | BatchContactSheet of BatchContactSheetArgs
     | BatchSilhouette of BatchSilhouetteArgs
+    | BatchSequence of BatchSequenceArgs
     | BatchStats of pretty: bool
     | Quit
 
@@ -335,6 +385,13 @@ let private tryParseLoadOption (args: string list) (o: LoadOptions) : (LoadOptio
         match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
         | true, n -> Some({ o with Derivations = Some n }, rest)
         | _ -> fail $"--derivations expects a non-negative integer, got '%s{v}'"
+    | "--time" :: v :: rest ->
+        let t = parseFloat "--time" v
+
+        if t < 0.0 then
+            fail "--time must be non-negative"
+
+        Some({ o with Time = Some t }, rest)
     | "--angle" :: v :: rest -> Some({ o with Angle = Some(parseFloat "--angle" v) }, rest)
     | "--step" :: v :: rest -> Some({ o with Step = Some(parseFloat "--step" v) }, rest)
     | "--width" :: v :: rest ->
@@ -388,6 +445,7 @@ let private tryParseLoadOption (args: string list) (o: LoadOptions) : (LoadOptio
     | "--max-primitives" :: v :: rest -> Some({ o with MaxPrimitives = Some(parseLimit "--max-primitives" v) }, rest)
     | ("-n"
     | "--derivations"
+    | "--time"
     | "--angle"
     | "--step"
     | "--width"
@@ -401,6 +459,10 @@ let private tryParseLoadOption (args: string list) (o: LoadOptions) : (LoadOptio
     | "--max-modules"
     | "--max-primitives") as opt :: [] -> fail $"%s{opt} expects a value"
     | _ -> None
+
+let private validateLoadOptions (o: LoadOptions) =
+    if o.Derivations.IsSome && o.Time.IsSome then
+        fail "--derivations and --time cannot be used together"
 
 let private validateNonEmptyPath (label: string) (path: string) =
     if String.IsNullOrEmpty path then
@@ -416,6 +478,8 @@ let private parseViewArgs (rest: string list) : ViewArgs =
     let rec go args input load size cam wireframe grid watch =
         match args with
         | [] ->
+            validateLoadOptions load
+
             if input = None && hasAnyLoadOption load then
                 fail "load options require an input file"
 
@@ -458,6 +522,8 @@ let private parseHeadlessCli (kind: HeadlessKind) (rest: string list) : CliComma
     let rec go args input output load sheetSize snapSize (cam: CameraSpec option) wireframe noGrid statsStdout statsOut pretty =
         match args with
         | [] ->
+            validateLoadOptions load
+
             let inputPath =
                 match input with
                 | Some p -> p
@@ -551,6 +617,175 @@ let private parseHeadlessCli (kind: HeadlessKind) (rest: string list) : CliComma
 
     go rest None None emptyLoadOptions None None None false false false None false
 
+let private parseSequenceMode (v: string) : SequenceMode =
+    match v with
+    | "snapshot" -> SeqSnapshot
+    | "contact-sheet" -> SeqContactSheet
+    | "silhouette" -> SeqSilhouette
+    | _ -> fail $"--mode expects snapshot, contact-sheet, or silhouette, got '%s{v}'"
+
+let private parseSequenceRangeEnd
+    (fromOpt: float option)
+    (toOpt: float option)
+    (stepOpt: float option)
+    (framesOpt: int option)
+    (mode: SequenceMode)
+    (cam: CameraSpec option)
+    (wireframe: bool)
+    (noGrid: bool)
+    : float * float =
+    let fromVal =
+        match fromOpt with
+        | Some f -> f
+        | None -> fail "missing required option --from"
+
+    let toVal =
+        match toOpt with
+        | Some t -> t
+        | None -> fail "missing required option --to"
+
+    if fromVal > toVal then
+        fail "--from must be less than or equal to --to"
+
+    if stepOpt.IsSome && framesOpt.IsSome then
+        fail "--step and --frames cannot be used together"
+
+    if mode = SeqContactSheet && cam.IsSome then
+        fail "--camera doesn't apply to contact-sheet"
+
+    if mode = SeqSilhouette then
+        if wireframe then
+            fail "--wireframe doesn't apply to silhouette"
+
+        if noGrid then
+            fail "--no-grid doesn't apply to silhouette"
+
+    fromVal, toVal
+
+let private parseSequenceCli (rest: string list) : CliCommand =
+    let rec go args input outputPrefix load fromOpt toOpt stepOpt framesOpt mode sizeRaw cam wireframe noGrid =
+        match args with
+        | [] ->
+            validateLoadOptions load
+
+            let inputPath =
+                match input with
+                | Some p -> p
+                | None -> fail "missing input file"
+
+            let prefix =
+                match outputPrefix with
+                | Some p -> p
+                | None -> fail "missing required option -o / --output"
+
+            let fromVal, toVal =
+                parseSequenceRangeEnd fromOpt toOpt stepOpt framesOpt mode cam wireframe noGrid
+
+            let snapSize, sheetSize =
+                match mode with
+                | SeqContactSheet ->
+                    let sz =
+                        match sizeRaw with
+                        | Some s -> parseContactSheetSize "--size" s
+                        | None -> defaultContactSheetSize
+
+                    defaultSnapshotSize, sz
+                | SeqSnapshot
+                | SeqSilhouette ->
+                    let sz =
+                        match sizeRaw with
+                        | Some s -> parseSize "--size" s
+                        | None -> defaultSnapshotSize
+
+                    sz, defaultContactSheetSize
+
+            Sequence
+                { Input = inputPath
+                  Load = load
+                  OutputPrefix = prefix
+                  From = fromVal
+                  To = toVal
+                  Step = stepOpt
+                  Frames = framesOpt
+                  Mode = mode
+                  SnapshotSize = snapSize
+                  ContactSheetSize = sheetSize
+                  Camera = cam
+                  Wireframe = wireframe
+                  Grid = not noGrid }
+        | ("-o" | "--output") :: v :: tail ->
+            validateNonEmptyPath "--output" v
+            go tail input (Some v) load fromOpt toOpt stepOpt framesOpt mode sizeRaw cam wireframe noGrid
+        | "--from" :: v :: tail ->
+            let f = parseFloat "--from" v
+
+            if f < 0.0 then
+                fail "--from must be non-negative"
+
+            go tail input outputPrefix load (Some f) toOpt stepOpt framesOpt mode sizeRaw cam wireframe noGrid
+        | "--to" :: v :: tail ->
+            let t = parseFloat "--to" v
+
+            if t < 0.0 then
+                fail "--to must be non-negative"
+
+            go tail input outputPrefix load fromOpt (Some t) stepOpt framesOpt mode sizeRaw cam wireframe noGrid
+        | "--step" :: v :: tail ->
+            let s = parseFloat "--step" v
+
+            if s <= 0.0 then
+                fail "--step must be greater than 0"
+
+            go tail input outputPrefix load fromOpt toOpt (Some s) framesOpt mode sizeRaw cam wireframe noGrid
+        | "--frames" :: v :: tail ->
+            match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
+            | true, k when k >= 2 ->
+                go tail input outputPrefix load fromOpt toOpt stepOpt (Some k) mode sizeRaw cam wireframe noGrid
+            | _ -> fail $"--frames expects an integer of at least 2, got '%s{v}'"
+        | "--mode" :: v :: tail ->
+            let m = parseSequenceMode v
+            go tail input outputPrefix load fromOpt toOpt stepOpt framesOpt m sizeRaw cam wireframe noGrid
+        | "--size" :: v :: tail ->
+            go tail input outputPrefix load fromOpt toOpt stepOpt framesOpt mode (Some v) cam wireframe noGrid
+        | "--camera" :: v :: tail ->
+            go tail input outputPrefix load fromOpt toOpt stepOpt framesOpt mode sizeRaw (Some(parseCameraFlag v)) wireframe noGrid
+        | "--wireframe" :: tail ->
+            go tail input outputPrefix load fromOpt toOpt stepOpt framesOpt mode sizeRaw cam true noGrid
+        | "--no-grid" :: tail ->
+            go tail input outputPrefix load fromOpt toOpt stepOpt framesOpt mode sizeRaw cam wireframe true
+        | "--watch" :: _ -> fail "--watch only applies to view"
+        | "--stats" :: _ -> fail "--stats doesn't apply to sequence"
+        | "--stats-out" :: _ -> fail "--stats-out doesn't apply to sequence"
+        | "--pretty" :: _ -> fail "--pretty doesn't apply to sequence"
+        | ("-n" | "--derivations") :: _ -> fail "--derivations doesn't apply to sequence; use --from and --to"
+        | "--time" :: _ -> fail "--time doesn't apply to sequence; use --from and --to"
+        | ("-o"
+        | "--output"
+        | "--from"
+        | "--to"
+        | "--step"
+        | "--frames"
+        | "--mode"
+        | "--size"
+        | "--camera") as opt :: [] -> fail $"%s{opt} expects a value"
+        | _ ->
+            match tryParseLoadOption args load with
+            | Some(load', tail) ->
+                go tail input outputPrefix load' fromOpt toOpt stepOpt framesOpt mode sizeRaw cam wireframe noGrid
+            | None ->
+                match args with
+                | opt :: _ when opt.StartsWith "-" -> fail $"unknown option '%s{opt}'"
+                | file :: tail ->
+                    validateNonEmptyPath "input file" file
+
+                    if input.IsSome then
+                        fail $"unexpected argument '%s{file}'"
+
+                    go tail (Some file) outputPrefix load fromOpt toOpt stepOpt framesOpt mode sizeRaw cam wireframe noGrid
+                | [] -> fail "unexpected end of arguments"
+
+    go rest None None emptyLoadOptions None None None None SeqSnapshot None None false false
+
 /// Parses top-level CLI arguments (`rubberplant-viewer ...`) (§6.1–§6.2).
 let parseCli (argv: string list) : Result<CliCommand, string> =
     try
@@ -564,6 +799,7 @@ let parseCli (argv: string list) : Result<CliCommand, string> =
         | "contact-sheet" :: rest -> Ok(parseHeadlessCli KindContactSheet rest)
         | "snapshot" :: rest -> Ok(parseHeadlessCli KindSnapshot rest)
         | "silhouette" :: rest -> Ok(parseHeadlessCli KindSilhouette rest)
+        | "sequence" :: rest -> Ok(parseSequenceCli rest)
         | first :: _ when first.EndsWith(".rp", StringComparison.OrdinalIgnoreCase) -> Ok(View(parseViewArgs argv))
         | c :: _ -> fail $"unknown command '%s{c}'"
     with ParseError msg ->
@@ -575,6 +811,8 @@ let private parseBatchLoad (rest: string list) : BatchCommand =
     let rec go args input load keepCam =
         match args with
         | [] ->
+            validateLoadOptions load
+
             match input with
             | Some file -> Load(file, load, keepCam)
             | None -> fail "missing input file"
@@ -696,6 +934,105 @@ let private parseBatchRender (kind: HeadlessKind) (rest: string list) : BatchCom
 
     go rest None None None None false None false
 
+let private parseBatchStep (rest: string list) : BatchCommand =
+    match rest with
+    | [ v ] ->
+        match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
+        | true, n -> Step n
+        | _ -> fail $"step expects a non-negative integer, got '%s{v}'"
+    | _ -> fail "step expects '<n>'"
+
+let private parseBatchTime (rest: string list) : BatchCommand =
+    match rest with
+    | [ v ] ->
+        let t = parseFloat "time" v
+
+        if t < 0.0 then
+            fail "time must be non-negative"
+
+        Time t
+    | _ -> fail "time expects '<t>'"
+
+let private parseBatchSequence (rest: string list) : BatchCommand =
+    let rec go args prefix fromOpt toOpt stepOpt framesOpt mode sizeRaw cam =
+        match args with
+        | [] ->
+            let outPrefix =
+                match prefix with
+                | Some p -> p
+                | None -> fail "missing output prefix"
+
+            let fromVal, toVal =
+                parseSequenceRangeEnd fromOpt toOpt stepOpt framesOpt mode cam false false
+
+            let snapSize, sheetSize =
+                match mode with
+                | SeqContactSheet -> None, Option.map (parseContactSheetSize "--size") sizeRaw
+                | SeqSnapshot
+                | SeqSilhouette -> Option.map (parseSize "--size") sizeRaw, None
+
+            BatchSequence
+                { OutputPrefix = outPrefix
+                  From = fromVal
+                  To = toVal
+                  Step = stepOpt
+                  Frames = framesOpt
+                  Mode = mode
+                  SnapshotSize = snapSize
+                  ContactSheetSize = sheetSize
+                  Camera = cam }
+        | "--wireframe" :: _ -> fail "--wireframe is not allowed here; use `wireframe on|off`"
+        | "--no-grid" :: _ -> fail "--no-grid is not allowed here; use `grid on|off`"
+        | "--watch" :: _ -> fail "--watch only applies to view"
+        | "--stats" :: _ -> fail "--stats doesn't apply to sequence"
+        | "--stats-out" :: _ -> fail "--stats-out doesn't apply to sequence"
+        | "--pretty" :: _ -> fail "--pretty doesn't apply to sequence"
+        | "--from" :: v :: tail ->
+            let f = parseFloat "--from" v
+
+            if f < 0.0 then
+                fail "--from must be non-negative"
+
+            go tail prefix (Some f) toOpt stepOpt framesOpt mode sizeRaw cam
+        | "--to" :: v :: tail ->
+            let t = parseFloat "--to" v
+
+            if t < 0.0 then
+                fail "--to must be non-negative"
+
+            go tail prefix fromOpt (Some t) stepOpt framesOpt mode sizeRaw cam
+        | "--step" :: v :: tail ->
+            let s = parseFloat "--step" v
+
+            if s <= 0.0 then
+                fail "--step must be greater than 0"
+
+            go tail prefix fromOpt toOpt (Some s) framesOpt mode sizeRaw cam
+        | "--frames" :: v :: tail ->
+            match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
+            | true, k when k >= 2 -> go tail prefix fromOpt toOpt stepOpt (Some k) mode sizeRaw cam
+            | _ -> fail $"--frames expects an integer of at least 2, got '%s{v}'"
+        | "--mode" :: v :: tail -> go tail prefix fromOpt toOpt stepOpt framesOpt (parseSequenceMode v) sizeRaw cam
+        | "--size" :: v :: tail -> go tail prefix fromOpt toOpt stepOpt framesOpt mode (Some v) cam
+        | "--camera" :: v :: tail -> go tail prefix fromOpt toOpt stepOpt framesOpt mode sizeRaw (Some(parseCameraFlag v))
+        | ("--from"
+        | "--to"
+        | "--step"
+        | "--frames"
+        | "--mode"
+        | "--size"
+        | "--camera") as opt :: [] -> fail $"%s{opt} expects a value"
+        | opt :: _ when opt.StartsWith "-" -> fail $"unknown option '%s{opt}'"
+        | p :: tail ->
+            validateNonEmptyPath "output prefix" p
+
+            if prefix.IsSome then
+                fail $"unexpected argument '%s{p}'"
+
+            go tail (Some p) fromOpt toOpt stepOpt framesOpt mode sizeRaw cam
+
+    go rest None None None None None SeqSnapshot None None
+
 let private parseBatchStats (rest: string list) : BatchCommand =
     match rest with
     | [] -> BatchStats false
@@ -713,6 +1050,8 @@ let parseBatchCommand (args: string list) : Result<BatchCommand, string> =
         | "view" :: _ -> fail "view can't run inside batch or interactive stdin"
         | "load" :: rest -> Ok(parseBatchLoad rest)
         | "reload" :: rest -> Ok(parseBatchReload rest)
+        | "step" :: rest -> Ok(parseBatchStep rest)
+        | "time" :: rest -> Ok(parseBatchTime rest)
         | "camera" :: rest -> Ok(parseBatchCamera rest)
         | "fit" :: [] -> Ok Fit
         | "fit" :: _ -> fail "fit takes no arguments"
@@ -722,6 +1061,7 @@ let parseBatchCommand (args: string list) : Result<BatchCommand, string> =
         | "snapshot" :: rest -> Ok(parseBatchRender KindSnapshot rest)
         | "contact-sheet" :: rest -> Ok(parseBatchRender KindContactSheet rest)
         | "silhouette" :: rest -> Ok(parseBatchRender KindSilhouette rest)
+        | "sequence" :: rest -> Ok(parseBatchSequence rest)
         | "stats" :: rest -> Ok(parseBatchStats rest)
         | "quit" :: [] -> Ok Quit
         | "quit" :: _ -> fail "quit takes no arguments"
@@ -733,12 +1073,101 @@ let parseBatchCommand (args: string list) : Result<BatchCommand, string> =
 let parseBatchLine (line: string) : Result<BatchCommand, string> =
     splitLine line |> Result.bind parseBatchCommand
 
+/// Discrete step list or continuous time list for `sequence` rendering (§5.3).
+type SequenceSchedule =
+    | DiscreteSteps of steps: int list
+    | TimedPoints of times: float list
+
+/// Resolves discrete vs timed `sequence` frame schedule after inspecting `isTimed`.
+/// Returns `Error` (CLI exit 2) on model-kind/flag mismatches.
+let resolveSequenceSchedule
+    (isTimed: bool)
+    (fromVal: float)
+    (toVal: float)
+    (stepOpt: float option)
+    (framesOpt: int option)
+    : Result<SequenceSchedule, string> =
+    if not (Double.IsFinite fromVal && Double.IsFinite toVal && fromVal >= 0.0 && toVal >= 0.0 && fromVal <= toVal) then
+        Error "--from and --to must be finite non-negative numbers with --from <= --to"
+    elif stepOpt.IsSome && framesOpt.IsSome then
+        Error "--step and --frames cannot be used together"
+    elif not isTimed then
+        if framesOpt.IsSome then
+            Error "--frames only applies to timed models"
+        elif fromVal <> Math.Truncate fromVal || fromVal > float Int32.MaxValue then
+            Error "--from must be a non-negative integer for a discrete model"
+        elif toVal <> Math.Truncate toVal || toVal > float Int32.MaxValue then
+            Error "--to must be a non-negative integer for a discrete model"
+        else
+            let stepRes =
+                match stepOpt with
+                | None -> Ok 1
+                | Some s when s = Math.Truncate s && s >= 1.0 && s <= float Int32.MaxValue -> Ok(int s)
+                | Some _ -> Error "--step must be an integer >= 1 for a discrete model"
+
+            stepRes
+            |> Result.map (fun step ->
+                let startStep = int64 fromVal
+                let endStep = int64 toVal
+                let step64 = int64 step
+                let steps = ResizeArray<int>()
+                let mutable cur = startStep
+
+                while cur <= endStep do
+                    steps.Add(int cur)
+                    cur <- cur + step64
+
+                DiscreteSteps(List.ofSeq steps))
+    else
+        match stepOpt, framesOpt with
+        | None, None -> Error "timed models require --step or --frames"
+        | Some _, Some _ -> Error "--step and --frames cannot be used together"
+        | None, Some k ->
+            if k < 2 then
+                Error "--frames must be at least 2"
+            else
+                let times =
+                    [ for i = 0 to k - 1 do
+                          if i = 0 then fromVal
+                          elif i = k - 1 then toVal
+                          else fromVal + (toVal - fromVal) * (float i / float (k - 1)) ]
+
+                Ok(TimedPoints times)
+        | Some dt, None ->
+            if not (Double.IsFinite dt && dt > 0.0) then
+                Error "--step must be greater than 0"
+            elif fromVal = toVal then
+                Ok(TimedPoints [ fromVal ])
+            else
+                let span = toVal - fromVal
+                let rawCount = span / dt
+                let tol = max 1e-12 (rawCount * 1e-9)
+                let countF = Math.Floor(rawCount + tol)
+
+                if not (Double.IsFinite countF) || countF > 1_000_000.0 then
+                    Error "sequence frame count exceeds maximum"
+                else
+                    let n = int countF
+
+                    let times =
+                        [ for i = 0 to n do
+                              if i = 0 then fromVal
+                              else min toVal (fromVal + float i * dt) ]
+
+                    Ok(TimedPoints times)
+
 // --------------------------------------------------- pure session state machine
+
+/// Current and target developmental stage of a loaded model (§5.3).
+type StageInfo =
+    | DiscreteStage of current: int * target: int
+    | TimedStage of current: float * target: float
 
 /// Cached loaded model metadata and scene payload for a viewer session (§6.3).
 type LoadedModel<'scene> =
     { Input: string
       Load: LoadOptions
+      Stage: StageInfo
       Bounds: Camera.Bounds
       Stats: Stats.Stats
       Scene: 'scene }

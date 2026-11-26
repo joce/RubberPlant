@@ -3,6 +3,7 @@
 module RubberPlant.Viewer.Interaction
 
 open System
+open System.Globalization
 open System.IO
 open RubberPlant
 
@@ -21,6 +22,11 @@ type ShortcutKey =
     | ToggleGrid
     | ReloadModel
     | CloseWindow
+    | StepBackward of shift: bool
+    | StepForward of shift: bool
+    | JumpStart
+    | JumpEnd
+    | TogglePlay
 
 type WindowEvent =
     | MouseButton of button: DragButton * pressed: bool * shift: bool * x: float * y: float
@@ -35,6 +41,8 @@ type InteractiveEffect =
     | Redraw
     | Reload
     | Close
+    | StepDiscrete of int
+    | StepTimed of float
 
 type DragMode =
     | Orbit
@@ -50,9 +58,11 @@ type DragState =
 type InteractiveState =
     { Drag: DragState
       LastValidAspect: float
-      PreviewCamera: Camera.Camera }
+      PreviewCamera: Camera.Camera
+      Playing: bool }
 
 let orbitDegPerPixel = 0.35
+let playbackIntervalSeconds = 0.05
 
 let emptyDragState =
     { LeftHeld = false
@@ -75,7 +85,17 @@ let windowTitle (loaded: Protocol.LoadedModel<'scene> option) : string =
     | Some m ->
         let name = Path.GetFileName m.Input
         let display = if String.IsNullOrEmpty name then m.Input else name
-        $"RubberPlant — %s{display}"
+
+        match m.Stage with
+        | Protocol.DiscreteStage(current, target) ->
+            $"RubberPlant — %s{display} [step %s{string current}/%s{string target}]"
+        | Protocol.TimedStage(current, _) ->
+            let tStr = current.ToString("F2", CultureInfo.InvariantCulture)
+            $"RubberPlant — %s{display} [t = %s{tStr}]"
+
+let timedStepDelta (target: float) (shift: bool) : float =
+    let baseDt = max 0.05 (target / 60.0)
+    if shift then baseDt * 0.2 else baseDt
 
 let zoomBounds (bounds: Camera.Bounds) : struct (float * float) =
     let r =
@@ -94,7 +114,8 @@ let createInitialState (aspect: float) (initialCameraSpec: Protocol.CameraSpec o
 
     { Drag = emptyDragState
       LastValidAspect = safeAspect
-      PreviewCamera = Protocol.resolveOneShotCamera Camera.emptyBounds initialCameraSpec safeAspect }
+      PreviewCamera = Protocol.resolveOneShotCamera Camera.emptyBounds initialCameraSpec safeAspect
+      Playing = false }
 
 let effectiveBounds (session: Protocol.SessionState<'scene>) : Camera.Bounds =
     match session.Loaded with
@@ -228,10 +249,100 @@ let handleEvent
         | ToggleGrid -> Protocol.applySetGrid (not session.Grid) session, interactive, Redraw
         | ReloadModel ->
             if session.Loaded.IsSome then
-                session, interactive, Reload
+                session, { interactive with Playing = false }, Reload
             else
                 session, interactive, NoEffect
         | CloseWindow -> session, interactive, Close
+        | StepBackward shift ->
+            let interactive' = { interactive with Playing = false }
+
+            match session.Loaded with
+            | None -> session, interactive', NoEffect
+            | Some m ->
+                match m.Stage with
+                | Protocol.DiscreteStage(cur, _) ->
+                    let delta = if shift then 5 else 1
+                    let next = max 0 (cur - delta)
+
+                    if next = cur then
+                        session, interactive', NoEffect
+                    else
+                        session, interactive', StepDiscrete next
+                | Protocol.TimedStage(cur, tgt) ->
+                    let dt = timedStepDelta tgt shift
+                    let next = max 0.0 (cur - dt)
+
+                    if next = cur then
+                        session, interactive', NoEffect
+                    else
+                        session, interactive', StepTimed next
+        | StepForward shift ->
+            let interactive' = { interactive with Playing = false }
+
+            match session.Loaded with
+            | None -> session, interactive', NoEffect
+            | Some m ->
+                match m.Stage with
+                | Protocol.DiscreteStage(cur, _) ->
+                    let delta = if shift then 5 else 1
+                    session, interactive', StepDiscrete(cur + delta)
+                | Protocol.TimedStage(cur, tgt) ->
+                    let dt = timedStepDelta tgt shift
+                    session, interactive', StepTimed(cur + dt)
+        | JumpStart ->
+            let interactive' = { interactive with Playing = false }
+
+            match session.Loaded with
+            | None -> session, interactive', NoEffect
+            | Some m ->
+                match m.Stage with
+                | Protocol.DiscreteStage(cur, _) ->
+                    if cur = 0 then
+                        session, interactive', NoEffect
+                    else
+                        session, interactive', StepDiscrete 0
+                | Protocol.TimedStage(cur, _) ->
+                    if cur = 0.0 then
+                        session, interactive', NoEffect
+                    else
+                        session, interactive', StepTimed 0.0
+        | JumpEnd ->
+            let interactive' = { interactive with Playing = false }
+
+            match session.Loaded with
+            | None -> session, interactive', NoEffect
+            | Some m ->
+                match m.Stage with
+                | Protocol.DiscreteStage(cur, tgt) ->
+                    if cur = tgt then
+                        session, interactive', NoEffect
+                    else
+                        session, interactive', StepDiscrete tgt
+                | Protocol.TimedStage(cur, tgt) ->
+                    if cur = tgt then
+                        session, interactive', NoEffect
+                    else
+                        session, interactive', StepTimed tgt
+        | TogglePlay ->
+            match session.Loaded with
+            | None -> session, { interactive with Playing = false }, NoEffect
+            | Some _ when interactive.Playing -> session, { interactive with Playing = false }, NoEffect
+            | Some m ->
+                match m.Stage with
+                | Protocol.DiscreteStage(cur, tgt) ->
+                    if tgt <= 0 then
+                        session, { interactive with Playing = false }, NoEffect
+                    elif cur >= tgt then
+                        session, { interactive with Playing = true }, StepDiscrete 0
+                    else
+                        session, { interactive with Playing = true }, NoEffect
+                | Protocol.TimedStage(cur, tgt) ->
+                    if tgt <= 0.0 then
+                        session, { interactive with Playing = false }, NoEffect
+                    elif cur >= tgt then
+                        session, { interactive with Playing = true }, StepTimed 0.0
+                    else
+                        session, { interactive with Playing = true }, NoEffect
 
     | FramebufferResized(fbWidth, fbHeight) ->
         if fbWidth > 0 && fbHeight > 0 then
@@ -240,3 +351,29 @@ let handleEvent
             session, interactive, NoEffect
 
     | WindowRefresh -> session, interactive, Redraw
+
+/// Advances interactive playback by one tick toward target, pausing automatically on arrival (§5.3).
+let advancePlayback
+    (session: Protocol.SessionState<'scene>)
+    (interactive: InteractiveState)
+    : InteractiveState * InteractiveEffect =
+    if not interactive.Playing then
+        interactive, NoEffect
+    else
+        match session.Loaded with
+        | None -> { interactive with Playing = false }, NoEffect
+        | Some m ->
+            match m.Stage with
+            | Protocol.DiscreteStage(cur, tgt) ->
+                if cur >= tgt then
+                    { interactive with Playing = false }, NoEffect
+                else
+                    let next = min tgt (cur + 1)
+                    { interactive with Playing = next < tgt }, StepDiscrete next
+            | Protocol.TimedStage(cur, tgt) ->
+                if cur >= tgt then
+                    { interactive with Playing = false }, NoEffect
+                else
+                    let dt = timedStepDelta tgt false
+                    let next = min tgt (cur + dt)
+                    { interactive with Playing = next < tgt }, StepTimed next
