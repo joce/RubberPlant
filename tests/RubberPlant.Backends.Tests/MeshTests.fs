@@ -337,6 +337,57 @@ let private widthScaleTests =
               close (radiusOf (build defaultMeshOptions [ seg p0 p1 2.0 0 ] |> ok) p0 p1) 1.0 ""
           }
 
+          test "auto uses SVG boundary points for curved Surface extent" {
+              // Control-hull X spans [0, 10], while boundary u/v edges at t in {0, 0.25, 0.5, 0.75, 1}
+              // stay in [0, 1] because interior control points (10, ...) are only on interior rows/cols
+              // or along cubic curves whose endpoints are at 0 and 1.
+              let noNeighbors: PatchNeighbors =
+                  { TopLeft = None
+                    Top = None
+                    TopRight = None
+                    Left = None
+                    Right = None
+                    BottomLeft = None
+                    Bottom = None
+                    BottomRight = None }
+
+              // Boundary edges v=0,1 and u=0,1 have X in [0, 1]; interior points (i,j in {1,2}) have X = 10.
+              let cp =
+                  [| for i in 0..3 do
+                         for j in 0..3 ->
+                             let x =
+                                 if i >= 1 && i <= 2 && j >= 1 && j <= 2 then
+                                     10.0
+                                 else
+                                     float j / 3.0
+
+                             v x (float i / 3.0) 0.0 |]
+
+              let surf: BezierSurface =
+                  { Name = "Bulge"
+                    DefaultDivisions = (2, 2)
+                    EndPoint = v 0.0 1.0 0.0
+                    Patches =
+                      [| { Name = "p0"
+                           Neighbors = noNeighbors
+                           ControlPoints = cp } |] }
+
+              let inst =
+                  { Surface = surf
+                    Origin = Vec3.zero
+                    AxisX = v 1.0 0.0 0.0
+                    AxisY = v 0.0 1.0 0.0
+                    AxisZ = v 0.0 0.0 1.0
+                    Scale = v 1.0 1.0 1.0
+                    Color = 1 }
+
+              let p0, p1 = v 0.0 0.0 0.0, v 0.0 1.0 0.0
+              let m = build defaultMeshOptions [ seg p0 p1 10.0 0; Surface inst ] |> ok
+              let g0 = m.Groups |> List.find (fun g -> g.Color = 0)
+              // SVG boundary extent is 1.0 (not control-hull 10.0), W = 10.0 -> k = 1.0 / 770.0 -> r = 5.0 / 770.0.
+              close (fst (toAxis p0 p1 g0.Positions[0])) (1.0 / 770.0 * 5.0) "auto width_scale uses SVG boundary extent"
+          }
+
           test "auto fails when the widest line wouldn't fit in the default SVG" {
               for w in [ 780.0; 790.0 ] do
                   build defaultMeshOptions [ seg (v 0.0 0.0 0.0) (v 0.0 1.0 0.0) w 0 ]
@@ -742,6 +793,37 @@ let private gcTests =
 
               for n in gTiny.Normals do
                   close (Vec3.length n) 1.0 "unit tiny normal"
+          }
+
+          test "5000-section collapsed and zero-width-tail GCs run in linear time" {
+              let sw = System.Diagnostics.Stopwatch.StartNew()
+
+              let allCollapsed =
+                  GeneralizedCylinder
+                      { Sides = 8
+                        Sections = [ for i in 0..4999 -> sec (v 0.0 (float i) 0.0) h0 l0 u0 0.0 1.0 1.0 0 Circle ] }
+
+              let mEmpty = build (explicitScale 1.0) [ allCollapsed ] |> ok
+              Expect.isEmpty mEmpty.Groups "fully collapsed GC produces no triangles"
+
+              let tailCollapsed =
+                  GeneralizedCylinder
+                      { Sides = 8
+                        Sections =
+                          [ for i in 0..4997 do
+                                yield sec (v 0.0 (float i) 0.0) h0 l0 u0 0.0 1.0 1.0 0 Circle
+                            yield sec (v 0.0 4998.0 0.0) h0 l0 u0 1.0 1.0 1.0 0 Circle
+                            yield sec (v 0.0 4999.0 0.0) h0 l0 u0 1.0 1.0 1.0 0 Circle ] }
+
+              let g = build (explicitScale 1.0) [ tailCollapsed ] |> ok |> single
+              sw.Stop()
+
+              Expect.isLessThan sw.Elapsed.TotalSeconds 1.0 "completes in < 1s"
+              Expect.equal (g.Triangles.Length / 3) (3 * 8) "cone tip span (8) + cylinder span (16), zero triangles on collapsed spans"
+
+              for n in g.Normals do
+                  Expect.isTrue (Vec3.isFinite n) "finite normal"
+                  close (Vec3.length n) 1.0 "unit normal"
           } ]
 
 [<Tests>]

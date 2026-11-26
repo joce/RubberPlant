@@ -210,6 +210,40 @@ b at 1.1 -> a(0.2) s(0);
                   let direct = Expect.wantOk (TimedDerivation.derive mSum) "direct"
 
                   expectCloseLString composed direct $"semigroup (%g{ta}, %g{tb})"
+          }
+
+          test "non-dyadic terminal ages stay stable at division boundaries and match semigroup" {
+              let cases =
+                  [ "0.2 at 1.0 (0.5 + 0.5)", "axiom: a(0);\na at 0.2 -> F a(0);\n", 1.0, 0.5, 0.5, 4, 0.2
+                    "0.3 at 0.9 (0.3 + 0.6)", "axiom: a(0);\na at 0.3 -> F a(0);\n", 0.9, 0.3, 0.6, 2, 0.3 ]
+
+              for label, src, tExact, ta, tb, expectedDivs, expectedAge in cases do
+                  let m, _ = compileOk src
+
+                  for t in [ tExact; ta + tb ] do
+                      let mT = { m with Settings = { m.Settings with Time = Some t } }
+                      let direct, directTrace = Expect.wantOk (TimedDerivation.deriveWithTrace Limits.defaults mT) label
+                      Expect.equal directTrace.TotalRuleFirings expectedDivs $"%s{label} (t=%s{LString.formatNumber t}): division count"
+                      Expect.equal direct.Length (expectedDivs + 1) $"%s{label} (t=%s{LString.formatNumber t}): symbol count"
+
+                      match direct[expectedDivs] with
+                      | LString.Mod("a", [| age |]) ->
+                          Expect.isLessThanOrEqual age expectedAge $"%s{label}: age clamped to terminal age"
+                          Expect.floatClose Accuracy.veryHigh age expectedAge $"%s{label}: final age"
+                      | sym -> failtestf "%s: expected final module a, got %A" label sym
+
+                  let mExact = { m with Settings = { m.Settings with Time = Some tExact } }
+                  let directExact = Expect.wantOk (TimedDerivation.derive mExact) $"%s{label}: direct exact"
+                  let mSum = { m with Settings = { m.Settings with Time = Some(ta + tb) } }
+                  let directSum = Expect.wantOk (TimedDerivation.derive mSum) $"%s{label}: direct sum"
+
+                  let mA = { m with Settings = { m.Settings with Time = Some ta } }
+                  let first = Expect.wantOk (TimedDerivation.derive mA) $"%s{label}: first"
+                  let mB = { m with Axiom = first; Settings = { m.Settings with Time = Some tb } }
+                  let composed = Expect.wantOk (TimedDerivation.derive mB) $"%s{label}: composed"
+
+                  Expect.equal (LString.format composed) (LString.format directExact) $"%s{label}: exact boundary match"
+                  expectCloseLString composed directSum $"%s{label}: semigroup sum match"
           } ]
 
 let budgetsAndSafety =
@@ -276,6 +310,25 @@ let budgetsAndSafety =
               match TimedDerivation.derive { m with Settings = { m.Settings with Time = Some 1e308 } } with
               | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "age overflow -> RP0205"
               | r -> failtestf "expected RP0205, got %A" r
+          }
+
+          test "terminal ages near Double.MaxValue still fire A3 when time exceeds boundary" {
+              let m, _ =
+                  compileOk
+                      "settings { time = 1.7976931348623157e308; }\naxiom: a(1.7976931348623157e308);\na at 1.7976931348623157e308 -> empty;\n"
+
+              let s, trace = Expect.wantOk (TimedDerivation.deriveWithTrace Limits.defaults m) "Double.MaxValue A3"
+              Expect.equal (LString.format s) "empty" "A3 fires and erases a"
+              Expect.equal trace.TotalRuleFirings 1 "1 division"
+
+              // Boundary overflow in A2 when remT is within tol of Double.MaxValue stays finite
+              let mTol, _ =
+                  compileOk
+                      "settings { time = 1e293; }\naxiom: a(1.7976931348623157e308);\na at 1.7976931348623157e308 -> empty;\n"
+
+              let sTol, traceTol = Expect.wantOk (TimedDerivation.deriveWithTrace Limits.defaults mTol) "Double.MaxValue A2 clamp"
+              Expect.equal traceTol.TotalRuleFirings 0 "within tolerance does not divide"
+              Expect.equal (LString.format sTol) "a(1.7976931348623157E+308)" "age clamps cleanly to Double.MaxValue"
           } ]
 
 [<Tests>]

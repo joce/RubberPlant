@@ -79,8 +79,9 @@ let geometryBoundsAndMaxWidth (geometry: Geometry) : struct (Vec3 * Vec3 * bool 
                 addPoint s.P
                 widest <- max widest (effectiveWidth s)
         | Surface inst ->
-            for p in Bezier.instanceControlPoints inst do
-                addPoint p
+            for poly in Bezier.surfaceBoundaryPolygons inst do
+                for p in poly do
+                    addPoint p
 
     if hasPoints then
         struct (Vec3.create minX minY minZ, Vec3.create maxX maxY maxZ, true, widest)

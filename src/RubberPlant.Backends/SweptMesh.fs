@@ -259,6 +259,8 @@ let private emitStrip
 
         let accumNormals = Array.zeroCreate<Vec3> totalVerts
         let spanTriangles = Array.init (m - 1) (fun _ -> ResizeArray<struct (int * int * int)>())
+        let usedVerts = Array.zeroCreate<bool> totalVerts
+        let mutable anyTri = false
 
         for k = 0 to m - 2 do
             let r0 = k * ringLen
@@ -279,6 +281,10 @@ let private emitStrip
                     accumNormals[v01] <- accumNormals[v01] + n1
                     accumNormals[v11] <- accumNormals[v11] + n1
                     tris.Add(struct (v00, v01, v11))
+                    usedVerts[v00] <- true
+                    usedVerts[v01] <- true
+                    usedVerts[v11] <- true
+                    anyTri <- true
 
                 let struct (ok2, n2) = isNonDegenerateTri localPos[v00] localPos[v11] localPos[v10]
 
@@ -287,113 +293,161 @@ let private emitStrip
                     accumNormals[v11] <- accumNormals[v11] + n2
                     accumNormals[v10] <- accumNormals[v10] + n2
                     tris.Add(struct (v00, v11, v10))
+                    usedVerts[v00] <- true
+                    usedVerts[v11] <- true
+                    usedVerts[v10] <- true
+                    anyTri <- true
 
-        let hasNormal = Array.zeroCreate<bool> totalVerts
-        let normals = Array.zeroCreate<Vec3> totalVerts
+        if anyTri then
+            let hasNormal = Array.zeroCreate<bool> totalVerts
+            let normals = Array.zeroCreate<Vec3> totalVerts
+            let rowHasNormal = Array.zeroCreate<bool> m
+            let mutable needFallback = false
 
-        for idx = 0 to totalVerts - 1 do
-            if accumNormals[idx] <> Vec3.zero then
-                let n = normalize accumNormals[idx]
+            for k = 0 to m - 1 do
+                let row = k * ringLen
 
-                if Vec3.isFinite n then
-                    hasNormal[idx] <- true
-                    normals[idx] <- n
+                for j = 0 to ringLen - 1 do
+                    let idx = row + j
 
-        let fallbackNormal (k: int) (j: int) =
-            let row = k * ringLen
+                    if accumNormals[idx] <> Vec3.zero then
+                        let n = normalize accumNormals[idx]
 
-            // 1. Immediate ring neighbors, then wider ring scan on section k.
-            let mutable ringSum = Vec3.zero
-            let mutable foundRing = false
-            let mutable dist = 1
+                        if Vec3.isFinite n then
+                            hasNormal[idx] <- true
+                            normals[idx] <- n
+                            rowHasNormal[k] <- true
 
-            while not foundRing && dist < ringLen do
-                let checkOffset (delta: int) =
-                    let jn =
-                        if strip.Closed then
-                            ((j + delta) % ringLen + ringLen) % ringLen
+                    if usedVerts[idx] && not hasNormal[idx] then
+                        needFallback <- true
+
+            if needFallback then
+                let prevSec = Array.create totalVerts -1
+                let nextSec = Array.create totalVerts -1
+
+                for k = 0 to m - 1 do
+                    let row = k * ringLen
+
+                    for j = 0 to ringLen - 1 do
+                        let idx = row + j
+
+                        prevSec[idx] <-
+                            if hasNormal[idx] then k
+                            elif k > 0 then prevSec[idx - ringLen]
+                            else -1
+
+                for k = m - 1 downto 0 do
+                    let row = k * ringLen
+
+                    for j = 0 to ringLen - 1 do
+                        let idx = row + j
+
+                        nextSec[idx] <-
+                            if hasNormal[idx] then k
+                            elif k < m - 1 then nextSec[idx + ringLen]
+                            else -1
+
+                let fallbackNormal (k: int) (j: int) =
+                    let row = k * ringLen
+                    let mutable ringSum = Vec3.zero
+                    let mutable foundRing = false
+
+                    if rowHasNormal[k] then
+                        // 1. Immediate ring neighbors, then wider ring scan on section k.
+                        let mutable dist = 1
+
+                        while not foundRing && dist < ringLen do
+                            let checkOffset (delta: int) =
+                                let jn =
+                                    if strip.Closed then
+                                        ((j + delta) % ringLen + ringLen) % ringLen
+                                    else
+                                        j + delta
+
+                                if jn >= 0 && jn < ringLen && hasNormal[row + jn] then
+                                    ringSum <- ringSum + normals[row + jn]
+
+                            checkOffset -dist
+                            checkOffset dist
+
+                            if ringSum <> Vec3.zero then
+                                foundRing <- true
+
+                            dist <- dist + 1
+
+                    if foundRing then
+                        normalize ringSum
+                    else
+                        // 2. Nearest adjacent spine sections at the same contour index j in O(1).
+                        let idx = row + j
+                        let pSec = prevSec[idx]
+                        let nSec = nextSec[idx]
+
+                        if pSec >= 0 && nSec >= 0 then
+                            let dPrev = k - pSec
+                            let dNext = nSec - k
+                            let pN = normals[pSec * ringLen + j]
+                            let nN = normals[nSec * ringLen + j]
+
+                            if dPrev < dNext then
+                                pN
+                            elif dNext < dPrev then
+                                nN
+                            else
+                                let spineSum = pN + nN
+                                if spineSum <> Vec3.zero then normalize spineSum else framesU[k]
+                        elif pSec >= 0 then
+                            normals[pSec * ringLen + j]
+                        elif nSec >= 0 then
+                            normals[nSec * ringLen + j]
                         else
-                            j + delta
+                            framesU[k]
 
-                    if jn >= 0 && jn < ringLen && hasNormal[row + jn] then
-                        ringSum <- ringSum + normals[row + jn]
+                for k = 0 to m - 1 do
+                    let row = k * ringLen
 
-                checkOffset -dist
-                checkOffset dist
+                    for j = 0 to ringLen - 1 do
+                        let idx = row + j
 
-                if ringSum <> Vec3.zero then
-                    foundRing <- true
+                        if usedVerts[idx] && not hasNormal[idx] then
+                            normals[idx] <- fallbackNormal k j
 
-                dist <- dist + 1
+            // Emit each span's triangles into `groupOf section_i.Color`, duplicating vertices
+            // at palette boundaries while sharing vertices within contiguous runs of one palette entry.
+            let remap = Array.create totalVerts -1
+            let lastRun = Array.create totalVerts 0
+            let mutable runId = 0
+            let mutable currentEntry = -1
+            let mutable currentGroup: GroupBuilder option = None
 
-            if foundRing then
-                normalize ringSum
-            else
-                // 2. Adjacent spine sections at the same contour index j (or any index).
-                let mutable spineSum = Vec3.zero
-                let mutable foundSpine = false
-                let mutable sDist = 1
+            for k = 0 to m - 2 do
+                let tris = spanTriangles[k]
 
-                while not foundSpine && sDist < m do
-                    for ks in [ k - sDist; k + sDist ] do
-                        if ks >= 0 && ks < m then
-                            let idxS = ks * ringLen + j
+                if tris.Count > 0 then
+                    let col = sections[a + k].Color
+                    let entry = Palette.entry col
 
-                            if hasNormal[idxS] then
-                                spineSum <- spineSum + normals[idxS]
+                    if entry <> currentEntry || currentGroup.IsNone then
+                        currentEntry <- entry
+                        currentGroup <- Some(groupOf col)
+                        runId <- runId + 1
 
-                    if spineSum <> Vec3.zero then
-                        foundSpine <- true
+                    let g = currentGroup.Value
 
-                    sDist <- sDist + 1
+                    let emitVert (idx: int) =
+                        if lastRun[idx] <> runId then
+                            lastRun[idx] <- runId
+                            let outIdx = g.Positions.Count
+                            g.Positions.Add positions[idx]
+                            g.Normals.Add normals[idx]
+                            remap[idx] <- outIdx
 
-                if foundSpine then normalize spineSum else framesU[k]
+                        remap[idx]
 
-        for k = 0 to m - 1 do
-            let row = k * ringLen
-
-            for j = 0 to ringLen - 1 do
-                let idx = row + j
-
-                if not hasNormal[idx] then
-                    normals[idx] <- fallbackNormal k j
-
-        // Emit each span's triangles into `groupOf section_i.Color`, duplicating vertices
-        // at palette boundaries while sharing vertices within contiguous runs of one palette entry.
-        let remap = Array.create totalVerts -1
-        let lastRun = Array.create totalVerts 0
-        let mutable runId = 0
-        let mutable currentEntry = -1
-        let mutable currentGroup: GroupBuilder option = None
-
-        for k = 0 to m - 2 do
-            let tris = spanTriangles[k]
-
-            if tris.Count > 0 then
-                let col = sections[a + k].Color
-                let entry = Palette.entry col
-
-                if entry <> currentEntry || currentGroup.IsNone then
-                    currentEntry <- entry
-                    currentGroup <- Some(groupOf col)
-                    runId <- runId + 1
-
-                let g = currentGroup.Value
-
-                let emitVert (idx: int) =
-                    if lastRun[idx] <> runId then
-                        lastRun[idx] <- runId
-                        let outIdx = g.Positions.Count
-                        g.Positions.Add positions[idx]
-                        g.Normals.Add normals[idx]
-                        remap[idx] <- outIdx
-
-                    remap[idx]
-
-                for struct (ia, ib, ic) in tris do
-                    g.Triangles.Add(emitVert ia)
-                    g.Triangles.Add(emitVert ib)
-                    g.Triangles.Add(emitVert ic)
+                    for struct (ia, ib, ic) in tris do
+                        g.Triangles.Add(emitVert ia)
+                        g.Triangles.Add(emitVert ib)
+                        g.Triangles.Add(emitVert ic)
 
 /// Builds triangles for a `GeneralizedCylinder` into palette-grouped `GroupBuilder`s (§3.2).
 let internal addCylinder
