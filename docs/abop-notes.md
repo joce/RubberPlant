@@ -32,6 +32,13 @@ RubberPlant's 3D turtle geometry matches `cpfg` for all 12 Chapter 2 figures (to
 - **p. 68 (signal model, §3.1.2):** Printed derivation strings 9–10 do not follow from the printed productions (`p8` yields `I[L]I[L]I[L]I[L]A`). RubberPlant's tests keep the printed productions.
 - **Mycelis model III (L-system 3.3):** As printed, L-system 3.3 does not reproduce model II's development (`cpfg` agrees).
 
+### Chapters 4–6
+
+- **`.s` canonical alignment (Fig 5.1) & `PRECISION`:** RubberPlant reads both `S:` and `T:` in `PRECISION` (fixing `cpfg/patches.c`'s `s`-twice typo) and applies the exact transpose $B_s^T$ when transforming `.s` control points into canonical surface space (`v0.3-organs-animation.md` §4.2).
+- **Compound leaves (Figs 5.11b, 5.12a):** Verified segment-by-segment against `cpfg` (`87,380` segments within `1.95e-6` of height for `fig5-11b-compound-leaf`; `35,420` segments within `2.13e-6` of height for `fig5-12a-compound-leaf`).
+- **Rose leaf (Fig 5.8):** The printed L-system (p. 126) omits tropism and view parameters; `fig5-8-rose-leaf.rp` adds lateral tropism `(1, 0, 0)` with `elasticity = 0.03` (marked as a RubberPlant addition) to match the book's curved midrib (p. 127).
+- **Timed DOL-systems (Ch 6):** Verified `fig6-3-anabaena.rp` (ABOP eq. 6.2 & eq. 6.7–6.9) and `fig6-4-timed-branching.rp` (eqs. 6.10–6.15) derivations and continuous developmental sequences.
+
 ### Reporting Status
 
 - **Reported:** p. 68 (§3.1.2) was emailed to Prof. Prusinkiewicz.

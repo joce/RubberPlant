@@ -1,0 +1,14 @@
+(* ABOP Fig 5.11b: symmetric compound leaf (Table 5.2 row b, book pp. 128-129).
+   Corresponds closely to wild carrot leaves (p. 131).
+   `angle = 45`, `'(1)` green color, and `width = 3` are RubberPlant additions.
+*)
+settings { derivations = 16; angle = 45; width = 3; }
+
+let D = 1;    (* apical delay *)
+let R = 1.5;  (* internode elongation rate *)
+
+axiom: '(1) A(0);
+A(d) :
+    when d > 0  -> A(d - 1)
+    when d == 0 -> F(1) [ + A(D) ] [ - A(D) ] F(1) A(0);
+F(a) -> F(a * R);

@@ -1,5 +1,5 @@
-(* Provisional organ probe (BP.3 / 3A): Arched fern pinna.
-   Gracefully arching central axis with V-folded tapering leaflets. *)
+(* Pure-.rp Generalized Cylinder organ (v0.3): arched fern pinna.
+   Gracefully arching circular rachis with V-folded tapering leaflets. *)
 settings {
   derivations = 9;
   width_scale = 1;

@@ -1,0 +1,21 @@
+(* Pure-.rp Generalized Cylinder organ (v0.3): wavy / undulating petal.
+   Smoothly oscillates UCup depth and lateral yaw along 32 spine steps. *)
+settings {
+  derivations = 33;
+  width_scale = 1;
+}
+
+let segs = 32;
+let petal_len = 5.0;
+
+axiom: '(7) ContourCup(0) !(0.1) StartGC W(0);
+
+W(k) :
+  when k < segs ->
+    +(1.6 * cos(k * 45))
+    &(1.5)
+    ContourCup(0.35 + 0.32 * sin(k * 45))
+    !(0.1 + 1.3 * sin(180 * (k + 1) / segs))
+    F(petal_len / segs)
+    W(k + 1)
+  else -> !(0) F(0.2) EndGC;

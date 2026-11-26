@@ -1,0 +1,30 @@
+(* Pure-.rp Generalized Cylinder organ (v0.3): tuft of V-folded grass blades.
+   Uses ContourV with crisp midrib crease and arching gravity curves. *)
+settings {
+  derivations = 16;
+  width_scale = 1;
+}
+
+let segs = 14;
+
+axiom:
+  '(1)
+  [ +(10)  &(8)  Blade(6.0, 0.45, 6.2) ]
+  [ /(52)  &(14) Blade(5.4, 0.42, 6.8) ]
+  [ /(108) &(11) Blade(6.4, 0.46, 5.8) ]
+  [ /(164) &(16) Blade(4.8, 0.40, 7.2) ]
+  [ /(218) &(9)  Blade(5.8, 0.44, 6.4) ]
+  [ /(275) &(15) Blade(5.1, 0.41, 7.0) ]
+  [ /(328) &(12) Blade(5.6, 0.43, 6.5) ];
+
+Blade(len, base_w, bend) ->
+  ContourV(0.65) !(base_w) StartGC B(0, len, base_w, bend);
+
+B(k, len, base_w, bend) :
+  when k < segs ->
+    &(bend)
+    ContourV(0.65 * (1 - 0.5 * k / segs))
+    !(base_w * (1 - (k + 1) / segs))
+    F(len / segs)
+    B(k + 1, len, base_w, bend)
+  else -> EndGC;

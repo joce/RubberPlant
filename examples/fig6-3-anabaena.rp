@@ -1,0 +1,22 @@
+(* ABOP §6.1 / §6.2.1: timed DOL-system for vegetative Anabaena catenula filament
+   (book eq. 6.2 & eq. 6.7-6.9, pp. 136-142), with infinite-order continuous
+   exponential cell growth: g(a, tau) = A * exp(B * tau), B = ln((1 + sqrt(5)) / 2).
+   Stage: t = 5.5 (smoothly scrubbable from t = 0..7 in RubberPlant.Viewer).
+   Uses `-(90)` horizontal filament layout and alternating `'(1)` green / `'(3)` gold
+   cell colors (matching Fig 6.3b's polarity distinction).
+*)
+settings {
+  time = 5.5;
+  width = 0.6;
+  width_scale = 1;
+}
+
+let A = 0.4;
+let B = log((1 + sqrt(5)) / 2);
+
+axiom: -(90) ar(1);
+ar at 2 -> al(1) ar(0);
+al at 2 -> al(0) ar(1);
+
+ar(tau) as '(3) F(A * exp(B * tau));
+al(tau) as '(1) F(A * exp(B * tau));

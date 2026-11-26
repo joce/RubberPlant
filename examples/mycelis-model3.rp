@@ -10,13 +10,14 @@
    derives the same strings. The file keeps the printed model.
    This file renders the final stage, when every apex has turned into a flower and the
    structure no longer changes.
-   K is a predefined surface in the book (a flower; Ch 5, not supported yet): the `K as`
-   rule draws a stand-in. That rule is a RubberPlant addition.
+   Upgraded in v0.3: `K as` instantiates `surfaces/flower5.s` (RubberPlant addition).
 *)
 settings { derivations = 49; }
 
+include Flower = "surfaces/flower5.s";
 consider: M S T V;
-axiom: I(20) F A(0);
+
+axiom: '(1) I(20) F A(0);
 S < A(t) -> T V K;
 V < A(t) -> T V K;
 A(t) :
@@ -32,8 +33,5 @@ I(t) :
     when t > 0  -> I(t-1)
     when t == 0 -> S;
 
-(* Stand-in for the flower K (RubberPlant addition): a small yellow star. *)
-K as [ '(3) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
-              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
-              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) }
-              +(90) { . +(15) f(0.25) -(30) f(0.25) -(150) f(0.25) -(30) f(0.25) } ];
+(* Flower interpretation (RubberPlant addition): yellow 5-petal floret. *)
+K as [ '(3) ~Flower(0.55) ];

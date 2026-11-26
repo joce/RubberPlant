@@ -1,0 +1,26 @@
+(* Pure-.rp Generalized Cylinder organ (v0.3): six-petal tulip cup.
+   Tapered circular stem topped by two whorls of radially arranged cupped UCup petals. *)
+settings {
+  derivations = 10;
+  width_scale = 1;
+}
+
+let petal_segs = 8;
+
+axiom:
+  '(1) ContourSides(10) ContourCircle !(0.22) StartGC F(1.5) !(0.16) F(1.5) EndGC
+  [ Petal(52, 4.2) ] /(120) [ Petal(52, 4.2) ] /(120) [ Petal(52, 4.2) ]
+  /(60)
+  [ Petal(42, 4.8) ] /(120) [ Petal(42, 4.8) ] /(120) [ Petal(42, 4.8) ];
+
+Petal(tilt, pitch_step) ->
+  '(4) ContourCup(0.2) &(tilt) !(0.22) StartGC P(0, pitch_step);
+
+P(k, pitch_step) :
+  when k < petal_segs ->
+    ^(pitch_step)
+    ContourCup(0.2 + 0.55 * sin(180 * (k + 1) / petal_segs))
+    !(0.22 + 1.15 * sin(180 * (k + 1) / petal_segs))
+    F(0.38)
+    P(k + 1, pitch_step)
+  else -> !(0) F(0.25) EndGC;

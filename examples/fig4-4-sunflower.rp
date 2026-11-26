@@ -1,0 +1,28 @@
+(* ABOP Fig 4.4: domestic sunflower head (book p. 103).
+   Stage: 630 derivation steps (p. 104).
+   Uses original bicubic surface assets under `examples/surfaces/`:
+   - `S`: domed disk florets (`floret.s`)
+   - `R`: pointed involucre bracts (`bract.s`)
+   - `M`, `N`, `O`, `P`: radiating petals (`petal.s`)
+   Colors, surface scales, and progressive outward petal tilt are RubberPlant additions
+   matching the book's description (p. 104).
+*)
+settings { derivations = 630; }
+
+include S = "surfaces/floret.s";  (* seed / disk floret shape *)
+include R = "surfaces/bract.s";   (* ray floret / involucre bract shape *)
+include M = "surfaces/petal.s";   (* inner petal *)
+include N = "surfaces/petal.s";   (* mid-inner petal *)
+include O = "surfaces/petal.s";   (* mid-outer petal *)
+include P = "surfaces/petal.s";   (* outer petal *)
+
+axiom: A(0);
+A(n) -> +(137.5) [ f(n^0.5) C(n) ] A(n+1);
+
+C(n) :
+    when n <= 440            -> '(3) ~S(1.75)
+    when n > 440 && n <= 565 -> '(1) ^(42) ~R(2.2, 4.2, 2.2)
+    when n > 565 && n <= 580 -> '(7) ^(26) ~M(9.5, 11.5, 9.5)
+    when n > 580 && n <= 595 -> '(3) ^(18) ~N(10.5, 12.5, 10.5)
+    when n > 595 && n <= 610 -> '(3) ^(10) ~O(11.0, 13.0, 11.0)
+    else                     -> '(3) ^(4)  ~P(11.5, 13.5, 11.5);

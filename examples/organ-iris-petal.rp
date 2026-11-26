@@ -1,4 +1,4 @@
-(* Provisional organ probe (BP.3 / 3A): Twisted iris fall petal.
+(* Pure-.rp Generalized Cylinder organ (v0.3): twisted iris fall petal.
    Combines UCup depth morphing with incremental helical /(10) roll. *)
 settings {
   derivations = 13;

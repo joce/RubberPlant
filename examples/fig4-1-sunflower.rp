@@ -1,0 +1,12 @@
+(* ABOP Fig 4.1: pattern of florets in a sunflower head, according to Vogel's formula
+   (book p. 100): phi = n * 137.5 deg, r = c * sqrt(n).
+   Uses an original domed disk surface `surfaces/disk.s`.
+   Stage: n = 120 florets; `'(3)` gold-yellow color is a RubberPlant addition.
+*)
+settings { derivations = 120; }
+
+let a = 137.5;  (* divergence angle *)
+include D = "surfaces/disk.s";
+
+axiom: '(3) A(0);
+A(n) -> +(a) [ f(n^0.5) ~D ] A(n+1);

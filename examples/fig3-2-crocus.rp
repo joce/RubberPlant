@@ -1,21 +1,24 @@
 (* ABOP Fig 3.2: crocuses (book p. 69). The apex makes leaves for Ta steps, then a long
    internode and a flower; leaves and flowers grow for TL and TK steps, and internodes
    elongate. This file renders the plant once every organ has reached its final size.
-   ~L(t) and ~K(t) are predefined surfaces in the book (bicubic patches for a leaf and a
-   flower at age t; Ch 5, not supported yet): the `L as` and `K as` rules draw stand-ins.
-   Those rules are RubberPlant additions.
+   Upgraded in v0.3 to use original bicubic surfaces `surfaces/leaf.s` (`~L`) and
+   `surfaces/crocus.s` (`~K`), scaled by age via `L as` / `K as` (RubberPlant additions).
+   `'(1)` green, `'(6)` purple, and `width = 3` are RubberPlant additions.
 *)
-settings { derivations = 15; }
+settings { derivations = 15; width = 3; }
 
 let Ta = 7;   (* developmental switch time *)
 let TL = 9;   (* leaf growth limit *)
 let TK = 5;   (* flower growth limit *)
 
-axiom: a(1);
+include L = "surfaces/leaf.s";    (* leaf shape *)
+include K = "surfaces/crocus.s";  (* 6-tepal flower shape *)
+
+axiom: '(1) a(1);
 a(t) :
     when t < Ta  -> F(1) [ &(30) ~L(0) ] /(137.5) a(t+1)
     when t == Ta -> F(20) A;
-A -> ~K(0);
+A -> '(6) ~K(0);
 L(t) : when t < TL -> L(t+1);
 K(t) : when t < TK -> K(t+1);
 (* The book writes l < 2. In double precision, 1 plus five times 0.2 is 1.9999999999999998,
@@ -23,13 +26,6 @@ K(t) : when t < TK -> K(t+1);
    figures, stops them at 2; l < 1.99 does the same. *)
 F(l) : when l < 1.99 -> F(l+0.2);
 
-(* Stand-ins (RubberPlant additions). A leaf: a long, narrow green rhombus that grows. *)
-L(t) as [ '(1) { . +(3) f(1.4*(t+1)) -(6) f(1.4*(t+1)) -(174) f(1.4*(t+1)) -(6) f(1.4*(t+1)) } ];
-(* A flower: a purple goblet of six petals that grows. *)
-K(t) as [ '(6)
-          [ &(20) { . +(25) f(0.8*(t+1)) -(50) f(0.8*(t+1)) -(130) f(0.8*(t+1)) -(50) f(0.8*(t+1)) } ] /(60)
-          [ &(20) { . +(25) f(0.8*(t+1)) -(50) f(0.8*(t+1)) -(130) f(0.8*(t+1)) -(50) f(0.8*(t+1)) } ] /(60)
-          [ &(20) { . +(25) f(0.8*(t+1)) -(50) f(0.8*(t+1)) -(130) f(0.8*(t+1)) -(50) f(0.8*(t+1)) } ] /(60)
-          [ &(20) { . +(25) f(0.8*(t+1)) -(50) f(0.8*(t+1)) -(130) f(0.8*(t+1)) -(50) f(0.8*(t+1)) } ] /(60)
-          [ &(20) { . +(25) f(0.8*(t+1)) -(50) f(0.8*(t+1)) -(130) f(0.8*(t+1)) -(50) f(0.8*(t+1)) } ] /(60)
-          [ &(20) { . +(25) f(0.8*(t+1)) -(50) f(0.8*(t+1)) -(130) f(0.8*(t+1)) -(50) f(0.8*(t+1)) } ] ];
+(* Surface scaling by organ age (RubberPlant additions). *)
+L(t) as L(0.35 * (t + 1), 1.6 * (t + 1), t + 1);
+K(t) as K(1.5 * (t + 1));

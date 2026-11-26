@@ -1,0 +1,17 @@
+(* ABOP L-system 4.1: male spike of Carex laevigata (book p. 118, Fig 4.17 left).
+   Stage: 65 derivation steps, showing mature basal spikelets and younger conical apex.
+   Uses an original pointed bract surface `surfaces/bract.s`.
+   Stem `'(1)` green and spikelet `'(2)` brown colors plus `width = 4` are RubberPlant additions.
+*)
+settings { derivations = 65; width = 4; }
+
+let IRATE = 1.025;  (* internode growth rate *)
+let SRATE = 1.02;   (* spikelet growth rate *)
+include M = "surfaces/bract.s";
+
+axiom: '(1) A;
+A -> [ '(2) &(5) f(1) ~M(1) ] F(0.2) /(137.5) A;
+M(s) : when s < 3  -> M(s * SRATE);
+f(s) : when s < 3  -> f(s * SRATE);
+&(s) : when s < 15 -> &(s * SRATE);
+F(i) : when i < 1  -> F(i * IRATE);

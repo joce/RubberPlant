@@ -1,5 +1,5 @@
-(* Provisional organ probe (BP.3 / 3A): Elliptical petiole transitioning into a leaf blade.
-   Demonstrates ScaleContour(sL, sU) persistence across !(w) and mid-GC color switch. *)
+(* Pure-.rp Generalized Cylinder organ (v0.3): elliptical petiole transitioning
+   into a leaf blade. Demonstrates ScaleContour(sL, sU) persistence and mid-GC color switch. *)
 settings {
   derivations = 11;
   width_scale = 1;
