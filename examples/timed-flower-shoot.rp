@@ -1,0 +1,24 @@
+(* Continuous 3D timed flowering shoot (v0.3 showcase): combines `at` timed DOL-system
+   derivations, continuous internode elongation, smooth branching-angle opening, and
+   growing `.s` leaves (`leaf.s`) and 5-petal flowers (`flower5.s`).
+   Stage: t = 4.6 (scrubbable from t = 0..5.5 in RubberPlant.Viewer).
+*)
+settings {
+  time = 4.6;
+  width_scale = 0.08;
+}
+
+include Leaf = "surfaces/leaf.s";
+include Flower = "surfaces/flower5.s";
+
+let rate = 0.35;
+
+axiom: a(0);
+a at 1 -> s(0) [ /(137.5) l(0) ] /(137.5) [ b(0) ] a(0);
+b at 2.2 -> k(0);
+
+s(tau) as '(2) !(1.2 + 0.3 * min(tau, 3)) F(1.5 * (1 - exp(-rate * tau)) + 0.35);
+a(tau) as '(1) !(0.8) F(0.4 + 0.5 * tau);
+l(tau) as '(1) &(20 + 35 * min(tau / 2.5, 1)) ~Leaf(0.8 * min(tau / 2.5, 1) + 0.1);
+b(tau) as '(1) &(15 + 35 * (tau / 2.2)) F(0.2 + 0.9 * (tau / 2.2)) '(6) ~Flower(0.18 + 0.22 * (tau / 2.2));
+k(tau) as '(1) &(50) F(1.1 + 0.15 * min(tau, 2)) '(6) ~Flower(0.4 + 0.65 * min(tau / 1.5, 1));

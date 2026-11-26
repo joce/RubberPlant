@@ -1,5 +1,5 @@
-(* Provisional organ probe (BP.3 / 3A): Tapered branching woody stem with attached leaves.
-   Demonstrates automatic forked GC continuation for branches and explicit UCup leaves. *)
+(* Pure-.rp Generalized Cylinder organ (v0.3): tapered branching woody stem with
+   forked GC branch continuation and smooth multi-section UCup leaves. *)
 settings {
   derivations = 3;
   angle = 28;
@@ -19,8 +19,9 @@ S(w, len) ->
   !(w * 0.72) S(w * 0.72, len * 0.78);
 
 Leaf as
-  '(1) ContourCup(0.45) !(0.15) StartGC
-  &(10) !(0.55) F(0.45)
-  &(10) !(0.65) F(0.45)
-  &(10) !(0) F(0.4)
+  '(1) ContourCup(0.15) !(0.12) StartGC
+  &(8) ContourCup(0.35) !(0.42) F(0.35)
+  &(8) ContourCup(0.45) !(0.65) F(0.38)
+  &(8) ContourCup(0.35) !(0.52) F(0.35)
+  &(8) ContourCup(0.1) !(0) F(0.28)
   EndGC;

@@ -1,0 +1,28 @@
+(* ABOP Fig 6.4: developmental sequence of a branching structure modeled using a
+   timed DOL-system with first-order continuous growth (book eqs. 6.10-6.15, pp. 142-144).
+   Parameters from p. 143: beta = 1, Aa = 1, Ba = 0.48, branching angle = 45 deg.
+   Stage: t = 7.7 (the fifth frame in Fig 6.4, t = 6.9..7.7; use `rubberplant-viewer sequence`
+   with `--from 6.9 --to 7.7 --step 0.2` to reproduce the full sequence).
+   `'(1)` green / `'(2)` brown colors and `width = 2` are RubberPlant additions.
+*)
+settings {
+  time = 7.7;
+  angle = 45;
+  width = 2;
+}
+
+let beta = 1;
+let Aa = 1;
+let Ba = 0.48;
+let As = Aa * (exp(Ba) - 1);
+let Bs = Ba;
+let Ab = Aa / (beta^3) * (beta * Ba - 2);
+let Bb = Aa / (beta^2) * (3 - beta * Ba);
+
+axiom: a(0);
+a at 1    -> s(0) [ + b(0) ] [ - b(0) ] a(0);
+b at beta -> a(0);
+
+a(tau) as '(1) F(Aa * exp(Ba * tau));
+s(tau) as '(2) F(As * exp(Bs * tau));
+b(tau) as '(1) F(Ab * tau^3 + Bb * tau^2);

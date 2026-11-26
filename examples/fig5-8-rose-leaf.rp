@@ -1,0 +1,29 @@
+(* ABOP Fig 5.8: developmental model of a rose leaf with serrated margin (book p. 126).
+   Uses nested polygon braces `{ ... }` and lateral tropism (`tropism = (1, 0, 0)`).
+   `'(1)` green color and tropism values (matching p. 127 description) are RubberPlant additions.
+*)
+settings {
+  derivations = 25;
+  angle = 60;
+  tropism = (1, 0, 0);
+  elasticity = 0.03;
+}
+
+let LA = 5;     (* initial length - main segment *)
+let RA = 1.15;  (* growth rate - main segment *)
+let LB = 1.3;   (* initial length - lateral segment *)
+let RB = 1.25;  (* growth rate - lateral segment *)
+let LC = 3;     (* initial length - marginal notch *)
+let RC = 1.19;  (* growth rate - marginal notch *)
+
+axiom: '(1) [ { A(0, 0) . } ] [ { A(0, 1) . } ];
+A(t, d) :
+    when d == 0 -> . G(LA, RA) . [ + B(t) G(LC, RC, t) . } ] [ + B(t) { . ] A(t+1, d)
+    when d == 1 -> . G(LA, RA) . [ - B(t) G(LC, RC, t) . } ] [ - B(t) { . ] A(t+1, d);
+B(t) : when t > 0 -> G(LB, RB) B(t - 1);
+G(s, r) -> G(s * r, r);
+G(s, r, t) : when t > 1 -> G(s * r, r, t - 1);
+
+(* Strip extra growth-rate parameters before turtle interpretation (RubberPlant addition). *)
+G(s, r) as G(s);
+G(s, r, t) as G(s);

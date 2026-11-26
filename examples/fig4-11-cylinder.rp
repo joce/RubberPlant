@@ -1,0 +1,14 @@
+(* ABOP Fig 4.11: parastichies on the surface of a cylinder (book p. 111).
+   Stage: 65 components along the generative helix with (5, 8) parastichies.
+   Uses an original 8-patch unit-diameter sphere `surfaces/sphere.s`.
+   `~D(355)` scale (matching Table 4.1 d/r ≈ 0.71) and `'(7)` color are RubberPlant additions.
+*)
+settings { derivations = 65; }
+
+let a = 137.5281;  (* divergence angle *)
+let h = 35.3;      (* vertical displacement *)
+let r = 500;       (* component offset from main axis *)
+include D = "surfaces/sphere.s";
+
+axiom: '(7) A;
+A -> [ &(90) f(r) ~D(355) ] f(h) /(a) A;
