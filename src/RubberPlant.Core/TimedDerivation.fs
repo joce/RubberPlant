@@ -148,10 +148,16 @@ let deriveWithTrace (limits: Limits) (model: Model) : Result<LString * Derivatio
                                     * 2.220446049250313e-16
                                     * max (abs t) (max (abs rule.TerminalAge) (abs tau))
 
-                                if tau + remT > rule.TerminalAge + tol then
+                                let dt = rule.TerminalAge - tau
+
+                                let shouldDivide =
+                                    if remT <= 0.0 then false
+                                    elif dt <= 0.0 then remT > tol
+                                    else remT - dt > tol
+
+                                if shouldDivide then
                                     // Axiom A3: D((a, tau), t) = D(succ, t - (beta - tau))
                                     recordDivision ruleIdx
-                                    let dt = rule.TerminalAge - tau
                                     let y = dt - comp
                                     let elapsedNext = elapsed + y
                                     let compNext = (elapsedNext - elapsed) - y
@@ -165,7 +171,15 @@ let deriveWithTrace (limits: Limits) (model: Model) : Result<LString * Derivatio
                                     descended <- true
                                 else
                                     // Axiom A2: D((a, tau), t) = (a, tau + t)
-                                    emitAged (min rule.TerminalAge (normZero (tau + remT)))
+                                    let rawAge = tau + remT
+
+                                    let newAge =
+                                        if Double.IsFinite rawAge then
+                                            min rule.TerminalAge (normZero rawAge)
+                                        else
+                                            rule.TerminalAge
+
+                                    emitAged newAge
                             | false, _ ->
                                 // Axiom A2: D((a, tau), t) = (a, tau + t)
                                 emitAged (normZero (tau + remT))

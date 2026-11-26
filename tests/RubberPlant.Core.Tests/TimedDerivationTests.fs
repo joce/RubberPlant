@@ -310,6 +310,25 @@ let budgetsAndSafety =
               match TimedDerivation.derive { m with Settings = { m.Settings with Time = Some 1e308 } } with
               | Error [ d ] -> Expect.equal d.Code Codes.InvalidGeometry "age overflow -> RP0205"
               | r -> failtestf "expected RP0205, got %A" r
+          }
+
+          test "terminal ages near Double.MaxValue still fire A3 when time exceeds boundary" {
+              let m, _ =
+                  compileOk
+                      "settings { time = 1.7976931348623157e308; }\naxiom: a(1.7976931348623157e308);\na at 1.7976931348623157e308 -> empty;\n"
+
+              let s, trace = Expect.wantOk (TimedDerivation.deriveWithTrace Limits.defaults m) "Double.MaxValue A3"
+              Expect.equal (LString.format s) "empty" "A3 fires and erases a"
+              Expect.equal trace.TotalRuleFirings 1 "1 division"
+
+              // Boundary overflow in A2 when remT is within tol of Double.MaxValue stays finite
+              let mTol, _ =
+                  compileOk
+                      "settings { time = 1e293; }\naxiom: a(1.7976931348623157e308);\na at 1.7976931348623157e308 -> empty;\n"
+
+              let sTol, traceTol = Expect.wantOk (TimedDerivation.deriveWithTrace Limits.defaults mTol) "Double.MaxValue A2 clamp"
+              Expect.equal traceTol.TotalRuleFirings 0 "within tolerance does not divide"
+              Expect.equal (LString.format sTol) "a(1.7976931348623157E+308)" "age clamps cleanly to Double.MaxValue"
           } ]
 
 [<Tests>]
