@@ -36,8 +36,9 @@ Read the relevant docs before proposing or making changes:
 - **Commit and PR prefixes:** `feat:`, `change:`, `fix:`, `internal:`.
 - **Line endings:** LF everywhere (`.editorconfig`, `.gitattributes`), including on Windows.
 - **One PR per plan step**, each with tests (and updated goldens when output intentionally changes).
-- **Independent review.** Before merging a PR, run an independent review pass (e.g., a fresh reviewer subagent or separate review session) covering spec alignment, edge cases, tests, and repository invariants.
+- **Independent review.** Before merging a PR, run an independent review pass (e.g., a fresh reviewer subagent or separate review session) covering spec alignment, adversarial numeric/complexity edge cases (non-dyadic float drift, `Double.MaxValue`/`Int32.MaxValue` overflow, quadratic degenerate inputs, unbounded allocations), tests, and repository invariants.
 - **CI parity.** All tests, golden checks, the Windows Native AOT golden check, and the Khronos glTF Validator must pass on both Ubuntu and Windows, and the branch must be up to date with `master`.
+- **GitHub PR review & comment triage.** After CI finishes and before merging any PR, inspect all GitHub reviews, top-level comments (`gh pr view <n> --json reviews,comments`), and inline diff comments (`gh api repos/:owner/:repo/pulls/<n>/comments`). Critically triage every comment (including bot/review-agent comments): fix real issues, push, and re-verify CI, and briefly note why any suggestion is declined before merging.
 - **Ask before merging.** Squash-merge only (the squash commit takes the PR title and body). After merging, update `master` with `git pull --ff-only`.
 
 ## Workspace Skills
