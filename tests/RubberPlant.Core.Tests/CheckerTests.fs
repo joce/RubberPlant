@@ -289,14 +289,14 @@ let tests =
               let m0, _ = compileOk "axiom: A;"
               Expect.isNone m0.Settings.Time "default time is None"
 
-              let mZero, _ = compileOk "axiom: A;\nsettings { time = 0; }"
+              let mZero, _ = compileOk "axiom: A(0);\nsettings { time = 0; }"
               Expect.equal mZero.Settings.Time (Some 0.0) "time = 0 allowed"
 
-              let mPos, _ = compileOk "axiom: A;\nsettings { time = 2.5; }"
+              let mPos, _ = compileOk "axiom: A(0);\nsettings { time = 2.5; }"
               Expect.equal mPos.Settings.Time (Some 2.5) "time = 2.5"
 
-              expectError Codes.InvalidSetting 2 "axiom: A;\nsettings { time = -1; }"
-              expectError Codes.InvalidSetting 2 "axiom: A;\nsettings { time = exp(1000); }"
+              expectError Codes.InvalidSetting 2 "axiom: A(0);\nsettings { time = -1; }"
+              expectError Codes.InvalidSetting 2 "axiom: A(0);\nsettings { time = exp(1000); }"
           }
 
           test "width_scale setting defaults to None and must be finite and greater than 0" {
@@ -349,4 +349,72 @@ let tests =
           test "rule order: context rules first" {
               let m, _ = compileOk "axiom: A;\nA -> B;\nC < A -> D;"
               Expect.equal (m.Productions |> List.map _.HasContext) [ false; true ] "source order kept in the model"
+          }
+
+          test "v0.3: timed model compiles, sets default time = 0, keeps as rules" {
+              let m, _ = compileOk "axiom: a(0) [ +(45) s(0) ];\na at 1 -> a(0) s(0);\na(t) as F(t);\ns(t) as F(1 - exp(-t));"
+              Expect.isTrue (Model.isTimed m) "isTimed"
+              Expect.equal m.Settings.Time (Some 0.0) "default timed Time = Some 0.0"
+              Expect.equal m.TimedProductions.Length 1 "one timed production"
+              Expect.equal m.TimedProductions[0].Name "a" "predecessor"
+              Expect.equal m.TimedProductions[0].TerminalAge 1.0 "terminal age"
+              Expect.equal m.Interpretations.Length 2 "as rules preserved"
+          }
+
+          test "v0.3: mixed timed and discrete constructs -> RP0120" {
+              expectError Codes.MixedTimedAndDiscrete 1 "settings { time = 1; derivations = 2; }\naxiom: a(0);"
+              expectError Codes.MixedTimedAndDiscrete 1 "settings { derivations = 2; time = 1; }\naxiom: a(0);"
+              expectError Codes.MixedTimedAndDiscrete 3 "settings { time = 1; }\naxiom: a(0);\na -> b;"
+              expectError Codes.MixedTimedAndDiscrete 3 "settings { derivations = 1; }\naxiom: a(0);\na at 1 -> a(0);"
+              expectError Codes.MixedTimedAndDiscrete 3 "axiom: a(0);\na -> b;\nc at 1 -> c(0);"
+              expectError Codes.MixedTimedAndDiscrete 3 "axiom: a(0);\na at 1 -> a(0);\nb -> c;"
+          }
+
+          test "v0.3: duplicate at rule -> RP0121" {
+              expectError Codes.DuplicateTimedRule 3 "axiom: a(0);\na at 1 -> a(0);\na at 2 -> a(0);"
+          }
+
+          test "v0.3: invalid timed terminal age and module ages -> RP0122" {
+              expectError Codes.InvalidTimedAge 2 "axiom: a(0);\na at 0 -> a(0);"
+              expectError Codes.InvalidTimedAge 2 "axiom: a(0);\na at -1 -> a(0);"
+              expectError Codes.InvalidTimedAge 2 "axiom: a(0);\na at exp(1000) -> a(0);"
+              expectError Codes.InvalidTimedAge 1 "axiom: a(-0.1);\na at 1 -> a(0);"
+              expectError Codes.InvalidTimedAge 1 "axiom: a(1.1);\na at 1 -> a(0);"
+              // tau = beta is allowed in axiom:
+              compileOk "axiom: a(1);\na at 1 -> a(0);" |> ignore
+              // C2: 0 <= alpha < beta in at successors (alpha = beta is rejected)
+              expectError Codes.InvalidTimedAge 2 "axiom: a(0);\na at 1 -> a(1);"
+              expectError Codes.InvalidTimedAge 2 "axiom: a(0);\na at 1 -> a(-0.1);"
+              expectError Codes.InvalidTimedAge 2 "axiom: a(0);\na at 1 -> a(0) b(0.5);\nb at 0.5 -> b(0);"
+              // Non-dividing modules require finite >= 0
+              compileOk "settings { time = 1; }\naxiom: s(100);" |> ignore
+              expectError Codes.InvalidTimedAge 2 "settings { time = 1; }\naxiom: s(-0.1);"
+              expectError Codes.InvalidTimedAge 2 "settings { time = 1; }\naxiom: s(exp(1000));"
+              expectError Codes.InvalidTimedAge 2 "axiom: a(0);\na at 1 -> s(-1);"
+          }
+
+          test "v0.3: invalid timed modules, turtle rules, and cut -> RP0123" {
+              // Turtle modules cannot be at predecessors
+              for t in [ "F"; "f"; "G"; "+"; "-"; "!"; "'" ] do
+                  expectError Codes.InvalidTimedModule 2 $"axiom: a(0);\n%s{t} at 1 -> a(0);"
+
+              // Cut % not allowed in timed axiom or at successor
+              expectError Codes.InvalidTimedModule 2 "settings { time = 1; }\naxiom: [ % a(0) ];"
+              expectError Codes.InvalidTimedModule 2 "axiom: a(0);\na at 1 -> [ % a(0) ];"
+
+              // Non-turtle modules in timed axiom and at successors must have arity 1
+              expectError Codes.InvalidTimedModule 2 "settings { time = 1; }\naxiom: a;"
+              expectError Codes.InvalidTimedModule 2 "settings { time = 1; }\naxiom: a(0, 1);"
+              expectError Codes.InvalidTimedModule 2 "axiom: a(0);\na at 1 -> b;"
+              expectError Codes.InvalidTimedModule 2 "axiom: a(0);\na at 1 -> b(0, 1);"
+
+              // Turtle symbols pass through without arity-1 restriction, and `as` rules remain normal
+              compileOk "axiom: +(30) F a(0) !;\na at 1 -> [ -(45) F(2) a(0) ];\na(t) as K(t, 2);\nK(t, s) as F(t * s);"
+              |> ignore
+          }
+
+          test "v0.3: timed rules participate in namespace and prelude-order checks" {
+              expectError Codes.NamespaceClash 1 "let a = 1;\naxiom: b(0);\na at 1 -> b(0);"
+              expectError Codes.NamespaceClash 1 "let b = 1;\naxiom: a(0);\na at 1 -> b(0);"
+              expectError Codes.DeclarationAfterRules 2 "a at 1 -> a(0);\naxiom: a(0);"
           } ]

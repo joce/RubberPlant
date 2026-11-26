@@ -530,6 +530,69 @@ let batchTests =
                   Expect.equal err.Length 2 "two budget diagnostics"
                   Expect.stringContains err[0] "RP0206" "module limit"
                   Expect.stringContains err[1] "RP0207" "primitive limit")
+          }
+
+          test "timed DOL-systems: --time, derive, stats, render, check, and conflict errors" {
+              withTempDir (fun dir ->
+                  let discrete = Path.Combine(dir, "koch.rp")
+                  let timed = Path.Combine(dir, "timed.rp")
+
+                  File.WriteAllText(
+                      timed,
+                      "let k = 2;\naxiom: a(0);\na at 1 -> s(0) a(0);\ns(t) as F(k * t);\n"
+                  )
+
+                  // Mutually exclusive flags -> exit 2
+                  Expect.equal (run [ "derive"; timed; "-n"; "1"; "--time"; "1" ]) 2 "-n and --time together"
+                  Expect.equal (run [ "render"; timed; "-n"; "1"; "--time"; "1" ]) 2 "-n and --time on render"
+
+                  // Invalid --time values -> exit 2
+                  for bad in [ "-1"; "-0.001"; "NaN"; "Infinity"; "abc" ] do
+                      Expect.equal (run [ "derive"; timed; "--time"; bad ]) 2 $"--time %s{bad}"
+
+                  // Model vs flag mismatch -> exit 1
+                  let _, _, errDisc = captured (fun () -> run [ "derive"; discrete; "--time"; "1" ])
+                  Expect.equal (run [ "derive"; discrete; "--time"; "1" ]) 1 "--time on discrete model"
+                  Expect.stringContains errDisc[0] "--time" "mentions --time"
+                  Expect.equal (run [ "check"; discrete; "--time"; "0" ]) 1 "check --time on discrete"
+
+                  let _, _, errTimed = captured (fun () -> run [ "derive"; timed; "-n"; "1" ])
+                  Expect.equal (run [ "derive"; timed; "-n"; "1" ]) 1 "-n on timed model"
+                  Expect.stringContains errTimed[0] "--derivations" "mentions --derivations"
+                  Expect.equal (run [ "check"; timed; "-n"; "0" ]) 1 "check -n on timed"
+
+                  // check with --time on timed model succeeds
+                  Expect.equal (run [ "check"; timed; "--time"; "2.5" ]) 0 "check timed with --time"
+
+                  // derive default t = 0 and --time 2.5 (with and without --drawing)
+                  let c0, out0, err0 = captured (fun () -> run [ "derive"; timed ])
+                  Expect.equal c0 0 "derive default time"
+                  Expect.equal err0 [||] "no stderr"
+                  Expect.equal out0 [| "a(0)" |] "t = 0"
+
+                  let c1, out1, _ = captured (fun () -> run [ "derive"; timed; "--time"; "2.5" ])
+                  Expect.equal c1 0 "derive --time 2.5"
+                  Expect.equal out1 [| "s(1.5)s(0.5)a(0.5)" |] "derived at 2.5"
+
+                  let c2, out2, _ = captured (fun () -> run [ "derive"; timed; "--time"; "2.5"; "--drawing" ])
+                  Expect.equal c2 0 "derive --time 2.5 --drawing"
+                  Expect.equal out2 [| "F(3)F(1)a(0.5)" |] "drawing at 2.5"
+
+                  // stats with --time
+                  let cs, rawStats, errStats = capturedRaw (fun () -> run [ "stats"; timed; "--time"; "2.5" ])
+                  Expect.equal cs 0 "stats exit 0"
+                  Expect.equal errStats "" "stats no stderr"
+                  use doc = JsonDocument.Parse rawStats
+                  let jd = doc.RootElement.GetProperty "derivation"
+                  Expect.equal (jd.GetProperty("steps").GetInt32()) 0 "steps = 0"
+                  Expect.floatClose Accuracy.veryHigh (jd.GetProperty("time").GetDouble()) 2.5 "time = 2.5"
+                  Expect.equal (jd.GetProperty("total_rule_firings").GetInt32()) 2 "2 divisions"
+                  Expect.floatClose Accuracy.high (doc.RootElement.GetProperty("geometry").GetProperty("total_segment_length").GetDouble()) 4.0 "total length 3 + 1 = 4"
+
+                  // render SVG with --time
+                  let svg = Path.Combine(dir, "timed.svg")
+                  Expect.equal (run [ "render"; timed; "--time"; "2.5"; "-o"; svg ]) 0 "render timed svg"
+                  Expect.stringContains (File.ReadAllText svg) "<svg" "wrote svg")
           } ]
 
 // Native AOT: F# printf-style formatting of a value type (`%d`, `%g`, `%c`, `%x`, …) builds its

@@ -483,7 +483,7 @@ let lexical =
 /// Every reserved word (§2.6, A.1), none of which can be used as a name.
 let reservedWords =
     [ "settings"; "let"; "ignore"; "consider"; "axiom"; "include"; "module" ] // declaration keywords
-    @ [ "as"; "when"; "else"; "weight" ] // rule keywords
+    @ [ "as"; "when"; "else"; "weight"; "at" ] // rule keywords
     @ [ "empty" ] // the empty string
     @ (SettingKey.all |> List.map SettingKey.name)
 
@@ -793,6 +793,46 @@ let v02 =
                     expectParseError Codes.ReservedName (1, 8) "axiom: elasticity;"
                 } ] ]
 
+let v03 =
+    testList
+        "v0.3 language"
+        [ testList
+              "timed productions"
+              [ test "parses TimedRuleItem" {
+                    let f = parseOk "let B = 2;\nsettings { time = 1.5; }\naxiom: a(0);\na at B -> a(0) [ +(30) b(0) ];\nb at 1 → empty;"
+
+                    let timed =
+                        f
+                        |> List.choose (function
+                            | TimedRuleItem r -> Some r
+                            | _ -> None)
+
+                    Expect.equal timed.Length 2 "two timed rules"
+                    Expect.equal timed[0].Name "a" "rule 0 name"
+                    Expect.equal timed[0].NamePos { Line = 4; Column = 1 } "rule 0 namePos"
+                    Expect.equal (showExpr timed[0].TerminalAge) "B" "rule 0 age"
+                    Expect.equal (showActual timed[0].Successor) "a(0) [+(30) b(0)]" "rule 0 succ"
+                    Expect.equal timed[1].Name "b" "rule 1 name"
+                    Expect.isEmpty timed[1].Successor "rule 1 empty"
+                }
+                test "missing ; between timed rules" {
+                    expectParseError Codes.MissingSemicolon (2, 3) "a at 1 -> a(0)\nb at 2 -> b(0);"
+                }
+                test "malformed at rules emit RP0024" {
+                    expectParseError Codes.InvalidTimedRule (1, 7) "b < a at 1 -> a(0);"
+                    expectParseError Codes.InvalidTimedRule (1, 7) "a > b at 1 -> a(0);"
+                    expectParseError Codes.InvalidTimedRule (1, 11) "b < a > c at 1 -> a(0);"
+                    expectParseError Codes.InvalidTimedRule (1, 6) "a(x) at 1 -> a(0);"
+                    expectParseError Codes.InvalidTimedRule (1, 6) "a(0) at 1 -> a(0);"
+                    expectParseError Codes.InvalidTimedRule (1, 6) "a(_) at 1 -> a(0);"
+                    expectParseError Codes.InvalidTimedRule (1, 8) "a at 1 as F(1);"
+                    expectParseError Codes.InvalidTimedRule (1, 8) "a at 1 : when x -> b;"
+                    expectParseError Codes.InvalidTimedRule (1, 8) "a at 1 when x -> b;"
+                    expectParseError Codes.InvalidTimedRule (1, 8) "a at 1 weight 1 -> b;"
+                    expectParseError Codes.InvalidTimedRule (1, 5) "a : at 1 -> b;"
+                    expectParseError Codes.InvalidTimedRule (1, 12) "a : when x at 1 -> b;"
+                } ] ]
+
 [<Tests>]
 let tests =
-    testList "Parser" [ specExampleTests; tokenization; expressions; structure; prelude; lexical; errors; v02 ]
+    testList "Parser" [ specExampleTests; tokenization; expressions; structure; prelude; lexical; errors; v02; v03 ]

@@ -34,6 +34,7 @@ Commands:
 
 Options (override the file's settings):
   -n, --derivations <n>   number of derivation steps
+      --time <t>          evaluation time for timed models
       --angle <degrees>   default turn angle
       --step <d>          default step length
       --width <w>         initial line width
@@ -103,6 +104,7 @@ type Args =
       Drawing: bool
       Pretty: bool
       Derivations: int option
+      Time: float option
       Angle: float option
       Step: float option
       Width: float option
@@ -152,6 +154,7 @@ let private parseArgs (argv: string list) : Args =
           Drawing = false
           Pretty = false
           Derivations = None
+          Time = None
           Angle = None
           Step = None
           Width = None
@@ -196,6 +199,13 @@ let private parseArgs (argv: string list) : Args =
             match Int32.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture) with
             | true, n -> go rest { acc with Derivations = Some n }
             | _ -> raise (UsageError $"--derivations expects a non-negative integer, got '%s{v}'")
+        | "--time" :: v :: rest ->
+            let t = parseFloat "--time" v
+
+            if t < 0.0 then
+                raise (UsageError "--time must be non-negative")
+
+            go rest { acc with Time = Some t }
         | "--angle" :: v :: rest -> go rest { acc with Angle = Some(parseFloat "--angle" v) }
         | "--step" :: v :: rest -> go rest { acc with Step = Some(parseFloat "--step" v) }
         | "--width" :: v :: rest ->
@@ -273,6 +283,9 @@ let private parseArgs (argv: string list) : Args =
     if args.MaxPrimitives.IsSome && args.Command <> Render && args.Command <> Stats then
         raise (UsageError "--max-primitives only applies to render and stats")
 
+    if args.Derivations.IsSome && args.Time.IsSome then
+        raise (UsageError "--derivations and --time cannot be used together")
+
     args
 
 /// The output format: from the extension of -o, or --format, or SVG (§8).
@@ -307,6 +320,10 @@ let private outputFormat (args: Args) : Format =
 let private applyOverrides (args: Args) (s: Settings) : Settings =
     { s with
         Derivations = defaultArg args.Derivations s.Derivations
+        Time =
+            match args.Time with
+            | Some t -> Some t
+            | None -> s.Time
         Angle = defaultArg args.Angle s.Angle
         Step = defaultArg args.Step s.Step
         Width = defaultArg args.Width s.Width
@@ -353,99 +370,114 @@ let private run (args: Args) : int =
             report args.Input diags
             1
         | Ok(model, warnings) ->
-            report args.Input warnings
+            let timed = Model.isTimed model
 
-            let model =
-                { model with
-                    Settings = applyOverrides args model.Settings }
+            if args.Time.IsSome && not timed then
+                eprintfn "%s: error: --time cannot be used with a discrete model" args.Input
+                1
+            elif args.Derivations.IsSome && timed then
+                eprintfn "%s: error: --derivations (-n) cannot be used with a timed model" args.Input
+                1
+            else
+                report args.Input warnings
 
-            let limits =
-                { MaxModules = defaultArg args.MaxModules Limits.defaults.MaxModules
-                  MaxPrimitives = defaultArg args.MaxPrimitives Limits.defaults.MaxPrimitives }
+                let model =
+                    { model with
+                        Settings = applyOverrides args model.Settings }
 
-            match args.Command with
-            | Check -> 0
-            | Derive ->
-                let result =
-                    Derivation.deriveWith limits model
-                    |> Result.bind (fun derived ->
-                        if args.Drawing then
-                            Derivation.interpretWith limits model derived
+                let limits =
+                    { MaxModules = defaultArg args.MaxModules Limits.defaults.MaxModules
+                      MaxPrimitives = defaultArg args.MaxPrimitives Limits.defaults.MaxPrimitives }
+
+                match args.Command with
+                | Check -> 0
+                | Derive ->
+                    let derivedResult =
+                        if timed then
+                            TimedDerivation.deriveWith limits model
                         else
-                            Ok derived)
+                            Derivation.deriveWith limits model
 
-                match result with
-                | Error diags ->
-                    report args.Input diags
-                    1
-                | Ok s ->
-                    printfn "%s" (LString.format s)
-                    0
-            | Stats ->
-                match Pipeline.runWith limits model with
-                | Error diags ->
-                    report args.Input diags
-                    1
-                | Ok output ->
-                    report args.Input output.Warnings
+                    let result =
+                        derivedResult
+                        |> Result.bind (fun derived ->
+                            if args.Drawing then
+                                Derivation.interpretWith limits model derived
+                            else
+                                Ok derived)
 
-                    match
-                        Stats.analyze
-                            output.Derived
-                            output.Drawing
-                            output.DerivationTrace
-                            output.Geometry
-                            output.TurtleTrace
-                    with
+                    match result with
                     | Error diags ->
                         report args.Input diags
                         1
-                    | Ok stats ->
-                        Console.Out.Write(Stats.toJson args.Pretty stats)
+                    | Ok s ->
+                        printfn "%s" (LString.format s)
                         0
-            | Render ->
-                match Pipeline.runWith limits model with
-                | Error diags ->
-                    report args.Input diags
-                    1
-                | Ok output ->
-                    report args.Input output.Warnings
-
-                    let format = outputFormat args
-
-                    let outPath =
-                        defaultArg args.Output (Path.ChangeExtension(args.Input, "." + formatName format))
-
-                    let meshOptions =
-                        { Mesh.defaultMeshOptions with
-                            Sides = defaultArg args.Sides Mesh.defaultMeshOptions.Sides
-                            WidthScale = defaultArg args.WidthScale Mesh.defaultMeshOptions.WidthScale }
-
-                    let files =
-                        match format with
-                        | SvgFormat ->
-                            let options =
-                                { Svg.defaultOptions with
-                                    Size = defaultArg args.Size Svg.defaultOptions.Size }
-
-                            Svg.render options output.Geometry |> Result.map (fun svg -> [ outPath, utf8 svg ])
-                        | ObjFormat ->
-                            let mtlPath = Path.ChangeExtension(outPath, ".mtl")
-
-                            Obj.render meshOptions (Path.GetFileName mtlPath) output.Geometry
-                            |> Result.map (fun o -> [ outPath, utf8 o.Obj; mtlPath, utf8 o.Mtl ])
-                        | GltfFormat ->
-                            Gltf.renderText meshOptions output.Geometry
-                            |> Result.map (fun text -> [ outPath, utf8 text ])
-                        | GlbFormat ->
-                            Gltf.renderBinary meshOptions output.Geometry
-                            |> Result.map (fun bytes -> [ outPath, bytes ])
-
-                    match files with
-                    | Error msg ->
-                        eprintfn "%s: error: %s" args.Input msg
+                | Stats ->
+                    match Pipeline.runWith limits model with
+                    | Error diags ->
+                        report args.Input diags
                         1
-                    | Ok files -> if writeAll files then 0 else 1
+                    | Ok output ->
+                        report args.Input output.Warnings
+
+                        match
+                            Stats.analyze
+                                output.Derived
+                                output.Drawing
+                                output.DerivationTrace
+                                output.Geometry
+                                output.TurtleTrace
+                        with
+                        | Error diags ->
+                            report args.Input diags
+                            1
+                        | Ok stats ->
+                            Console.Out.Write(Stats.toJson args.Pretty stats)
+                            0
+                | Render ->
+                    match Pipeline.runWith limits model with
+                    | Error diags ->
+                        report args.Input diags
+                        1
+                    | Ok output ->
+                        report args.Input output.Warnings
+
+                        let format = outputFormat args
+
+                        let outPath =
+                            defaultArg args.Output (Path.ChangeExtension(args.Input, "." + formatName format))
+
+                        let meshOptions =
+                            { Mesh.defaultMeshOptions with
+                                Sides = defaultArg args.Sides Mesh.defaultMeshOptions.Sides
+                                WidthScale = defaultArg args.WidthScale Mesh.defaultMeshOptions.WidthScale }
+
+                        let files =
+                            match format with
+                            | SvgFormat ->
+                                let options =
+                                    { Svg.defaultOptions with
+                                        Size = defaultArg args.Size Svg.defaultOptions.Size }
+
+                                Svg.render options output.Geometry |> Result.map (fun svg -> [ outPath, utf8 svg ])
+                            | ObjFormat ->
+                                let mtlPath = Path.ChangeExtension(outPath, ".mtl")
+
+                                Obj.render meshOptions (Path.GetFileName mtlPath) output.Geometry
+                                |> Result.map (fun o -> [ outPath, utf8 o.Obj; mtlPath, utf8 o.Mtl ])
+                            | GltfFormat ->
+                                Gltf.renderText meshOptions output.Geometry
+                                |> Result.map (fun text -> [ outPath, utf8 text ])
+                            | GlbFormat ->
+                                Gltf.renderBinary meshOptions output.Geometry
+                                |> Result.map (fun bytes -> [ outPath, bytes ])
+
+                        match files with
+                        | Error msg ->
+                            eprintfn "%s: error: %s" args.Input msg
+                            1
+                        | Ok files -> if writeAll files then 0 else 1
 
 /// Runs one command and returns its exit code. A usage error prints the message, and the
 /// usage text too when `withUsage`.

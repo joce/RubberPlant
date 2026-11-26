@@ -11,6 +11,7 @@
     <Compile Include="ParserTests.fs" />
     <Compile Include="CheckerTests.fs" />
     <Compile Include="DerivationTests.fs" />
+    <Compile Include="TimedDerivationTests.fs" />
     <Compile Include="TurtleTests.fs" />
     <Compile Include="StatsTests.fs" />
     <Compile Include="TrigTests.fs" />
