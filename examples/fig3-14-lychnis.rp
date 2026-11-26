@@ -6,7 +6,7 @@
    Upgraded in v0.3 to use original bicubic surfaces (`surfaces/leaf.s`, `surfaces/bud.s`,
    `surfaces/flower5.s`). In `p1`, `~` before `K(0)` is moved into the `K(t) as` RubberPlant
    interpretation rules so the bud, open-flower, and fruit stages can switch surface and color.
-   `'(1)` green, `L as`, `K as`, and `width = 2` are RubberPlant additions.
+   `'(1)` green, `L as`, `K as`, and `width = 3` are RubberPlant additions.
 *)
 settings { derivations = 28; width = 3; }
 

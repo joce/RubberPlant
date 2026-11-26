@@ -2,7 +2,7 @@
    Each axis grows subapically; the 90 degree roll at every node gives a decussate pattern,
    with consecutive pairs of branches in perpendicular planes.
    Upgraded in v0.3: `~K` uses the original 4-petal cross floret `surfaces/lilac.s`,
-   scaled via `K as K(0.55)`. Stem `'(1)` green, floret `'(6)` purple, `width = 2`,
+   scaled via `K as K(0.95)`. Stem `'(1)` green, floret `'(6)` purple, `width = 3`,
    and `K as` are RubberPlant additions.
 *)
 settings { derivations = 10; angle = 60; width = 3; }
